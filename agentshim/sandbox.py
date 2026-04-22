@@ -16,7 +16,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-_CONFINE_READS_HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hooks", "confine_reads.py")
+_CONFINE_READS_HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "claude", "hooks", "confine_reads.py")
 
 
 @dataclass

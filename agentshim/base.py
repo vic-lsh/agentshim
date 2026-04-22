@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
-from .trajectory import NullTrajectoryRecorder, TrajectoryRecorderProtocol
+from agentshim.trajectory import NullTrajectoryRecorder, TrajectoryRecorderProtocol
 
 _T = TypeVar("_T")
 
@@ -37,7 +37,9 @@ class CodingAgent(ABC):
         timeout: int = 300,
         silent: bool = False,
     ) -> str:
-        """Generate text/code based on a prompt.
+        """One-shot prompt → reply. Equivalent to a fresh ``start_session``
+        followed by a single ``session.generate(prompt)``; no conversation
+        state is retained. Use ``start_session`` for multi-turn flows.
 
         Args:
             prompt: The prompt to send to the agent.

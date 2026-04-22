@@ -25,10 +25,13 @@ class TestCodexCommandConstruction:
         cmd = agent._get_command("test")
         assert "exec" in cmd
         assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+        assert "--json" in cmd
+        assert cmd[-1] == "-"
 
     def test_command_omits_mcp_when_no_servers(self, agent):
         cmd = agent._get_command("test")
         assert "-c" not in cmd
+        assert cmd[-1] == "-"
 
     def test_mcp_http_server(self, mock_binaries):
         servers = [HttpMcpServer(name="srv", url="http://localhost:9000/sse")]

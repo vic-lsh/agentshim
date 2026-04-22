@@ -7,7 +7,11 @@ import pytest
 
 @pytest.fixture
 def mock_llm_subprocess(monkeypatch):
-    """Mock subprocess operations for LLM agent tests."""
+    """Mock subprocess operations for LLM agent tests.
+
+    Provides a (mock_popen, mock_which) tuple tailored for LLM stream tests.
+    Named distinctly from the root conftest mock_subprocess to avoid shadowing.
+    """
     mock_popen = MagicMock()
     mock_process = MagicMock()
     mock_process.returncode = 0
@@ -15,6 +19,7 @@ def mock_llm_subprocess(monkeypatch):
     mock_process.poll.return_value = 0
     mock_process.stdout = MagicMock()
     mock_process.stdout.readline = MagicMock(return_value="")
+    # Fix stderr to return empty strings instead of MagicMock objects
     mock_process.stderr = MagicMock()
     mock_process.stderr.readline = MagicMock(side_effect=lambda: "")
     mock_popen.return_value = mock_process

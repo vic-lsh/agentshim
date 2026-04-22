@@ -188,7 +188,25 @@ class TestClaudeMcpConfig:
         cmd = agent._get_command("test")
         idx = cmd.index("--mcp-config")
         config = json.loads(cmd[idx + 1])
-        assert config == {"mcpServers": {"my-srv": {"url": "http://localhost:9000/sse"}}}
+        assert config == {"mcpServers": {"my-srv": {"type": "sse", "url": "http://localhost:9000/sse"}}}
+
+    def test_mcp_json_http_server_with_headers(self, mock_binaries):
+        servers = [
+            HttpMcpServer(
+                name="auth-srv",
+                url="https://example.com/sse",
+                headers={"Authorization": "Bearer xyz"},
+            )
+        ]
+        agent = ClaudeCodeCodingAgent(mcp_servers=servers)
+        cmd = agent._get_command("test")
+        idx = cmd.index("--mcp-config")
+        config = json.loads(cmd[idx + 1])
+        assert config["mcpServers"]["auth-srv"] == {
+            "type": "sse",
+            "url": "https://example.com/sse",
+            "headers": {"Authorization": "Bearer xyz"},
+        }
 
     def test_mcp_json_stdio_server(self, mock_binaries):
         servers = [

@@ -1,35 +1,25 @@
-from dataclasses import dataclass, field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-@dataclass(frozen=True)
-class HttpMcpServer:
+class HttpMcpServer(BaseModel):
     """MCP server accessed over HTTP/SSE."""
 
-    name: str
-    url: str
-    headers: dict[str, str] = field(default_factory=dict)  # pyright: ignore[reportUnknownVariableType]
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    def __post_init__(self):
-        if not self.name:
-            raise ValueError("MCP server name must be non-empty")
-        if not self.url:
-            raise ValueError(f"MCP server '{self.name}' must have a non-empty url")
+    name: str = Field(min_length=1)
+    url: str = Field(min_length=1)
+    headers: dict[str, str] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class StdioMcpServer:
+class StdioMcpServer(BaseModel):
     """MCP server launched as a subprocess (stdio transport)."""
 
-    name: str
-    command: str
-    args: list[str] = field(default_factory=list)  # pyright: ignore[reportUnknownVariableType]
-    env: dict[str, str] = field(default_factory=dict)  # pyright: ignore[reportUnknownVariableType]
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    def __post_init__(self):
-        if not self.name:
-            raise ValueError("MCP server name must be non-empty")
-        if not self.command:
-            raise ValueError(f"MCP server '{self.name}' must have a non-empty command")
+    name: str = Field(min_length=1)
+    command: str = Field(min_length=1)
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
 
 
 McpServerConfig = HttpMcpServer | StdioMcpServer

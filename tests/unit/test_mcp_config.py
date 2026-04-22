@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from agentshim.mcp_config import HttpMcpServer, McpServerConfig, StdioMcpServer
 
@@ -19,16 +20,16 @@ class TestHttpMcpServer:
         assert s.headers == {"Authorization": "Bearer tok"}
 
     def test_empty_name_raises(self):
-        with pytest.raises(ValueError, match="name must be non-empty"):
+        with pytest.raises(ValidationError, match="name"):
             HttpMcpServer(name="", url="http://localhost:8080")
 
     def test_empty_url_raises(self):
-        with pytest.raises(ValueError, match="non-empty url"):
+        with pytest.raises(ValidationError, match="url"):
             HttpMcpServer(name="bad", url="")
 
     def test_frozen(self):
         s = HttpMcpServer(name="x", url="http://localhost")
-        with pytest.raises(AttributeError):
+        with pytest.raises(ValidationError):
             s.name = "y"  # type: ignore[reportAttributeAccessIssue]
 
 
@@ -51,16 +52,16 @@ class TestStdioMcpServer:
         assert s.env == {"API_KEY": "secret"}
 
     def test_empty_name_raises(self):
-        with pytest.raises(ValueError, match="name must be non-empty"):
+        with pytest.raises(ValidationError, match="name"):
             StdioMcpServer(name="", command="npx")
 
     def test_empty_command_raises(self):
-        with pytest.raises(ValueError, match="non-empty command"):
+        with pytest.raises(ValidationError, match="command"):
             StdioMcpServer(name="bad", command="")
 
     def test_frozen(self):
         s = StdioMcpServer(name="x", command="npx")
-        with pytest.raises(AttributeError):
+        with pytest.raises(ValidationError):
             s.command = "other"  # type: ignore[reportAttributeAccessIssue]
 
 

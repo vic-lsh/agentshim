@@ -88,12 +88,28 @@ def generate_and_write_files(
     return written
 
 
-def truncate_params(params: Any, max_len: int = 200) -> str:
+DEFAULT_TOOL_PARAM_MAX_LEN = 200
+MEMORY_TOOL_PARAM_MAX_LEN = 10000
+_VERBOSE_TOOL_NAMES = frozenset({"recall_incident", "store_incident"})
+
+
+def truncate_params(params: Any, max_len: int = DEFAULT_TOOL_PARAM_MAX_LEN) -> str:
     """Truncate a parameter representation to *max_len* characters."""
     s = str(params)
     if len(s) > max_len:
         return s[:max_len] + "..."
     return s
+
+
+def truncate_tool_params(tool_name: str, params: Any) -> str:
+    """Render tool parameters with per-tool truncation rules.
+
+    Most tools keep the historical compact preview so CLI logs stay readable.
+    Incident-memory tools get a much larger budget because their payloads are
+    often the exact debugging context we need to inspect.
+    """
+    max_len = MEMORY_TOOL_PARAM_MAX_LEN if tool_name in _VERBOSE_TOOL_NAMES else DEFAULT_TOOL_PARAM_MAX_LEN
+    return truncate_params(params, max_len=max_len)
 
 
 def truncate_content(content: str, max_lines: int = 10) -> str:

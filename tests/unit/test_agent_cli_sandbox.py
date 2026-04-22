@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-import agentshim.hooks.confine_reads
+import agentshim.claude.hooks.confine_reads
 from agentshim.sandbox import (
     SandboxConfig,
     build_claude_sandbox_settings,
@@ -93,7 +93,7 @@ class TestConfineReadsHook:
         assert str(tmp_path) in command
 
     def _run_hook(self, payload: dict, roots: list[str]) -> tuple[int, str]:
-        hook_path = Path(agentshim.hooks.confine_reads.__file__).resolve()
+        hook_path = Path(agentshim.claude.hooks.confine_reads.__file__).resolve()
         proc = subprocess.run(
             [sys.executable, str(hook_path), *roots],
             input=json.dumps(payload),

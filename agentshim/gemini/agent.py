@@ -6,14 +6,15 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import trajectory as _trajectory_module
-from .trajectory import TrajectoryRecorderProtocol
+import agentshim.trajectory as _trajectory_module
+from agentshim.trajectory import TrajectoryRecorderProtocol
 
-from .base import register_provider
-from .cli_agent import CLICodingAgent, CLIGenerationSession
-from .events import AgentEventHandler
-from .gemini_events import GeminiEvent, MessageEvent, ToolResultEvent, ToolUseEvent
-from .sandbox import SandboxConfig
+from ..base import register_provider
+from ..cli_agent import CLICodingAgent, CLIGenerationSession
+from ..events import AgentEventHandler
+from ..sandbox import SandboxConfig
+from ..usage import ProviderUsage, TokenUsage
+from .events import GeminiEvent, InitEvent, MessageEvent, ToolResultEvent, ToolUseEvent
 
 _logger = logging.getLogger(__name__)
 
@@ -28,6 +29,9 @@ class GeminiGenerationSession(CLIGenerationSession):
         # Capture call_id and run_id for correlation
         self.call_id = _trajectory_module.get_current_call_id()
         self.run_id = _trajectory_module.get_run_id()
+        # Gemini's stream-json does not emit token usage. We count
+        # assistant MessageEvents as a turn proxy; token fields stay 0.
+        self._assistant_message_count: int = 0
 
     def _write_call_metadata(self):
         """Write metadata file to help correlate Gemini session with trajectory call."""
@@ -35,12 +39,10 @@ class GeminiGenerationSession(CLIGenerationSession):
             return
 
         try:
-            # Write metadata to Gemini's tmp directory
             gemini_tmp_dir = Path.home() / ".gemini" / "tmp"
             if not gemini_tmp_dir.exists():
                 return
 
-            # Find the project directory (usually matches cwd)
             if self.cwd:
                 project_name = Path(self.cwd).name
                 project_dir = gemini_tmp_dir / project_name / "chats"
@@ -59,13 +61,11 @@ class GeminiGenerationSession(CLIGenerationSession):
 
     def run(self, prompt: str) -> str:
         """Execute the generation process, writing call metadata first."""
-        # Write metadata file to correlate with trajectory
         self._write_call_metadata()
 
         if not self.silent:
             self._log_raw(f"{self.log_prefix} Input Prompt:\n{prompt}\n")
 
-        # Call parent implementation
         return super().run(prompt)
 
     def _process_stdout(self, line: str) -> None:
@@ -78,7 +78,6 @@ class GeminiGenerationSession(CLIGenerationSession):
             if event:
                 self._handle_event(event)
         except json.JSONDecodeError:
-            # Fallback for non-JSON lines (e.g. YOLO warnings)
             if not self.silent:
                 if self._at_line_start:
                     self._log_raw(f"{self.log_prefix} ")
@@ -87,18 +86,26 @@ class GeminiGenerationSession(CLIGenerationSession):
 
     def _handle_event(self, event: GeminiEvent):
         """Handle a single parsed Gemini event."""
-        # 1. Update State (Accumulator, Tool Map, Context Injection)
         self._update_state(event)
 
-        # 2. Render Output
         if not self.silent:
             self._render_event(event)
 
     def _update_state(self, event: GeminiEvent):
         """Update internal state based on the event."""
+        if isinstance(event, InitEvent):
+            if self.session_id is None and event.session_id:
+                self.session_id = event.session_id
+            return
+
         if isinstance(event, MessageEvent):
             if event.role == "assistant":
                 self.stdout_lines.append(event.content)
+                self._assistant_message_count += 1
+                self.usage = ProviderUsage(
+                    tokens=TokenUsage(turns=self._assistant_message_count),
+                    provider="gemini",
+                )
                 if self.event_handler:
                     self.event_handler.on_thinking(event.content)
 
@@ -111,7 +118,6 @@ class GeminiGenerationSession(CLIGenerationSession):
                     self.event_handler.on_tool_call(event.tool_name, event.parameters)
 
         elif isinstance(event, ToolResultEvent) and event.tool_id:
-            # Inject resolved name into the event for rendering
             event.tool_name_resolved = self.tool_map.get(event.tool_id, "Tool")
 
             start_time = self.tool_start_times.get(event.tool_id)
@@ -134,18 +140,15 @@ class GeminiGenerationSession(CLIGenerationSession):
 
     def _render_event(self, event: GeminiEvent):
         """Render the event to stdout."""
-        # Handle streaming text differently from block events
         if isinstance(event, MessageEvent):
             if event.role == "assistant":
                 self._print_stream_content(event.content)
             return
 
-        # Ensure we start block events on a new line
         if not self._at_line_start:
             self._log_raw("\n")
             self._at_line_start = True
 
-        # Render and print
         output = event.render(self.log_prefix)
         if output:
             self._log_raw(output + "\n")
@@ -192,17 +195,18 @@ class GeminiCodingAgent(CLICodingAgent):
         """Return the log prefix for this agent."""
         return "[Gemini]"
 
-    def _get_command(self, prompt: str) -> list[str]:
+    def _get_command(self, prompt: str, resume_session_id: str | None = None) -> list[str]:
         cmd = [self.binary_path]
 
-        # Enable yolo mode
         cmd.extend(["-y"])
 
         if self.model:
             cmd.extend(["--model", self.model])
 
-        # Output in stream-json format
         cmd.extend(["-o", "stream-json"])
+
+        if resume_session_id:
+            cmd.extend(["--resume", resume_session_id])
 
         return cmd
 

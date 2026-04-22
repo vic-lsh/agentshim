@@ -3,8 +3,8 @@
 import os
 from typing import Any
 
-from .subagent import litellm_call_with_retry
-from .trajectory import TrajectoryRecorderProtocol
+from agentshim.subagent import litellm_call_with_retry
+from agentshim.trajectory import TrajectoryRecorderProtocol
 
 
 class LiteLLMClient:

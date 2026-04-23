@@ -147,7 +147,7 @@ class CodexGenerationSession(CLIGenerationSession):
         return "\n".join(self.stdout_lines)
 
 
-@register_provider("openai", "codex")
+@register_provider("codex", aliases=("openai",))
 class CodexCodingAgent(CLICodingAgent):
     """Coding agent implementation using the Codex CLI tool."""
 

@@ -13,7 +13,7 @@ from loguru import logger
 
 from agentshim.trajectory import NullTrajectoryRecorder, TrajectoryRecorderProtocol
 
-from .base import CodingAgent
+from .base import BaseAgentSession, BaseCodingAgent
 from .events import AgentEventHandler
 from .mcp_config import McpServerConfig
 from .usage import ProviderUsage
@@ -193,7 +193,7 @@ class CLIGenerationSession:
         return stdout_data.strip()
 
 
-class CLICodingAgent(CodingAgent):
+class CLICodingAgent(BaseCodingAgent):
     """Base class for CLI-based coding agents."""
 
     CLI_CHECK_TIMEOUT_SECONDS = 15
@@ -350,7 +350,7 @@ class CLICodingAgent(CodingAgent):
         )
 
 
-class CLIAgentSession:
+class CLIAgentSession(BaseAgentSession):
     """Stateful, resumable conversation with a CLI agent.
 
     Holds the provider session id captured from the first ``generate`` call

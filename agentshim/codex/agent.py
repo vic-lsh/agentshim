@@ -15,6 +15,7 @@ from ..usage import ProviderUsage, TokenUsage
 from .events import (
     CodexEvent,
     ErrorEvent,
+    LifecycleEvent,
     TextEvent,
     ThreadStartedEvent,
     ToolResultEvent,
@@ -38,21 +39,28 @@ class CodexGenerationSession(CLIGenerationSession):
         self._accumulated_tokens = TokenUsage()
 
     def _process_stdout(self, line: str) -> None:
-        if not line:
+        if not line.strip():
             return
         try:
             data = json.loads(line)
         except json.JSONDecodeError:
-            self.stdout_lines.append(line.rstrip())
-            if not self.silent:
+            stripped = line.rstrip()
+            self.stdout_lines.append(stripped)
+            if self.event_handler and stripped:
+                self.event_handler.on_thinking(stripped)
+            elif not self.silent:
                 if self._at_line_start:
                     self._log_raw(f"{self.log_prefix} ")
-                self._log_raw(line.rstrip() + "\n")
+                self._log_raw(stripped + "\n")
                 self._at_line_start = True
             return
 
         event = CodexEvent.from_dict(data)
         if event is None:
+            stripped = line.rstrip()
+            if self.event_handler and stripped:
+                self.event_handler.on_thinking(stripped)
+            self.stdout_lines.append(stripped)
             return
         self._handle_event(event)
 
@@ -65,6 +73,13 @@ class CodexGenerationSession(CLIGenerationSession):
         if isinstance(event, ThreadStartedEvent):
             if self.session_id is None and event.thread_id:
                 self.session_id = event.thread_id
+            if self.event_handler and event.thread_id:
+                self.event_handler.on_thinking(f"[codex thread {event.thread_id} started]")
+            return
+
+        if isinstance(event, LifecycleEvent):
+            if self.event_handler and event.event_type == "turn.started":
+                self.event_handler.on_thinking("[codex turn started]")
             return
 
         if isinstance(event, TextEvent):
@@ -76,12 +91,12 @@ class CodexGenerationSession(CLIGenerationSession):
             return
 
         if isinstance(event, ToolUseEvent):
-            if event.tool_id:
+            if event.tool_name == "execute" and event.tool_id:
                 self.tool_map[event.tool_id] = event.tool_name
                 self.tool_start_times[event.tool_id] = time.time()
                 self.tool_args[event.tool_id] = event.parameters
-                if self.event_handler:
-                    self.event_handler.on_tool_call(event.tool_name, event.parameters)
+            if self.event_handler:
+                self.event_handler.on_tool_call(event.tool_name, event.parameters)
             return
 
         if isinstance(event, TurnCompletedEvent):
@@ -96,27 +111,48 @@ class CodexGenerationSession(CLIGenerationSession):
                 total_cost_usd=None,
                 provider="codex",
             )
+            normalized_usage = {
+                "input_tokens": event.input_tokens,
+                "output_tokens": event.output_tokens,
+                "cache_read_input_tokens": event.cached_input_tokens,
+                "cache_creation_input_tokens": 0,
+            }
+            if event.has_usage:
+                self.final_usage = normalized_usage
             if self.event_handler is not None and event.has_usage:
                 on_usage = getattr(self.event_handler, "on_usage", None)
                 if on_usage is not None:
-                    on_usage(
-                        {
-                            "input_tokens": event.input_tokens,
-                            "output_tokens": event.output_tokens,
-                            "cache_read_input_tokens": event.cached_input_tokens,
-                            "cache_creation_input_tokens": 0,
-                        }
-                    )
+                    on_usage(normalized_usage)
+                self.event_handler.on_thinking(
+                    f"[codex turn complete: in={normalized_usage['input_tokens']} "
+                    f"cached={normalized_usage['cache_read_input_tokens']} "
+                    f"out={normalized_usage['output_tokens']}]"
+                )
+            elif self.event_handler is not None:
+                self.event_handler.on_thinking("[codex turn complete]")
             return
 
         if isinstance(event, ToolResultEvent):
             if not event.tool_id:
-                return
-            event.tool_name_resolved = self.tool_map.get(event.tool_id, "Tool")
+                if event.tool_name is None:
+                    return
+                event.tool_name_resolved = event.tool_name
+                args = event.parameters or {}
+                duration = None
+                if self.event_handler:
+                    self.event_handler.on_tool_call(event.tool_name, args)
+            else:
+                event.tool_name_resolved = self.tool_map.get(
+                    event.tool_id,
+                    event.tool_name or "Tool",
+                )
 
-            start_time = self.tool_start_times.get(event.tool_id)
-            duration = time.time() - start_time if start_time else None
-            args = self.tool_args.get(event.tool_id, {})
+                start_time = self.tool_start_times.get(event.tool_id)
+                duration = time.time() - start_time if start_time else None
+                args = self.tool_args.get(event.tool_id, event.parameters or {})
+
+                if event.tool_id not in self.tool_map and self.event_handler and event.tool_name:
+                    self.event_handler.on_tool_call(event.tool_name, args)
 
             self.recorder.add_tool_call(
                 tool=event.tool_name_resolved,
@@ -151,8 +187,20 @@ class CodexGenerationSession(CLIGenerationSession):
         if isinstance(event, ErrorEvent):
             self.stdout_lines.append(event.message)
 
+    def _process_stderr(self, line: str) -> None:
+        line_stripped = line.rstrip("\n")
+        self.stderr_lines.append(line)
+        if self.event_handler and line_stripped:
+            self.event_handler.on_thinking(f"[codex stderr] {line_stripped}")
+        elif not self.silent:
+            self.logger.bind(stderr=True).info(f"[STDERR] {line_stripped}")
+
     def run(self, prompt: str) -> str:
-        super().run(prompt)
+        started = time.monotonic()
+        try:
+            super().run(prompt)
+        finally:
+            self.duration_ms = int((time.monotonic() - started) * 1000)
         if self.final_result:
             return self.final_result
         return "\n".join(self.stdout_lines)

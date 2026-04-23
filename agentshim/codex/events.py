@@ -46,7 +46,15 @@ class CodexEvent(ABC):
                 text_raw = item.get("text", "")
                 return TextEvent(text=text_raw if isinstance(text_raw, str) else "")
 
+            if item_type == "reasoning":
+                if not completed:
+                    return None
+                text_raw = item.get("text", "")
+                return TextEvent(text=text_raw if isinstance(text_raw, str) else "")
+
             if item_type == "command_execution":
+                command_raw = item.get("command", "")
+                command = command_raw if isinstance(command_raw, str) else ""
                 exit_code_raw = item.get("exit_code")
                 exit_code = exit_code_raw if isinstance(exit_code_raw, int) else None
                 status_raw = item.get("status")
@@ -57,23 +65,22 @@ class CodexEvent(ABC):
                         output=item.get("aggregated_output", ""),
                         exit_code=exit_code,
                         status=status,
+                        tool_name="execute",
+                        parameters={"command": command},
                     )
-                command_raw = item.get("command", "")
-                command = command_raw if isinstance(command_raw, str) else ""
                 return ToolUseEvent(
                     tool_id=item_id,
-                    tool_name="shell",
+                    tool_name="execute",
                     parameters={"command": command},
                 )
 
             status_raw = item.get("status")
             status = status_raw if isinstance(status_raw, str) else None
             if completed:
-                return ToolResultEvent(
+                return ToolUseEvent(
                     tool_id=item_id,
-                    output=_summarize_item(item),
-                    exit_code=None,
-                    status=status,
+                    tool_name=item_type or "item",
+                    parameters=_item_parameters(item),
                 )
             return ToolUseEvent(
                 tool_id=item_id,
@@ -165,6 +172,8 @@ class ToolResultEvent(CodexEvent):
         tool_id: str | None,
         exit_code: int | None = None,
         status: str | None = None,
+        tool_name: str | None = None,
+        parameters: Any = None,
     ):
         if isinstance(output, list):
             items = cast("list[Any]", output)
@@ -174,7 +183,9 @@ class ToolResultEvent(CodexEvent):
         self.tool_id = tool_id
         self.exit_code = exit_code
         self.status = status
-        self.tool_name_resolved: str = "Tool"
+        self.tool_name = tool_name
+        self.parameters = parameters
+        self.tool_name_resolved: str = tool_name or "Tool"
 
     def render(self, log_prefix: str) -> str:
         if not self.output:

@@ -116,6 +116,25 @@ class TestCodexSessionUsage:
         assert session.usage.tokens.cached_input_tokens == 40
         assert session.usage.tokens.turns == 2
 
+    def test_turn_completed_populates_final_usage(self):
+        session = _make_session(CodexGenerationSession)
+        session._handle_event(
+            TurnCompletedEvent(
+                input_tokens=100,
+                cached_input_tokens=10,
+                output_tokens=50,
+                usage={"input_tokens": 100, "cached_input_tokens": 10, "output_tokens": 50},
+            )
+        )
+
+        assert session.final_usage == {
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_read_input_tokens": 10,
+            "cache_creation_input_tokens": 0,
+        }
+        assert session.total_cost_usd is None
+
 
 class TestOpencodeSessionUsage:
     def test_step_finish_events_accumulate_with_cache_and_reasoning(self):

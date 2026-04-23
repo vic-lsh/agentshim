@@ -129,7 +129,9 @@ Notes:
 
 ## Extending agentshim
 
-Advanced users can register their own providers.
+Advanced users can register their own providers. `CodingAgent(...)` keeps its
+main constructor portable; provider-specific constructor extras should go
+through `backend_kwargs`.
 
 ```python
 from agentshim import BaseCodingAgent, CodingAgent, register_provider
@@ -140,12 +142,14 @@ class MyAgent(BaseCodingAgent):
     def __init__(
         self,
         model: str | None = None,
+        region: str | None = None,
         recorder=None,
         event_handler=None,
         mcp_servers=None,
         sandbox=False,
     ):
         self.model = model
+        self.region = region
         self.recorder = recorder
         self.event_handler = event_handler
 
@@ -153,7 +157,11 @@ class MyAgent(BaseCodingAgent):
         return f"handled: {prompt}"
 
 
-agent = CodingAgent(provider="my-agent-dev", model="demo")
+agent = CodingAgent(
+    provider="my-agent-dev",
+    model="demo",
+    backend_kwargs={"region": "us-west1"},
+)
 print(agent.generate("hello"))
 ```
 
@@ -163,6 +171,7 @@ Notes:
 - `list_providers()` returns canonical provider names only. Aliases resolve via `get_provider_class(...)` and `CodingAgent(provider=...)`.
 - `register_provider(...)` rejects invalid names, abstract classes, and accidental name collisions unless you pass `overwrite=True`.
 - If you want `CodingAgent(...)` to instantiate your provider, its constructor should accept the shared kwargs `model`, `recorder`, `event_handler`, `mcp_servers`, and `sandbox` as needed.
+- If your provider needs extra constructor arguments beyond the shared portable set, pass them via `backend_kwargs={...}` when constructing `CodingAgent(...)`.
 
 ## Development
 

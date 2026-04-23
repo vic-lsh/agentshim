@@ -3,9 +3,12 @@ from __future__ import annotations
 import inspect
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, TypeVar
 
+from agentshim.events import AgentEventHandler
+from agentshim.mcp_config import McpServerConfig
+from agentshim.sandbox import SandboxConfig
 from agentshim.trajectory import NullTrajectoryRecorder, TrajectoryRecorderProtocol
 
 _T = TypeVar("_T")
@@ -241,46 +244,36 @@ class CodingAgent(BaseCodingAgent):
         provider: str,
         model: str | None = None,
         recorder: TrajectoryRecorderProtocol | None = None,
-        event_handler: Any | None = None,
-        mcp_servers: list[Any] | None = None,
-        sandbox: Any = False,
-        **kwargs: Any,
-    ):
+        event_handler: AgentEventHandler | None = None,
+        mcp_servers: Sequence[McpServerConfig] | None = None,
+        sandbox: bool | SandboxConfig | None = False,
+        backend_kwargs: dict[str, Any] | None = None,
+    ) -> None:
         requested_provider = _PROVIDER_REGISTRY.get_canonical_name(provider)
         self.provider = requested_provider
         provider_cls = get_provider_class(provider)
 
-        candidate_kwargs: dict[str, Any] = dict(kwargs)
+        portable_kwargs: dict[str, Any] = {}
         if model is not None:
-            candidate_kwargs["model"] = model
+            portable_kwargs["model"] = model
         if recorder is not None:
-            candidate_kwargs["recorder"] = recorder
+            portable_kwargs["recorder"] = recorder
         if event_handler is not None:
-            candidate_kwargs["event_handler"] = event_handler
+            portable_kwargs["event_handler"] = event_handler
         if mcp_servers is not None:
-            candidate_kwargs["mcp_servers"] = mcp_servers
-        if sandbox is not False:
-            candidate_kwargs["sandbox"] = sandbox
+            portable_kwargs["mcp_servers"] = list(mcp_servers)
+        if sandbox is not None and sandbox is not False:
+            portable_kwargs["sandbox"] = sandbox
 
-        signature = inspect.signature(provider_cls.__init__)
-        parameters = signature.parameters
-        accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values())
-
-        supported_kwargs: dict[str, Any] = {}
-        unsupported: list[str] = []
-        for name, value in candidate_kwargs.items():
-            if accepts_kwargs or name in parameters:
-                supported_kwargs[name] = value
-            else:
-                unsupported.append(name)
-
-        if unsupported:
-            unsupported_args = ", ".join(sorted(unsupported))
-            raise TypeError(
-                f"{provider_cls.__name__} does not accept argument(s): {unsupported_args}"
+        advanced_kwargs = dict(backend_kwargs or {})
+        overlapping_keys = sorted(portable_kwargs.keys() & advanced_kwargs.keys())
+        if overlapping_keys:
+            raise ValueError(
+                "backend_kwargs must not override portable CodingAgent arguments: "
+                + ", ".join(overlapping_keys)
             )
 
-        self._backend: BaseCodingAgent = provider_cls(**supported_kwargs)
+        self._backend: BaseCodingAgent = provider_cls(**portable_kwargs, **advanced_kwargs)
 
     @property
     def backend(self) -> BaseCodingAgent:

@@ -92,13 +92,49 @@ def test_coding_agent_rejects_unknown_provider():
         CodingAgent(provider="does-not-exist")
 
 
-def test_coding_agent_rejects_unsupported_kwargs(mock_binaries):
-    with pytest.raises(TypeError, match="does not accept argument"):
-        CodingAgent(provider="claude", unsupported_option=True)
+@pytest.mark.parametrize("kwarg_name", ["location", "dspy_config"])
+def test_coding_agent_rejects_non_portable_top_level_kwargs(mock_binaries, kwarg_name):
+    with pytest.raises(TypeError, match=rf"unexpected keyword argument '{kwarg_name}'"):
+        CodingAgent(provider="claude", **{kwarg_name: "value"})  # type: ignore[call-arg]
 
 
-def test_register_provider_works_with_coding_agent():
-    @register_provider("dummy-facade-provider")
+def test_register_provider_works_with_coding_agent_backend_kwargs():
+    dspy_config = object()
+
+    @register_provider("dummy-facade-provider-with-backend-kwargs")
+    class DummyAgent(BaseCodingAgent):
+        def __init__(self, model=None, location=None, dspy_config=None):
+            self.model = model
+            self.location = location
+            self.dspy_config = dspy_config
+            self.recorder = NullTrajectoryRecorder()
+            self.event_handler = None
+
+        def generate(self, prompt, cwd=None, timeout=300, silent=False):
+            return f"dummy:{prompt}"
+
+    agent = CodingAgent(
+        provider="dummy-facade-provider-with-backend-kwargs",
+        model="dummy-model",
+        backend_kwargs={"location": "us-west1", "dspy_config": dspy_config},
+    )
+    assert isinstance(agent.backend, DummyAgent)
+    assert agent.backend.location == "us-west1"
+    assert agent.backend.dspy_config is dspy_config
+    assert agent.generate("hello") == "dummy:hello"
+
+
+def test_coding_agent_rejects_backend_kwargs_overlapping_portable_args():
+    with pytest.raises(ValueError, match="backend_kwargs must not override portable CodingAgent arguments: model"):
+        CodingAgent(
+            provider="claude",
+            model="portable-model",
+            backend_kwargs={"model": "backend-model"},
+        )
+
+
+def test_coding_agent_surfaces_backend_constructor_errors_for_backend_kwargs():
+    @register_provider("dummy-facade-provider-with-strict-init")
     class DummyAgent(BaseCodingAgent):
         def __init__(self, model=None):
             self.model = model
@@ -106,11 +142,14 @@ def test_register_provider_works_with_coding_agent():
             self.event_handler = None
 
         def generate(self, prompt, cwd=None, timeout=300, silent=False):
-            return f"dummy:{prompt}"
+            return prompt
 
-    agent = CodingAgent(provider="dummy-facade-provider", model="dummy-model")
-    assert isinstance(agent.backend, DummyAgent)
-    assert agent.generate("hello") == "dummy:hello"
+    with pytest.raises(TypeError, match="unexpected keyword argument 'location'"):
+        CodingAgent(
+            provider="dummy-facade-provider-with-strict-init",
+            model="dummy-model",
+            backend_kwargs={"location": "us-west1"},
+        )
 
 
 def test_get_provider_class_resolves_aliases():

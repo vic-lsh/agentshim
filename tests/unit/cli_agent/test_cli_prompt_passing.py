@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agentshim.claude import ClaudeCodeCodingAgent
+from agentshim.copilot import CopilotCodingAgent
 from agentshim.codex import CodexCodingAgent
 from agentshim.gemini import GeminiCodingAgent
 from agentshim.opencode import OpencodeCodingAgent
@@ -66,11 +67,12 @@ def command_tracker(mock_process):
     params=[
         # (name, class, has_prompt_in_cmd)
         ("claude", ClaudeCodeCodingAgent, True),
+        ("copilot", CopilotCodingAgent, True),
         ("codex", CodexCodingAgent, False),
         ("gemini", GeminiCodingAgent, False),
         ("opencode", OpencodeCodingAgent, True),
     ],
-    ids=["claude", "codex", "gemini", "opencode"],
+    ids=["claude", "copilot", "codex", "gemini", "opencode"],
 )
 def agent_info(request):
     """Parameterized fixture for all agent types with prompt passing info."""
@@ -173,6 +175,29 @@ def test_codex_command_structure(mock_which, command_tracker):
     assert "codex" in cmd[0]  # Binary name
     assert "exec" in cmd
     assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+
+
+def test_copilot_command_structure(mock_which, command_tracker):
+    """Test Copilot agent constructs correct command with prompt."""
+    test_prompt = "Write a test function"
+    track_popen, captured_commands, _ = command_tracker
+
+    with patch("shutil.which", side_effect=mock_which):
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            with patch("subprocess.Popen", side_effect=track_popen):
+                agent = CopilotCodingAgent()
+                agent.generate(test_prompt, silent=True)
+
+    assert len(captured_commands) > 0
+    cmd = captured_commands[0]
+
+    assert "--output-format" in cmd
+    assert "json" in cmd
+    assert "--allow-all-tools" in cmd
+    assert "--allow-all-paths" in cmd
+    assert "--allow-all-urls" in cmd
+    assert "-p" in cmd
+    assert test_prompt in cmd
 
 
 def test_gemini_command_structure(mock_which, command_tracker):

@@ -5,6 +5,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from agentshim.claude import ClaudeCodeCodingAgent, ClaudeGenerationSession
+from agentshim.copilot import CopilotCodingAgent, CopilotGenerationSession
+from agentshim.copilot.events import CopilotEvent, ResultEvent, SessionStartEvent
 from agentshim.claude.events import ClaudeEvent, SystemEvent
 from agentshim.cli_agent import CLIAgentSession, CLICodingAgent
 from agentshim.codex import CodexCodingAgent, CodexGenerationSession
@@ -21,6 +23,63 @@ def mock_binaries(monkeypatch):
         lambda cmd, path=None: f"/usr/local/bin/{cmd}",
     )
     monkeypatch.setattr(CLICodingAgent, "_check_cli", lambda self: None)
+
+
+# ---------------------------------------------------------------------------
+# Copilot
+# ---------------------------------------------------------------------------
+
+
+class TestCopilotResume:
+    def _session(self):
+        return CopilotGenerationSession(
+            binary_name="copilot",
+            env={},
+            log_prefix="[Copilot]",
+            cmd=["copilot", "--output-format", "json"],
+            logger=MagicMock(),
+            silent=True,
+            recorder=NullTrajectoryRecorder(),
+        )
+
+    def test_session_start_event_parses_session_id(self):
+        event = CopilotEvent.from_dict(
+            {
+                "type": "session.start",
+                "data": {
+                    "sessionId": "sid-123",
+                    "version": 1,
+                    "producer": "copilot-agent",
+                    "copilotVersion": "1.0.34",
+                    "startTime": "2026-01-01T00:00:00Z",
+                },
+            }
+        )
+        assert isinstance(event, SessionStartEvent)
+        assert event.session_id == "sid-123"
+
+    def test_session_captures_session_id(self):
+        session = self._session()
+        session._process_stdout('{"type":"result","sessionId":"sid-123","exitCode":0,"usage":{"premiumRequests":0}}\n')
+        session._process_stdout('{"type":"assistant.message","data":{"messageId":"m1","content":"done"}}\n')
+        assert session.session_id == "sid-123"
+
+    def test_result_event_parses_session_id(self):
+        event = CopilotEvent.from_dict({"type": "result", "sessionId": "sid-456", "exitCode": 0, "usage": {}})
+        assert isinstance(event, ResultEvent)
+        assert event.session_id == "sid-456"
+
+    def test_get_command_includes_resume_flag(self, mock_binaries):
+        agent = CopilotCodingAgent(model="gpt-5.4")
+        cmd = agent._get_command("hi", resume_session_id="sid-123")
+        assert "--resume" in cmd
+        idx = cmd.index("--resume")
+        assert cmd[idx + 1] == "sid-123"
+
+    def test_get_command_omits_resume_flag_by_default(self, mock_binaries):
+        agent = CopilotCodingAgent(model="gpt-5.4")
+        cmd = agent._get_command("hi")
+        assert "--resume" not in cmd
 
 
 # ---------------------------------------------------------------------------

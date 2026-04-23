@@ -135,6 +135,19 @@ class TestClaudeGenerationSession:
         session._process_stdout(line)
         assert session.final_result == "all done"
 
+    def test_result_event_captures_final_usage_cost_and_duration(self):
+        session = self._make_session()
+        line = (
+            '{"type":"result","result":"done",'
+            '"usage":{"input_tokens":7000,"output_tokens":120},'
+            '"total_cost_usd":0.0456,"duration_ms":12345}\n'
+        )
+        session._process_stdout(line)
+        assert session.final_result == "done"
+        assert session.final_usage == {"input_tokens": 7000, "output_tokens": 120}
+        assert session.total_cost_usd == 0.0456
+        assert session.duration_ms == 12345
+
     def test_process_stdout_handles_non_json(self):
         session = self._make_session()
         session._process_stdout("some plain text\n")

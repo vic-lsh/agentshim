@@ -109,6 +109,9 @@ class ClaudeGenerationSession(CLIGenerationSession):
 
         elif isinstance(event, ResultEvent):
             self.final_result = event.result
+            self.final_usage = event.usage
+            self.total_cost_usd = event.total_cost_usd
+            self.duration_ms = event.duration_ms
             # Anthropic reports cache_creation + cache_read as disjoint
             # from input_tokens; fold them into input_tokens to match the
             # crucible invariant (cached ⊆ input).

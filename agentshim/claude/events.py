@@ -54,6 +54,7 @@ class ClaudeEvent(ABC):
                 num_turns=data.get("num_turns"),
                 usage=data.get("usage"),
                 total_cost_usd=data.get("total_cost_usd"),
+                duration_ms=data.get("duration_ms"),
             )
 
         return None
@@ -144,11 +145,13 @@ class ResultEvent(ClaudeEvent):
         num_turns: int | None = None,
         usage: dict[str, Any] | None = None,
         total_cost_usd: float | None = None,
+        duration_ms: int | None = None,
     ):
         self.result = result
         self.num_turns = num_turns
         self.usage = usage
         self.total_cost_usd = total_cost_usd
+        self.duration_ms = duration_ms
 
     def render(self, log_prefix: str) -> str | None:
         # Result events are silent (result is captured separately)

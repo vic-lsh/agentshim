@@ -56,6 +56,11 @@ class CLIGenerationSession:
         # Providers populate this during event handling; stays at the
         # empty default if the session crashes before any terminal event.
         self.usage: ProviderUsage = ProviderUsage()
+        # Final provider-reported accounting snapshot, when the CLI exposes
+        # one on a terminal event.
+        self.final_usage: dict[str, Any] | None = None
+        self.total_cost_usd: float | None = None
+        self.duration_ms: int | None = None
         # Provider session id captured from the event stream (set by subclasses
         # that parse JSON events). ``None`` if the underlying CLI did not emit
         # an id during this run.

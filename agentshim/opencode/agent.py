@@ -1,6 +1,6 @@
 import json
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from agentshim.trajectory import TrajectoryRecorderProtocol
@@ -128,7 +128,7 @@ class OpencodeCodingAgent(CLICodingAgent):
         model: str | None = None,
         recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
-        mcp_servers: list[object] | None = None,
+        mcp_servers: Sequence[object] | None = None,
         sandbox: bool | SandboxConfig = False,
     ):
         """Initialize the Opencode coding agent.

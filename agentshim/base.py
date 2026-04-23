@@ -12,6 +12,7 @@ from agentshim.sandbox import SandboxConfig
 from agentshim.trajectory import NullTrajectoryRecorder, TrajectoryRecorderProtocol
 
 _T = TypeVar("_T")
+_ProviderType = TypeVar("_ProviderType", bound=type["BaseCodingAgent"])
 _READABLE_NAME_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _PROVIDER_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
@@ -195,7 +196,7 @@ def register_provider(
     *extra_names: str,
     aliases: tuple[str, ...] = (),
     overwrite: bool = False,
-) -> Callable[[type[_T]], _T]:
+) -> Callable[[_ProviderType], _ProviderType]:
     """Decorator to register a coding agent provider.
 
     Registration is import-driven: the decorated class becomes available only
@@ -211,7 +212,7 @@ def register_provider(
     all_aliases = (*extra_names, *aliases)
     _PROVIDER_REGISTRY._normalize_names(canonical_name, all_aliases)
 
-    def decorator(cls: type[_T]) -> _T:
+    def decorator(cls: _ProviderType) -> _ProviderType:
         return _PROVIDER_REGISTRY.register(
             cls,
             canonical_name=canonical_name,

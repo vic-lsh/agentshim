@@ -13,7 +13,7 @@ from loguru import logger
 
 from agentshim.trajectory import NullTrajectoryRecorder, TrajectoryRecorderProtocol
 
-from .base import CodingAgent
+from .base import BaseCodingAgent
 from .events import AgentEventHandler
 from .mcp_config import McpServerConfig
 from .usage import ProviderUsage
@@ -193,7 +193,7 @@ class CLIGenerationSession:
         return stdout_data.strip()
 
 
-class CLICodingAgent(CodingAgent):
+class CLICodingAgent(BaseCodingAgent):
     """Base class for CLI-based coding agents."""
 
     CLI_CHECK_TIMEOUT_SECONDS = 15

@@ -1,8 +1,8 @@
-from agentshim.base import CodingAgent
+from agentshim.base import BaseCodingAgent
 from agentshim.trajectory import NullTrajectoryRecorder
 
 
-class _ConcreteAgent(CodingAgent):
+class _ConcreteAgent(BaseCodingAgent):
     def generate(self, prompt, cwd=None, timeout=300, silent=False):
         return ""
 

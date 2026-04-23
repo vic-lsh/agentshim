@@ -27,13 +27,7 @@ class CodexEvent(ABC):
             return LifecycleEvent(event_type)
 
         if event_type == "turn.completed":
-            usage_raw = data.get("usage")
-            usage = cast("dict[str, Any]", usage_raw) if isinstance(usage_raw, dict) else {}
-            return TurnCompletedEvent(
-                input_tokens=int(usage.get("input_tokens") or 0),
-                cached_input_tokens=int(usage.get("cached_input_tokens") or 0),
-                output_tokens=int(usage.get("output_tokens") or 0),
-            )
+            return TurnCompletedEvent.from_usage_payload(data.get("usage"))
 
         if event_type in ("item.started", "item.completed"):
             item_raw = data.get("item")
@@ -197,10 +191,27 @@ class TurnCompletedEvent(CodexEvent):
         input_tokens: int = 0,
         cached_input_tokens: int = 0,
         output_tokens: int = 0,
+        usage: dict[str, Any] | None = None,
     ):
         self.input_tokens = input_tokens
         self.cached_input_tokens = cached_input_tokens
         self.output_tokens = output_tokens
+        self.usage = usage
+
+    @classmethod
+    def from_usage_payload(cls, usage_raw: Any) -> TurnCompletedEvent:
+        usage = cast("dict[str, Any]", usage_raw) if isinstance(usage_raw, dict) else None
+        usage_dict = usage or {}
+        return cls(
+            input_tokens=int(usage_dict.get("input_tokens") or 0),
+            cached_input_tokens=int(usage_dict.get("cached_input_tokens") or 0),
+            output_tokens=int(usage_dict.get("output_tokens") or 0),
+            usage=usage,
+        )
+
+    @property
+    def has_usage(self) -> bool:
+        return self.usage is not None
 
     def render(self, log_prefix: str) -> str | None:
         return None

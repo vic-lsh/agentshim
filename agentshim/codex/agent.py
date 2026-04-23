@@ -96,6 +96,17 @@ class CodexGenerationSession(CLIGenerationSession):
                 total_cost_usd=None,
                 provider="codex",
             )
+            if self.event_handler is not None and event.has_usage:
+                on_usage = getattr(self.event_handler, "on_usage", None)
+                if on_usage is not None:
+                    on_usage(
+                        {
+                            "input_tokens": event.input_tokens,
+                            "output_tokens": event.output_tokens,
+                            "cache_read_input_tokens": event.cached_input_tokens,
+                            "cache_creation_input_tokens": 0,
+                        }
+                    )
             return
 
         if isinstance(event, ToolResultEvent):

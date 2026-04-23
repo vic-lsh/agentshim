@@ -77,6 +77,37 @@ class TestClaudeEventFromDict:
         assert isinstance(event.events[0], TextEvent)
         assert isinstance(event.events[1], ToolUseEvent)
 
+    def test_assistant_event_captures_usage(self):
+        data = {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "hi"}],
+                "usage": {
+                    "input_tokens": 1234,
+                    "output_tokens": 56,
+                    "cache_creation_input_tokens": 100,
+                    "cache_read_input_tokens": 7,
+                },
+            },
+        }
+        event = ClaudeEvent.from_dict(data)
+        assert isinstance(event, MultiEvent)
+        assert event.usage == {
+            "input_tokens": 1234,
+            "output_tokens": 56,
+            "cache_creation_input_tokens": 100,
+            "cache_read_input_tokens": 7,
+        }
+
+    def test_assistant_event_missing_usage_is_none(self):
+        data = {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "hi"}]},
+        }
+        event = ClaudeEvent.from_dict(data)
+        assert isinstance(event, MultiEvent)
+        assert event.usage is None
+
     def test_user_tool_result_event(self):
         data = {
             "type": "user",

@@ -22,3 +22,7 @@ class AgentEventHandler(Protocol):
     ) -> None:
         """Handle tool execution result."""
         ...
+
+    def on_usage(self, usage: dict[str, Any]) -> None:
+        """Handle a per-turn usage update from the underlying CLI."""
+        ...

@@ -53,6 +53,10 @@ class ClaudeGenerationSession(CLIGenerationSession):
     def _handle_event(self, event: ClaudeEvent):
         """Handle a single parsed Claude event."""
         if isinstance(event, MultiEvent):
+            if event.usage and self.event_handler is not None:
+                on_usage = getattr(self.event_handler, "on_usage", None)
+                if on_usage is not None:
+                    on_usage(event.usage)
             for sub_event in event.events:
                 self._handle_event(sub_event)
             return

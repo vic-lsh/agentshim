@@ -162,6 +162,59 @@ class TestClaudeGenerationSession:
         session._process_stdout(line)
         handler.on_tool_call.assert_called_once_with("Read", {"path": "/tmp"})
 
+    def test_assistant_usage_forwarded_to_event_handler(self):
+        handler = MagicMock()
+        session = self._make_session(event_handler=handler)
+        line = (
+            '{"type":"assistant","message":{"content":'
+            '[{"type":"text","text":"ok"}],'
+            '"usage":{"input_tokens":14000,"output_tokens":50,'
+            '"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n'
+        )
+        session._process_stdout(line)
+        handler.on_usage.assert_called_once_with(
+            {
+                "input_tokens": 14000,
+                "output_tokens": 50,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+            }
+        )
+
+    def test_assistant_without_usage_does_not_call_on_usage(self):
+        handler = MagicMock()
+        session = self._make_session(event_handler=handler)
+        line = (
+            '{"type":"assistant","message":{"content":'
+            '[{"type":"text","text":"ok"}]}}\n'
+        )
+        session._process_stdout(line)
+        handler.on_usage.assert_not_called()
+
+    def test_legacy_event_handler_without_on_usage_still_works(self):
+        class LegacyHandler:
+            def __init__(self):
+                self.text_calls = []
+
+            def on_thinking(self, text):
+                self.text_calls.append(text)
+
+            def on_tool_call(self, tool, args=None):
+                pass
+
+            def on_tool_result(self, tool, stdout="", stderr="", exit_code=None, duration=None):
+                pass
+
+        handler = LegacyHandler()
+        session = self._make_session(event_handler=handler)
+        line = (
+            '{"type":"assistant","message":{"content":'
+            '[{"type":"text","text":"hi"}],'
+            '"usage":{"input_tokens":500,"output_tokens":10}}}\n'
+        )
+        session._process_stdout(line)
+        assert handler.text_calls == ["hi"]
+
     def test_create_session_returns_claude_session(self, agent):
         session = agent._create_session(cmd=["claude", "-p"])
         assert isinstance(session, ClaudeGenerationSession)

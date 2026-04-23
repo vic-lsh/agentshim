@@ -36,7 +36,8 @@ class ClaudeEvent(ABC):
                             parameters=block.get("input"),
                         )
                     )
-            return MultiEvent(events) if events else None
+            usage = message.get("usage")
+            return MultiEvent(events, usage=usage) if events else None
         if event_type == "user":
             message = data.get("message", {})
             content_blocks = message.get("content", [])
@@ -61,8 +62,13 @@ class ClaudeEvent(ABC):
 class MultiEvent(ClaudeEvent):
     """Container for multiple events from a single message."""
 
-    def __init__(self, events: list[ClaudeEvent]):
+    def __init__(
+        self,
+        events: list[ClaudeEvent],
+        usage: dict[str, Any] | None = None,
+    ):
         self.events = events
+        self.usage = usage
 
     def render(self, log_prefix: str) -> str | None:
         # MultiEvent doesn't render itself; events are handled individually

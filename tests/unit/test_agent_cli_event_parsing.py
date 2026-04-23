@@ -77,6 +77,37 @@ class TestClaudeEventFromDict:
         assert isinstance(event.events[0], TextEvent)
         assert isinstance(event.events[1], ToolUseEvent)
 
+    def test_assistant_event_captures_usage(self):
+        data = {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "hi"}],
+                "usage": {
+                    "input_tokens": 1234,
+                    "output_tokens": 56,
+                    "cache_creation_input_tokens": 100,
+                    "cache_read_input_tokens": 7,
+                },
+            },
+        }
+        event = ClaudeEvent.from_dict(data)
+        assert isinstance(event, MultiEvent)
+        assert event.usage == {
+            "input_tokens": 1234,
+            "output_tokens": 56,
+            "cache_creation_input_tokens": 100,
+            "cache_read_input_tokens": 7,
+        }
+
+    def test_assistant_event_missing_usage_is_none(self):
+        data = {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "hi"}]},
+        }
+        event = ClaudeEvent.from_dict(data)
+        assert isinstance(event, MultiEvent)
+        assert event.usage is None
+
     def test_user_tool_result_event(self):
         data = {
             "type": "user",
@@ -337,6 +368,18 @@ class TestCodexEventFromDict:
         }
         assert CodexEvent.from_dict(data) is None
 
+    def test_reasoning_completed_is_text(self):
+        from agentshim.codex_events import CodexEvent
+        from agentshim.codex_events import TextEvent as CodexTextEvent
+
+        data = {
+            "type": "item.completed",
+            "item": {"id": "r1", "type": "reasoning", "text": "planning"},
+        }
+        event = CodexEvent.from_dict(data)
+        assert isinstance(event, CodexTextEvent)
+        assert event.text == "planning"
+
     def test_command_execution_started_is_tool_use(self):
         from agentshim.codex_events import CodexEvent
         from agentshim.codex_events import ToolUseEvent as CodexToolUseEvent
@@ -353,7 +396,7 @@ class TestCodexEventFromDict:
         event = CodexEvent.from_dict(data)
         assert isinstance(event, CodexToolUseEvent)
         assert event.tool_id == "item_1"
-        assert event.tool_name == "shell"
+        assert event.tool_name == "execute"
         assert event.parameters == {"command": "/bin/bash -lc ls"}
 
     def test_command_execution_completed_is_tool_result(self):
@@ -378,17 +421,32 @@ class TestCodexEventFromDict:
         assert event.exit_code == 0
         assert event.status == "completed"
 
-    def test_generic_item_types_become_tool_events(self):
+    def test_generic_item_started_reasoning_is_skipped(self):
         from agentshim.codex_events import CodexEvent
-        from agentshim.codex_events import ToolUseEvent as CodexToolUseEvent
 
         data = {
             "type": "item.started",
             "item": {"id": "r1", "type": "reasoning", "summary": "planning"},
         }
+        assert CodexEvent.from_dict(data) is None
+
+    def test_generic_item_completed_becomes_tool_use_with_full_payload(self):
+        from agentshim.codex_events import CodexEvent
+        from agentshim.codex_events import ToolUseEvent as CodexToolUseEvent
+
+        data = {
+            "type": "item.completed",
+            "item": {
+                "id": "fc1",
+                "type": "file_change",
+                "path": "engine.py",
+                "kind": "update",
+            },
+        }
         event = CodexEvent.from_dict(data)
         assert isinstance(event, CodexToolUseEvent)
-        assert event.tool_name == "reasoning"
+        assert event.tool_name == "file_change"
+        assert event.parameters == {"path": "engine.py", "kind": "update"}
 
     def test_turn_failed_is_error(self):
         from agentshim.codex_events import CodexEvent, ErrorEvent

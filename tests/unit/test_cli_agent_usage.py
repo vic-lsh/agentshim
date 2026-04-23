@@ -78,12 +78,30 @@ class TestClaudeSessionUsage:
         assert session.usage.tokens.turns == 4
         # Invariant: cached ⊆ input
         assert session.usage.tokens.cached_input_tokens <= session.usage.tokens.input_tokens
+        assert session.final_usage == {
+            "input_tokens": 100,
+            "output_tokens": 40,
+            "cache_creation_input_tokens": 30,
+            "cache_read_input_tokens": 20,
+        }
+        assert session.total_cost_usd == 0.5
+
+    def test_result_event_populates_duration_ms(self):
+        session = _make_session(ClaudeGenerationSession)
+        event = ClaudeResultEvent(
+            result="done",
+            duration_ms=18431,
+        )
+        session._handle_event(event)
+        assert session.duration_ms == 18431
 
     def test_result_event_without_usage_degrades_to_zero(self):
         session = _make_session(ClaudeGenerationSession)
         session._handle_event(ClaudeResultEvent(result="done"))
         assert session.usage.provider == "claude"
         assert session.usage.tokens == TokenUsage()
+        assert session.final_usage is None
+        assert session.total_cost_usd is None
 
 
 class TestCodexSessionUsage:
@@ -97,6 +115,25 @@ class TestCodexSessionUsage:
         assert session.usage.tokens.output_tokens == 130
         assert session.usage.tokens.cached_input_tokens == 40
         assert session.usage.tokens.turns == 2
+
+    def test_turn_completed_populates_final_usage(self):
+        session = _make_session(CodexGenerationSession)
+        session._handle_event(
+            TurnCompletedEvent(
+                input_tokens=100,
+                cached_input_tokens=10,
+                output_tokens=50,
+                usage={"input_tokens": 100, "cached_input_tokens": 10, "output_tokens": 50},
+            )
+        )
+
+        assert session.final_usage == {
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_read_input_tokens": 10,
+            "cache_creation_input_tokens": 0,
+        }
+        assert session.total_cost_usd is None
 
 
 class TestOpencodeSessionUsage:

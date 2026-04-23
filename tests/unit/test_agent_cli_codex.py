@@ -1,7 +1,10 @@
+import json
+from unittest.mock import MagicMock
+
 import pytest
 
 from agentshim.cli_agent import CLICodingAgent
-from agentshim.codex import CodexCodingAgent
+from agentshim.codex import CodexCodingAgent, CodexGenerationSession
 from agentshim.mcp_config import HttpMcpServer, StdioMcpServer
 
 
@@ -67,3 +70,174 @@ class TestCodexCommandConstruction:
         c_values = [cmd[i + 1] for i, v in enumerate(cmd) if v == "-c"]
         assert 'mcp_servers.a.url="http://a"' in c_values
         assert 'mcp_servers.b.command="cmd"' in c_values
+
+
+def _session(event_handler=None) -> CodexGenerationSession:
+    session = CodexGenerationSession(
+        binary_name="codex",
+        env={},
+        log_prefix="[Codex]",
+        cmd=["codex", "exec", "--json", "-"],
+        logger=MagicMock(),
+        silent=True,
+        event_handler=event_handler,
+    )
+    return session
+
+
+class TestCodexGenerationSession:
+    def test_thread_started_captures_session_id_and_emits_marker(self):
+        handler = MagicMock()
+        session = _session(event_handler=handler)
+        session._process_stdout(json.dumps({"type": "thread.started", "thread_id": "t-1"}))
+        assert session.session_id == "t-1"
+        handler.on_thinking.assert_called_once_with("[codex thread t-1 started]")
+
+    def test_turn_started_emits_marker(self):
+        handler = MagicMock()
+        session = _session(event_handler=handler)
+        session._process_stdout(json.dumps({"type": "turn.started"}))
+        handler.on_thinking.assert_called_once_with("[codex turn started]")
+
+    def test_turn_completed_forwards_normalized_usage(self):
+        handler = MagicMock()
+        session = _session(event_handler=handler)
+        session._process_stdout(
+            json.dumps(
+                {
+                    "type": "turn.completed",
+                    "usage": {
+                        "input_tokens": 1200,
+                        "cached_input_tokens": 800,
+                        "output_tokens": 150,
+                    },
+                }
+            )
+        )
+        handler.on_usage.assert_called_once_with(
+            {
+                "input_tokens": 1200,
+                "output_tokens": 150,
+                "cache_read_input_tokens": 800,
+                "cache_creation_input_tokens": 0,
+            }
+        )
+        assert session.final_usage == {
+            "input_tokens": 1200,
+            "output_tokens": 150,
+            "cache_read_input_tokens": 800,
+            "cache_creation_input_tokens": 0,
+        }
+        thinking_calls = [call.args[0] for call in handler.on_thinking.call_args_list]
+        assert any("turn complete" in text for text in thinking_calls)
+
+    def test_turn_completed_without_usage_does_not_call_on_usage(self):
+        handler = MagicMock()
+        session = _session(event_handler=handler)
+        session._process_stdout(json.dumps({"type": "turn.completed"}))
+        handler.on_usage.assert_not_called()
+        assert session.final_usage is None
+        handler.on_thinking.assert_called_once_with("[codex turn complete]")
+
+    def test_legacy_event_handler_without_on_usage_still_works(self):
+        class LegacyHandler:
+            def on_thinking(self, text):
+                pass
+
+            def on_tool_call(self, tool, args=None):
+                pass
+
+            def on_tool_result(self, tool, stdout="", stderr="", exit_code=None, duration=None):
+                pass
+
+        session = _session(event_handler=LegacyHandler())
+        session._process_stdout(
+            json.dumps(
+                {
+                    "type": "turn.completed",
+                    "usage": {
+                        "input_tokens": 10,
+                        "cached_input_tokens": 2,
+                        "output_tokens": 3,
+                    },
+                }
+            )
+        )
+
+    def test_reasoning_completed_is_forwarded_as_thinking(self):
+        handler = MagicMock()
+        session = _session(event_handler=handler)
+        session._process_stdout(
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"id": "r1", "type": "reasoning", "text": "I should grep for X"},
+                }
+            )
+        )
+        handler.on_thinking.assert_called_once_with("I should grep for X")
+
+    def test_command_execution_completed_without_started_event_emits_call_and_result(self):
+        handler = MagicMock()
+        session = _session(event_handler=handler)
+        session._process_stdout(
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "type": "command_execution",
+                        "command": "ls -la",
+                        "aggregated_output": "file.txt\n",
+                    },
+                }
+            )
+        )
+        handler.on_tool_call.assert_called_once_with("execute", {"command": "ls -la"})
+        handler.on_tool_result.assert_called_once_with(
+            tool="execute",
+            stdout="file.txt\n",
+            exit_code=None,
+            duration=None,
+        )
+
+    def test_unknown_item_completed_surfaces_tool_call_with_full_payload(self):
+        handler = MagicMock()
+        session = _session(event_handler=handler)
+        session._process_stdout(
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "fc1",
+                        "type": "file_change",
+                        "path": "engine.py",
+                        "kind": "update",
+                    },
+                }
+            )
+        )
+        handler.on_tool_call.assert_called_once_with(
+            "file_change",
+            {"path": "engine.py", "kind": "update"},
+        )
+
+    def test_non_json_stdout_line_is_forwarded_to_event_handler(self):
+        handler = MagicMock()
+        session = _session(event_handler=handler)
+        session._process_stdout("starting codex 1.2.3\n")
+        handler.on_thinking.assert_called_once_with("starting codex 1.2.3")
+        assert session.stdout_lines == ["starting codex 1.2.3"]
+
+    def test_unknown_json_event_is_forwarded_raw(self):
+        handler = MagicMock()
+        session = _session(event_handler=handler)
+        raw = json.dumps({"type": "item.updated", "item": {"type": "reasoning", "delta": "thinking..."}})
+        session._process_stdout(raw)
+        handler.on_thinking.assert_called_once_with(raw)
+
+    def test_stderr_is_forwarded_to_event_handler(self):
+        handler = MagicMock()
+        session = _session(event_handler=handler)
+        session._process_stderr("panic: index out of bounds\n")
+        handler.on_thinking.assert_called_once_with("[codex stderr] panic: index out of bounds")
+        assert session.stderr_lines == ["panic: index out of bounds\n"]

@@ -27,13 +27,7 @@ class CodexEvent(ABC):
             return LifecycleEvent(event_type)
 
         if event_type == "turn.completed":
-            usage_raw = data.get("usage")
-            usage = cast("dict[str, Any]", usage_raw) if isinstance(usage_raw, dict) else {}
-            return TurnCompletedEvent(
-                input_tokens=int(usage.get("input_tokens") or 0),
-                cached_input_tokens=int(usage.get("cached_input_tokens") or 0),
-                output_tokens=int(usage.get("output_tokens") or 0),
-            )
+            return TurnCompletedEvent.from_usage_payload(data.get("usage"))
 
         if event_type in ("item.started", "item.completed"):
             item_raw = data.get("item")
@@ -52,7 +46,15 @@ class CodexEvent(ABC):
                 text_raw = item.get("text", "")
                 return TextEvent(text=text_raw if isinstance(text_raw, str) else "")
 
+            if item_type == "reasoning":
+                if not completed:
+                    return None
+                text_raw = item.get("text", "")
+                return TextEvent(text=text_raw if isinstance(text_raw, str) else "")
+
             if item_type == "command_execution":
+                command_raw = item.get("command", "")
+                command = command_raw if isinstance(command_raw, str) else ""
                 exit_code_raw = item.get("exit_code")
                 exit_code = exit_code_raw if isinstance(exit_code_raw, int) else None
                 status_raw = item.get("status")
@@ -63,23 +65,22 @@ class CodexEvent(ABC):
                         output=item.get("aggregated_output", ""),
                         exit_code=exit_code,
                         status=status,
+                        tool_name="execute",
+                        parameters={"command": command},
                     )
-                command_raw = item.get("command", "")
-                command = command_raw if isinstance(command_raw, str) else ""
                 return ToolUseEvent(
                     tool_id=item_id,
-                    tool_name="shell",
+                    tool_name="execute",
                     parameters={"command": command},
                 )
 
             status_raw = item.get("status")
             status = status_raw if isinstance(status_raw, str) else None
             if completed:
-                return ToolResultEvent(
+                return ToolUseEvent(
                     tool_id=item_id,
-                    output=_summarize_item(item),
-                    exit_code=None,
-                    status=status,
+                    tool_name=item_type or "item",
+                    parameters=_item_parameters(item),
                 )
             return ToolUseEvent(
                 tool_id=item_id,
@@ -171,6 +172,8 @@ class ToolResultEvent(CodexEvent):
         tool_id: str | None,
         exit_code: int | None = None,
         status: str | None = None,
+        tool_name: str | None = None,
+        parameters: Any = None,
     ):
         if isinstance(output, list):
             items = cast("list[Any]", output)
@@ -180,7 +183,9 @@ class ToolResultEvent(CodexEvent):
         self.tool_id = tool_id
         self.exit_code = exit_code
         self.status = status
-        self.tool_name_resolved: str = "Tool"
+        self.tool_name = tool_name
+        self.parameters = parameters
+        self.tool_name_resolved: str = tool_name or "Tool"
 
     def render(self, log_prefix: str) -> str:
         if not self.output:
@@ -197,10 +202,27 @@ class TurnCompletedEvent(CodexEvent):
         input_tokens: int = 0,
         cached_input_tokens: int = 0,
         output_tokens: int = 0,
+        usage: dict[str, Any] | None = None,
     ):
         self.input_tokens = input_tokens
         self.cached_input_tokens = cached_input_tokens
         self.output_tokens = output_tokens
+        self.usage = usage
+
+    @classmethod
+    def from_usage_payload(cls, usage_raw: Any) -> TurnCompletedEvent:
+        usage = cast("dict[str, Any]", usage_raw) if isinstance(usage_raw, dict) else None
+        usage_dict = usage or {}
+        return cls(
+            input_tokens=int(usage_dict.get("input_tokens") or 0),
+            cached_input_tokens=int(usage_dict.get("cached_input_tokens") or 0),
+            output_tokens=int(usage_dict.get("output_tokens") or 0),
+            usage=usage,
+        )
+
+    @property
+    def has_usage(self) -> bool:
+        return self.usage is not None
 
     def render(self, log_prefix: str) -> str | None:
         return None

@@ -63,10 +63,10 @@ def test_coding_agent_forwards_mutable_common_properties(mock_binaries):
     assert agent.backend.event_handler is handler
 
 
-def test_coding_agent_exposes_backend_attributes(mock_binaries):
+def test_coding_agent_requires_explicit_backend_access_for_backend_attributes(mock_binaries):
     agent = CodingAgent(provider="claude", model="test-model")
-    assert agent.binary_name == "claude"
-    assert agent.claude_path == "/usr/local/bin/claude"
+    assert agent.backend.binary_name == "claude"
+    assert agent.backend.claude_path == "/usr/local/bin/claude"
 
 
 def test_coding_agent_identity_properties(mock_binaries):

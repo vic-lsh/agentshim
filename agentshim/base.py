@@ -335,6 +335,3 @@ class CodingAgent(BaseCodingAgent):
         silent: bool = False,
     ) -> str:
         return self._backend.generate(prompt, cwd=cwd, timeout=timeout, silent=silent)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._backend, name)

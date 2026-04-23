@@ -1,4 +1,4 @@
-from .base import BaseAgentSession, BaseCodingAgent, CodingAgent
+from .base import BaseAgentSession, BaseCodingAgent, CodingAgent, get_provider_class, list_providers, register_provider
 from .claude import ClaudeCodeCodingAgent
 from .codex import CodexCodingAgent
 from .gemini import GeminiCodingAgent
@@ -12,6 +12,9 @@ __all__ = [
     "BaseCodingAgent",
     "BaseAgentSession",
     "CodingAgent",
+    "get_provider_class",
+    "list_providers",
+    "register_provider",
     "CodexCodingAgent",
     "GeminiCodingAgent",
     "OpencodeCodingAgent",

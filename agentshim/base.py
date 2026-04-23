@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import inspect
 import re
 from abc import ABC, abstractmethod
@@ -8,37 +10,7 @@ from agentshim.trajectory import NullTrajectoryRecorder, TrajectoryRecorderProto
 
 _T = TypeVar("_T")
 _READABLE_NAME_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
-
-_AGENT_REGISTRY: dict[str, Any] = {}
-
-
-def register_provider(*names: str) -> Any:
-    """Decorator to register a coding agent provider.
-
-    Args:
-        *names: List of provider names/aliases (case-insensitive).
-    """
-
-    def decorator(cls: _T) -> _T:
-        for name in names:
-            _AGENT_REGISTRY[name.lower()] = cls
-        return cls
-
-    return decorator
-
-
-def _available_providers() -> list[str]:
-    return sorted(_AGENT_REGISTRY)
-
-
-def _resolve_provider(provider: str) -> Any:
-    provider_key = provider.lower()
-    agent_cls = _AGENT_REGISTRY.get(provider_key)
-    if agent_cls is None:
-        raise ValueError(
-            f"Unknown coding agent provider '{provider}'. Available providers: {_available_providers()}"
-        )
-    return agent_cls
+_PROVIDER_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
 def _readable_name_from_class_name(class_name: str) -> str:
@@ -71,7 +43,7 @@ class BaseCodingAgent(ABC):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-    ) -> "BaseAgentSession":
+    ) -> BaseAgentSession:
         """Open a stateful session if supported by the backend."""
         raise NotImplementedError(f"{self.__class__.__name__} does not support start_session()")
 
@@ -115,6 +87,148 @@ class BaseAgentSession(ABC):
         """Send ``prompt`` within an existing chat session."""
 
 
+ProviderClass = type[BaseCodingAgent]
+
+
+class ProviderRegistry:
+    """Registry for coding-agent provider classes.
+
+    Provider names are normalized to lowercase. Each provider has one canonical
+    name plus zero or more aliases. Registration is import-driven: importing a
+    module with a ``@register_provider(...)`` decorator mutates this registry
+    for the current Python process.
+    """
+
+    def __init__(self) -> None:
+        self._providers: dict[str, ProviderClass] = {}
+        self._canonical_names: dict[str, str] = {}
+
+    def _normalize_name(self, name: str) -> str:
+        if not isinstance(name, str):
+            raise TypeError(f"provider name must be a string, got {type(name).__name__}")
+        normalized = name.strip().lower()
+        if not normalized:
+            raise ValueError("provider name must not be empty")
+        if not _PROVIDER_NAME_PATTERN.fullmatch(normalized):
+            raise ValueError(
+                f"invalid provider name '{name}'; use lowercase letters, digits, hyphens, or underscores"
+            )
+        return normalized
+
+    def _normalize_names(self, canonical_name: str, aliases: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
+        canonical = self._normalize_name(canonical_name)
+        normalized_aliases = tuple(
+            dict.fromkeys(self._normalize_name(alias) for alias in aliases if alias != canonical_name)
+        )
+        return canonical, normalized_aliases
+
+    def _validate_provider_class(self, cls: type[Any]) -> ProviderClass:
+        if not inspect.isclass(cls):
+            raise TypeError(f"registered provider must be a class, got {type(cls).__name__}")
+        if not issubclass(cls, BaseCodingAgent):
+            raise TypeError(f"{cls.__name__} must inherit from BaseCodingAgent")
+        if inspect.isabstract(cls):
+            raise TypeError(f"{cls.__name__} must be concrete before registration")
+        return cls
+
+    def register(
+        self,
+        cls: type[Any],
+        *,
+        canonical_name: str,
+        aliases: tuple[str, ...] = (),
+        overwrite: bool = False,
+    ) -> ProviderClass:
+        provider_cls = self._validate_provider_class(cls)
+        canonical, normalized_aliases = self._normalize_names(canonical_name, aliases)
+        all_names = (canonical, *normalized_aliases)
+
+        collisions = [
+            name
+            for name in all_names
+            if name in self._providers and self._providers[name] is not provider_cls
+        ]
+        if collisions and not overwrite:
+            raise ValueError(
+                "provider name(s) already registered: "
+                + ", ".join(sorted(collisions))
+                + ". Pass overwrite=True to replace them."
+            )
+
+        for name in all_names:
+            self._providers[name] = provider_cls
+            self._canonical_names[name] = canonical
+
+        return provider_cls
+
+    def list_providers(self) -> list[str]:
+        """Return the sorted canonical provider names."""
+        return sorted(set(self._canonical_names.values()))
+
+    def get_provider_class(self, name: str) -> ProviderClass:
+        normalized = self._normalize_name(name)
+        provider_cls = self._providers.get(normalized)
+        if provider_cls is None:
+            raise ValueError(
+                f"Unknown coding agent provider '{name}'. Available providers: {self.list_providers()}"
+            )
+        return provider_cls
+
+    def get_canonical_name(self, name: str) -> str:
+        normalized = self._normalize_name(name)
+        canonical = self._canonical_names.get(normalized)
+        if canonical is None:
+            raise ValueError(
+                f"Unknown coding agent provider '{name}'. Available providers: {self.list_providers()}"
+            )
+        return canonical
+
+
+_PROVIDER_REGISTRY = ProviderRegistry()
+
+
+def register_provider(
+    canonical_name: str,
+    *extra_names: str,
+    aliases: tuple[str, ...] = (),
+    overwrite: bool = False,
+) -> Callable[[type[_T]], _T]:
+    """Decorator to register a coding agent provider.
+
+    Registration is import-driven: the decorated class becomes available only
+    after its defining module has been imported in the current process.
+
+    Args:
+        canonical_name: Stable provider id exposed by ``list_providers()``.
+        *extra_names: Backward-compatible positional aliases.
+        aliases: Additional aliases for the same provider.
+        overwrite: Whether to replace an existing registration for any name.
+    """
+
+    all_aliases = (*extra_names, *aliases)
+    _PROVIDER_REGISTRY._normalize_names(canonical_name, all_aliases)
+
+    def decorator(cls: type[_T]) -> _T:
+        return _PROVIDER_REGISTRY.register(
+            cls,
+            canonical_name=canonical_name,
+            aliases=all_aliases,
+            overwrite=overwrite,
+        )
+
+    return decorator
+
+
+def list_providers() -> list[str]:
+    """Return the sorted canonical provider names."""
+    return _PROVIDER_REGISTRY.list_providers()
+
+
+def get_provider_class(name: str) -> ProviderClass:
+    """Resolve *name* to a registered provider class."""
+    return _PROVIDER_REGISTRY.get_provider_class(name)
+
+
 class CodingAgent(BaseCodingAgent):
     """Concrete provider-routing coding agent.
 
@@ -132,8 +246,9 @@ class CodingAgent(BaseCodingAgent):
         sandbox: Any = False,
         **kwargs: Any,
     ):
-        self.provider = provider.lower()
-        provider_cls = _resolve_provider(self.provider)
+        requested_provider = _PROVIDER_REGISTRY.get_canonical_name(provider)
+        self.provider = requested_provider
+        provider_cls = get_provider_class(provider)
 
         candidate_kwargs: dict[str, Any] = dict(kwargs)
         if model is not None:

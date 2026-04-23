@@ -2,8 +2,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agentshim import BaseAgentSession, ClaudeCodeCodingAgent, CodingAgent
-from agentshim.base import BaseCodingAgent, register_provider
+from agentshim import (
+    BaseAgentSession,
+    ClaudeCodeCodingAgent,
+    CodingAgent,
+    get_provider_class,
+    list_providers,
+    register_provider,
+)
+from agentshim.base import BaseCodingAgent
 from agentshim.cli_agent import CLICodingAgent
 from agentshim.mcp_config import HttpMcpServer
 from agentshim.trajectory import NullTrajectoryRecorder
@@ -104,3 +111,66 @@ def test_register_provider_works_with_coding_agent():
     agent = CodingAgent(provider="dummy-facade-provider", model="dummy-model")
     assert isinstance(agent.backend, DummyAgent)
     assert agent.generate("hello") == "dummy:hello"
+
+
+def test_get_provider_class_resolves_aliases():
+    assert get_provider_class("claude") is ClaudeCodeCodingAgent
+    assert get_provider_class("claude-code") is ClaudeCodeCodingAgent
+    assert get_provider_class("anthropic") is ClaudeCodeCodingAgent
+
+
+def test_list_providers_returns_canonical_names():
+    providers = list_providers()
+    assert "claude" in providers
+    assert "codex" in providers
+    assert "gemini" in providers
+    assert "opencode" in providers
+    assert "claude-code" not in providers
+    assert "anthropic" not in providers
+
+
+def test_register_provider_rejects_invalid_names():
+    with pytest.raises(ValueError, match="invalid provider name"):
+        register_provider("not valid")
+
+
+def test_register_provider_rejects_non_agent_classes():
+    with pytest.raises(TypeError, match="must inherit from BaseCodingAgent"):
+        register_provider("not-an-agent")(object)
+
+
+def test_register_provider_rejects_abstract_classes():
+    class AbstractAgent(BaseCodingAgent):
+        pass
+
+    with pytest.raises(TypeError, match="must be concrete"):
+        register_provider("abstract-provider")(AbstractAgent)
+
+
+def test_register_provider_rejects_collisions():
+    @register_provider("collision-provider-1")
+    class FirstAgent(BaseCodingAgent):
+        def generate(self, prompt, cwd=None, timeout=300, silent=False):
+            return prompt
+
+    with pytest.raises(ValueError, match="already registered"):
+        @register_provider("collision-provider-1")
+        class SecondAgent(BaseCodingAgent):
+            def generate(self, prompt, cwd=None, timeout=300, silent=False):
+                return prompt
+
+    assert get_provider_class("collision-provider-1") is FirstAgent
+
+
+def test_register_provider_can_overwrite_existing_registration():
+    @register_provider("overwrite-provider")
+    class FirstAgent(BaseCodingAgent):
+        def generate(self, prompt, cwd=None, timeout=300, silent=False):
+            return f"first:{prompt}"
+
+    @register_provider("overwrite-provider", overwrite=True)
+    class SecondAgent(BaseCodingAgent):
+        def generate(self, prompt, cwd=None, timeout=300, silent=False):
+            return f"second:{prompt}"
+
+    assert get_provider_class("overwrite-provider") is SecondAgent

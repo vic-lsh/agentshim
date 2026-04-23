@@ -127,6 +127,43 @@ Notes:
 - `StdioMcpServer` is for subprocess-backed MCP servers.
 - Gemini and Opencode currently reject `mcp_servers`; use Claude Code or Codex if you need MCP.
 
+## Extending agentshim
+
+Advanced users can register their own providers.
+
+```python
+from agentshim import BaseCodingAgent, CodingAgent, register_provider
+
+
+@register_provider("my-agent", aliases=("my-agent-dev",))
+class MyAgent(BaseCodingAgent):
+    def __init__(
+        self,
+        model: str | None = None,
+        recorder=None,
+        event_handler=None,
+        mcp_servers=None,
+        sandbox=False,
+    ):
+        self.model = model
+        self.recorder = recorder
+        self.event_handler = event_handler
+
+    def generate(self, prompt: str, cwd=None, timeout=300, silent=False) -> str:
+        return f"handled: {prompt}"
+
+
+agent = CodingAgent(provider="my-agent-dev", model="demo")
+print(agent.generate("hello"))
+```
+
+Notes:
+
+- Registration is import-driven. Your provider is available only after the module defining it has been imported in the current Python process.
+- `list_providers()` returns canonical provider names only. Aliases resolve via `get_provider_class(...)` and `CodingAgent(provider=...)`.
+- `register_provider(...)` rejects invalid names, abstract classes, and accidental name collisions unless you pass `overwrite=True`.
+- If you want `CodingAgent(...)` to instantiate your provider, its constructor should accept the shared kwargs `model`, `recorder`, `event_handler`, `mcp_servers`, and `sandbox` as needed.
+
 ## Development
 
 ```bash

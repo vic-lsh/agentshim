@@ -13,7 +13,7 @@ from loguru import logger
 
 from agentshim.trajectory import NullTrajectoryRecorder, TrajectoryRecorderProtocol
 
-from .base import BaseCodingAgent
+from .base import BaseAgentSession, BaseCodingAgent
 from .events import AgentEventHandler
 from .mcp_config import McpServerConfig
 from .usage import ProviderUsage
@@ -350,7 +350,7 @@ class CLICodingAgent(BaseCodingAgent):
         )
 
 
-class CLIAgentSession:
+class CLIAgentSession(BaseAgentSession):
     """Stateful, resumable conversation with a CLI agent.
 
     Holds the provider session id captured from the first ``generate`` call

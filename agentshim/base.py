@@ -1,6 +1,7 @@
 import inspect
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any, TypeVar
 
 from agentshim.trajectory import NullTrajectoryRecorder, TrajectoryRecorderProtocol
@@ -70,7 +71,7 @@ class BaseCodingAgent(ABC):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-    ) -> Any:
+    ) -> "BaseAgentSession":
         """Open a stateful session if supported by the backend."""
         raise NotImplementedError(f"{self.__class__.__name__} does not support start_session()")
 
@@ -95,6 +96,23 @@ class BaseCodingAgent(ABC):
         Returns:
             Generated text.
         """
+
+
+class BaseAgentSession(ABC):
+    """Abstract base class for stateful coding-agent sessions."""
+
+    session_id: str | None = None
+
+    @abstractmethod
+    def generate(
+        self,
+        prompt: str,
+        cwd: str | None = None,
+        timeout: int | None = None,
+        silent: bool | None = None,
+        on_process_started: Callable[[Any], None] | None = None,
+    ) -> str:
+        """Send ``prompt`` within an existing chat session."""
 
 
 class CodingAgent(BaseCodingAgent):
@@ -191,7 +209,7 @@ class CodingAgent(BaseCodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-    ) -> Any:
+    ) -> BaseAgentSession:
         return self._backend.start_session(cwd=cwd, timeout=timeout, silent=silent)
 
     def generate(

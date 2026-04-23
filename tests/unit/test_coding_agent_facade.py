@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agentshim import ClaudeCodeCodingAgent, CodingAgent
+from agentshim import BaseAgentSession, ClaudeCodeCodingAgent, CodingAgent
 from agentshim.base import BaseCodingAgent, register_provider
 from agentshim.cli_agent import CLICodingAgent
 from agentshim.mcp_config import HttpMcpServer
@@ -31,6 +31,12 @@ def test_coding_agent_delegates_start_session(mock_binaries):
     agent.backend.start_session = MagicMock(return_value=expected)  # type: ignore[method-assign]
     assert agent.start_session(cwd="/tmp", timeout=12, silent=True) is expected
     agent.backend.start_session.assert_called_once_with(cwd="/tmp", timeout=12, silent=True)  # type: ignore[attr-defined]
+
+
+def test_coding_agent_start_session_returns_portable_session_type(mock_binaries):
+    agent = CodingAgent(provider="claude", model="test-model")
+    session = agent.start_session()
+    assert isinstance(session, BaseAgentSession)
 
 
 def test_coding_agent_delegates_generate(mock_binaries):

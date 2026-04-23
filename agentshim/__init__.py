@@ -1,4 +1,4 @@
-from .base import BaseCodingAgent, CodingAgent
+from .base import BaseAgentSession, BaseCodingAgent, CodingAgent
 from .claude import ClaudeCodeCodingAgent
 from .codex import CodexCodingAgent
 from .gemini import GeminiCodingAgent
@@ -10,6 +10,7 @@ from .subagent import call_subagent, litellm_call_with_retry
 
 __all__ = [
     "BaseCodingAgent",
+    "BaseAgentSession",
     "CodingAgent",
     "CodexCodingAgent",
     "GeminiCodingAgent",

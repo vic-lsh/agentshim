@@ -7,6 +7,11 @@ from agentshim.claude.events import (
     ToolResultEvent,
     ToolUseEvent,
 )
+from agentshim.copilot.events import CopilotEvent, MessageDeltaEvent as CopilotMessageDeltaEvent
+from agentshim.copilot.events import MessageEvent as CopilotMessageEvent
+from agentshim.copilot.events import ResultEvent as CopilotResultEvent
+from agentshim.copilot.events import ToolResultEvent as CopilotToolResultEvent
+from agentshim.copilot.events import ToolUseEvent as CopilotToolUseEvent
 
 
 class TestClaudeEventFromDict:
@@ -214,6 +219,66 @@ class TestEventRendering:
     def test_multi_event_renders_none(self):
         event = MultiEvent([TextEvent("a")])
         assert event.render("[P]") is None
+
+
+class TestCopilotEventFromDict:
+    def test_assistant_message_event(self):
+        event = CopilotEvent.from_dict(
+            {"type": "assistant.message", "data": {"messageId": "m1", "content": "Hello", "outputTokens": 5}}
+        )
+        assert isinstance(event, CopilotMessageEvent)
+        assert event.message_id == "m1"
+        assert event.content == "Hello"
+        assert event.output_tokens == 5
+
+    def test_assistant_message_delta_event(self):
+        event = CopilotEvent.from_dict(
+            {"type": "assistant.message_delta", "ephemeral": True, "data": {"messageId": "m1", "deltaContent": "Hi"}}
+        )
+        assert isinstance(event, CopilotMessageDeltaEvent)
+        assert event.message_id == "m1"
+        assert event.delta_content == "Hi"
+
+    def test_tool_execution_start_event(self):
+        event = CopilotEvent.from_dict(
+            {
+                "type": "tool.execution_start",
+                "data": {"toolCallId": "t1", "toolName": "shell", "arguments": {"command": "ls"}},
+            }
+        )
+        assert isinstance(event, CopilotToolUseEvent)
+        assert event.tool_id == "t1"
+        assert event.tool_name == "shell"
+        assert event.arguments == {"command": "ls"}
+
+    def test_tool_execution_complete_uses_detailed_content_and_exit_code(self):
+        event = CopilotEvent.from_dict(
+            {
+                "type": "tool.execution_complete",
+                "data": {
+                    "toolCallId": "t1",
+                    "success": True,
+                    "result": {
+                        "content": "short",
+                        "detailedContent": "full output",
+                        "contents": [{"type": "terminal", "text": "full output", "exitCode": 7}],
+                    },
+                },
+            }
+        )
+        assert isinstance(event, CopilotToolResultEvent)
+        assert event.tool_id == "t1"
+        assert event.output == "full output"
+        assert event.exit_code == 7
+
+    def test_result_event(self):
+        event = CopilotEvent.from_dict({"type": "result", "sessionId": "sid-1", "exitCode": 0, "usage": {}})
+        assert isinstance(event, CopilotResultEvent)
+        assert event.session_id == "sid-1"
+        assert event.exit_code == 0
+
+    def test_unknown_event_returns_none(self):
+        assert CopilotEvent.from_dict({"type": "session.tools_updated", "data": {"model": "gpt-4.1"}}) is None
 
 
 class TestCodexEventFromDict:

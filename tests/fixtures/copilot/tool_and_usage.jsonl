@@ -1,0 +1,6 @@
+{"type":"tool.execution_start","data":{"toolCallId":"tool-1","toolName":"shell","arguments":{"command":"printf ok"}}}
+{"type":"tool.execution_complete","data":{"toolCallId":"tool-1","success":true,"result":{"content":"ok","detailedContent":"ok\nfull","contents":[{"type":"terminal","text":"ok","exitCode":0,"cwd":"/tmp"}]}}}
+{"type":"assistant.message","data":{"messageId":"msg-1","content":"done","outputTokens":7}}
+{"type":"assistant.usage","ephemeral":true,"data":{"model":"gpt-5.4","inputTokens":100,"outputTokens":20,"cacheReadTokens":10,"cacheWriteTokens":5,"reasoningTokens":4}}
+{"type":"assistant.turn_end","data":{"turnId":"0"}}
+{"type":"result","sessionId":"fixture-session","exitCode":0,"usage":{"premiumRequests":0}}

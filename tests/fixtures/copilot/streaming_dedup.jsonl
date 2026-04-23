@@ -1,0 +1,5 @@
+{"type":"assistant.message_delta","ephemeral":true,"data":{"messageId":"msg-1","deltaContent":"Hel"}}
+{"type":"assistant.message_delta","ephemeral":true,"data":{"messageId":"msg-1","deltaContent":"lo"}}
+{"type":"assistant.message","data":{"messageId":"msg-1","content":"Hello","outputTokens":5}}
+{"type":"assistant.turn_end","data":{"turnId":"0"}}
+{"type":"result","sessionId":"stream-session","exitCode":0,"usage":{"premiumRequests":0}}

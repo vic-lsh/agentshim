@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from agentshim.claude import ClaudeGenerationSession
 from agentshim.claude_events import ResultEvent as ClaudeResultEvent
+from agentshim.copilot import CopilotGenerationSession
+from agentshim.copilot_events import TurnEndEvent as CopilotTurnEndEvent
+from agentshim.copilot_events import UsageEvent as CopilotUsageEvent
 from agentshim.codex import CodexGenerationSession
 from agentshim.codex_events import TurnCompletedEvent
 from agentshim.gemini import GeminiGenerationSession
@@ -123,6 +126,40 @@ class TestOpencodeSessionUsage:
         assert session.usage.tokens.turns == 2
         # Cost accumulates across steps.
         assert session.usage.total_cost_usd == 0.03
+
+
+class TestCopilotSessionUsage:
+    def test_usage_events_accumulate_and_turn_end_updates_turns(self):
+        session = _make_session(CopilotGenerationSession)
+        session._handle_event(
+            CopilotUsageEvent(
+                model="gpt-5.4",
+                input_tokens=100,
+                output_tokens=20,
+                cache_read_tokens=10,
+                cache_write_tokens=5,
+                reasoning_tokens=3,
+            )
+        )
+        session._handle_event(CopilotTurnEndEvent(turn_id="1"))
+        session._handle_event(
+            CopilotUsageEvent(
+                model="gpt-5.4",
+                input_tokens=50,
+                output_tokens=10,
+                cache_read_tokens=0,
+                cache_write_tokens=0,
+                reasoning_tokens=2,
+            )
+        )
+        session._handle_event(CopilotTurnEndEvent(turn_id="2"))
+
+        assert session.usage.provider == "copilot"
+        assert session.usage.tokens.input_tokens == 165
+        assert session.usage.tokens.cached_input_tokens == 15
+        assert session.usage.tokens.output_tokens == 35
+        assert session.usage.tokens.turns == 2
+        assert session.usage.total_cost_usd is None
 
 
 class TestGeminiSessionUsage:

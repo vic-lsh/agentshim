@@ -1,7 +1,7 @@
 import json
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from agentshim.trajectory import TrajectoryRecorderProtocol
@@ -46,13 +46,8 @@ class CodexGenerationSession(CLIGenerationSession):
         except json.JSONDecodeError:
             stripped = line.rstrip()
             self.stdout_lines.append(stripped)
-            if self.event_handler and stripped:
+            if stripped:
                 self.event_handler.on_thinking(stripped)
-            elif not self.silent:
-                if self._at_line_start:
-                    self._log_raw(f"{self.log_prefix} ")
-                self._log_raw(stripped + "\n")
-                self._at_line_start = True
             return
 
         event = CodexEvent.from_dict(data)
@@ -66,8 +61,6 @@ class CodexGenerationSession(CLIGenerationSession):
 
     def _handle_event(self, event: CodexEvent):
         self._update_state(event)
-        if not self.silent:
-            self._render_event(event)
 
     def _update_state(self, event: CodexEvent):
         if isinstance(event, ThreadStartedEvent):
@@ -170,30 +163,16 @@ class CodexGenerationSession(CLIGenerationSession):
                 )
             return
 
-    def _render_event(self, event: CodexEvent):
-        if isinstance(event, TextEvent):
-            if event.text:
-                self._print_stream_content(event.text)
-            return
-
-        if not self._at_line_start:
-            self._log_raw("\n")
-            self._at_line_start = True
-
-        output = event.render(self.log_prefix)
-        if output:
-            self._log_raw(output + "\n")
-
         if isinstance(event, ErrorEvent):
             self.stdout_lines.append(event.message)
+            if event.message:
+                self.event_handler.on_thinking(f"[codex error] {event.message}")
 
     def _process_stderr(self, line: str) -> None:
         line_stripped = line.rstrip("\n")
         self.stderr_lines.append(line)
-        if self.event_handler and line_stripped:
+        if line_stripped:
             self.event_handler.on_thinking(f"[codex stderr] {line_stripped}")
-        elif not self.silent:
-            self.logger.bind(stderr=True).info(f"[STDERR] {line_stripped}")
 
     def run(self, prompt: str) -> str:
         started = time.monotonic()
@@ -215,6 +194,7 @@ class CodexCodingAgent(CLICodingAgent):
         model: str | None = None,
         recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
+        event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: list[McpServerConfig] | None = None,
         sandbox: bool | SandboxConfig = False,
     ):
@@ -229,7 +209,7 @@ class CodexCodingAgent(CLICodingAgent):
         """
         if sandbox:
             raise NotImplementedError("sandbox is not supported for CodexCodingAgent")
-        super().__init__("codex", model, recorder, event_handler, mcp_servers)
+        super().__init__("codex", model, recorder, event_handler, event_handlers, mcp_servers)
 
     @property
     def codex_path(self) -> str:

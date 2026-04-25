@@ -6,7 +6,7 @@ import subprocess
 import sys
 import threading
 from abc import abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from loguru import logger
@@ -14,7 +14,7 @@ from loguru import logger
 from agentshim.trajectory import NullTrajectoryRecorder, TrajectoryRecorderProtocol
 
 from .base import BaseAgentSession, BaseCodingAgent
-from .events import AgentEventHandler
+from .events import AgentEventHandler, compose_event_handlers, default_event_handler
 from .mcp_config import McpServerConfig
 from .usage import ProviderUsage
 from .utils import get_interactive_env
@@ -46,13 +46,17 @@ class CLIGenerationSession:
         self.timeout = timeout
         self.silent = silent
         self.recorder = recorder or NullTrajectoryRecorder()
-        self.event_handler = event_handler
+        self.event_handler = default_event_handler(
+            event_handler=event_handler,
+            silent=silent,
+            logger=logger,
+            log_prefix=log_prefix,
+        )
         self.on_process_started = on_process_started
 
         # State initialization
         self.stdout_lines: list[str] = []
         self.stderr_lines: list[str] = []
-        self._at_line_start = True
         # Providers populate this during event handling; stays at the
         # empty default if the session crashes before any terminal event.
         self.usage: ProviderUsage = ProviderUsage()
@@ -66,57 +70,28 @@ class CLIGenerationSession:
         # an id during this run.
         self.session_id: str | None = None
 
-    def _log_raw(self, message: str) -> None:
-        """Log a raw message directly to output if not silent."""
-        if not self.silent:
-            self.logger.opt(raw=True).info(message)
-
     def _process_stdout(self, line: str) -> None:
         """Process a line from stdout."""
         line_stripped = line.rstrip("\n")
-        if not self.silent:
-            self.logger.info(line_stripped)
 
         if self.event_handler and line_stripped:
             self.event_handler.on_thinking(line_stripped + "\n")
 
         self.stdout_lines.append(line)
 
-    def _print_stream_content(self, content: str):
-        """Print streaming content with prefix handling."""
-        if not content:
-            return
-
-        lines = content.split("\n")
-
-        for i, line in enumerate(lines):
-            is_last = i == len(lines) - 1
-
-            if is_last:
-                if line:
-                    if self._at_line_start:
-                        self._log_raw(f"{self.log_prefix} ")
-                        self._at_line_start = False
-                    self._log_raw(line)
-            else:
-                if self._at_line_start:
-                    self._log_raw(f"{self.log_prefix} ")
-                self._log_raw(line)
-                self._log_raw("\n")
-                self._at_line_start = True
-
     def _process_stderr(self, line: str) -> None:
         """Process a line from stderr."""
         line_stripped = line.rstrip("\n")
-        if not self.silent:
-            self.logger.bind(stderr=True).info(f"[STDERR] {line_stripped}")
+        on_stderr = getattr(self.event_handler, "on_stderr", None)
+        if on_stderr is not None and line_stripped:
+            on_stderr(line)
         self.stderr_lines.append(line)
 
     def run(self, prompt: str) -> str:
         """Execute the generation process."""
-        if not self.silent:
-            self.logger.info(f"Running command: {' '.join(self.cmd)}")
-            self._log_raw("=" * 80 + "\n")
+        on_run_start = getattr(self.event_handler, "on_run_start", None)
+        if on_run_start is not None:
+            on_run_start(self.cmd)
             sys.stdout.flush()
 
         def read_stdout(pipe: io.TextIOWrapper) -> None:
@@ -190,7 +165,9 @@ class CLIGenerationSession:
         stdout_data = "".join(self.stdout_lines)
         stderr_data = "".join(self.stderr_lines)
 
-        self._log_raw("=" * 80 + "\n")
+        on_run_end = getattr(self.event_handler, "on_run_end", None)
+        if on_run_end is not None:
+            on_run_end(process.returncode)
 
         if process.returncode != 0:
             raise RuntimeError(f"{self.binary_name} exited with code {process.returncode}: {stderr_data}")
@@ -209,6 +186,7 @@ class CLICodingAgent(BaseCodingAgent):
         model: str | None = None,
         recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
+        event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: list[McpServerConfig] | None = None,
     ):
         """Initialize the CLI coding agent.
@@ -218,6 +196,7 @@ class CLICodingAgent(BaseCodingAgent):
             model: Optional model name to use.
             recorder: Trajectory recorder instance.
             event_handler: Optional event handler for UI updates.
+            event_handlers: Optional event handlers to compose in order.
             mcp_servers: Optional list of MCP server configurations.
 
         Raises:
@@ -227,7 +206,7 @@ class CLICodingAgent(BaseCodingAgent):
         self.binary_name = binary_name
         self.model = model
         self.recorder: TrajectoryRecorderProtocol = recorder or NullTrajectoryRecorder()
-        self.event_handler = event_handler
+        self.event_handler = compose_event_handlers(event_handler, event_handlers)
         self.mcp_servers: list[McpServerConfig] = mcp_servers or []
 
         # Search for binary in the captured environment's PATH

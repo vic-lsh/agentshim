@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from agentshim.trajectory import TrajectoryRecorderProtocol
@@ -17,7 +17,6 @@ from ..usage import ProviderUsage, TokenUsage
 from .events import (
     CopilotEvent,
     ErrorEvent,
-    IntentEvent,
     MessageDeltaEvent,
     MessageEvent,
     ResultEvent,
@@ -67,11 +66,9 @@ class CopilotGenerationSession(CLIGenerationSession):
             data = json.loads(line)
         except json.JSONDecodeError:
             self.stdout_lines.append(line.rstrip())
-            if not self.silent:
-                if self._at_line_start:
-                    self._log_raw(f"{self.log_prefix} ")
-                self._log_raw(line.rstrip() + "\n")
-                self._at_line_start = True
+            stripped = line.rstrip()
+            if stripped:
+                self.event_handler.on_thinking(stripped + "\n")
             return
 
         if not isinstance(data, dict):
@@ -84,8 +81,6 @@ class CopilotGenerationSession(CLIGenerationSession):
 
     def _handle_event(self, event: CopilotEvent) -> None:
         self._update_state(event)
-        if not self.silent:
-            self._render_event(event)
 
     def _update_state(self, event: CopilotEvent) -> None:
         if isinstance(event, SessionStartEvent):
@@ -172,30 +167,7 @@ class CopilotGenerationSession(CLIGenerationSession):
         if isinstance(event, ErrorEvent):
             if event.message:
                 self.stdout_lines.append(event.message)
-
-    def _render_event(self, event: CopilotEvent) -> None:
-        if isinstance(event, MessageDeltaEvent):
-            if event.delta_content:
-                self._print_stream_content(event.delta_content)
-            return
-
-        if isinstance(event, MessageEvent):
-            if event.message_id and event.message_id in self._seen_message_deltas:
-                return
-            if event.content:
-                self._print_stream_content(event.content)
-            return
-
-        if not self._at_line_start:
-            self._log_raw("\n")
-            self._at_line_start = True
-
-        if isinstance(event, IntentEvent):
-            output = event.render(self.log_prefix)
-        else:
-            output = event.render(self.log_prefix)
-        if output:
-            self._log_raw(output + "\n")
+                self.event_handler.on_thinking(f"[copilot error] {event.message}")
 
     def run(self, prompt: str) -> str:
         super().run(prompt)
@@ -215,12 +187,13 @@ class CopilotCodingAgent(CLICodingAgent):
         model: str | None = None,
         recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
+        event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: list[McpServerConfig] | None = None,
         sandbox: bool | SandboxConfig = False,
     ):
         if sandbox:
             raise NotImplementedError("sandbox is not supported for CopilotCodingAgent")
-        super().__init__("copilot", model, recorder, event_handler, mcp_servers)
+        super().__init__("copilot", model, recorder, event_handler, event_handlers, mcp_servers)
 
     @property
     def copilot_path(self) -> str:

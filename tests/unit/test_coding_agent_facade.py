@@ -6,6 +6,7 @@ from agentshim import (
     BaseAgentSession,
     ClaudeCodeCodingAgent,
     CodingAgent,
+    CompositeEventHandler,
     get_provider_class,
     list_providers,
     register_provider,
@@ -85,6 +86,15 @@ def test_coding_agent_passes_supported_optional_args(mock_binaries):
     )
     assert agent.backend.mcp_servers == servers
     assert agent.backend.sandbox is not None
+
+
+def test_coding_agent_passes_composable_event_handlers(mock_binaries):
+    first = MagicMock()
+    second = MagicMock()
+    agent = CodingAgent(provider="claude", event_handlers=[first, second])
+
+    assert isinstance(agent.backend.event_handler, CompositeEventHandler)
+    assert agent.backend.event_handler.handlers == [first, second]
 
 
 def test_coding_agent_rejects_unknown_provider():
@@ -193,6 +203,7 @@ def test_register_provider_rejects_collisions():
             return prompt
 
     with pytest.raises(ValueError, match="already registered"):
+
         @register_provider("collision-provider-1")
         class SecondAgent(BaseCodingAgent):
             def generate(self, prompt, cwd=None, timeout=300, silent=False):

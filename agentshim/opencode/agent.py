@@ -1,6 +1,6 @@
 import json
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from agentshim.trajectory import TrajectoryRecorderProtocol
@@ -44,11 +44,9 @@ class OpencodeGenerationSession(CLIGenerationSession):
             if event:
                 self._handle_event(event)
         except json.JSONDecodeError:
-            if not self.silent:
-                if self._at_line_start:
-                    self._log_raw(f"{self.log_prefix} ")
-                self._log_raw(line.rstrip() + "\n")
-                self._at_line_start = True
+            stripped = line.rstrip()
+            if stripped:
+                self.event_handler.on_thinking(stripped + "\n")
 
     def _handle_event(self, event: OpencodeEvent):
         """Handle a single parsed Opencode event."""
@@ -78,9 +76,6 @@ class OpencodeGenerationSession(CLIGenerationSession):
                         stdout=stdout,
                     )
 
-        if not self.silent:
-            self._render_event(event)
-
     def _update_usage_from_step(self, event: StepFinishEvent) -> None:
         """Fold a step_finish payload into the running usage totals."""
         tokens: dict[str, Any] = event.tokens or {}
@@ -104,20 +99,6 @@ class OpencodeGenerationSession(CLIGenerationSession):
             provider="opencode",
         )
 
-    def _render_event(self, event: OpencodeEvent):
-        """Render the event to stdout."""
-        if isinstance(event, TextEvent):
-            self._print_stream_content(event.text)
-            return
-
-        if not self._at_line_start:
-            self._log_raw("\n")
-            self._at_line_start = True
-
-        output = event.render(self.log_prefix)
-        if output:
-            self._log_raw(output + "\n")
-
 
 @register_provider("opencode")
 class OpencodeCodingAgent(CLICodingAgent):
@@ -128,6 +109,7 @@ class OpencodeCodingAgent(CLICodingAgent):
         model: str | None = None,
         recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
+        event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: list[object] | None = None,
         sandbox: bool | SandboxConfig = False,
     ):
@@ -150,7 +132,7 @@ class OpencodeCodingAgent(CLICodingAgent):
             raise NotImplementedError("sandbox is not supported for OpencodeCodingAgent")
         if not model:
             model = OPENCODE_DEFAULT_MODEL
-        super().__init__("opencode", model, recorder, event_handler)
+        super().__init__("opencode", model, recorder, event_handler, event_handlers)
 
     @property
     def _log_prefix(self) -> str:

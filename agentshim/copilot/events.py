@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from typing import Any, cast
-
-from ..utils import truncate_content, truncate_tool_params
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -46,12 +43,8 @@ def _extract_tool_result(result_raw: Any) -> tuple[str, int | None]:
     return output, exit_code
 
 
-class CopilotEvent(ABC):
+class CopilotEvent:
     """Base class for Copilot CLI JSONL events."""
-
-    @abstractmethod
-    def render(self, log_prefix: str) -> str | None:
-        """Render the event as a string for terminal output."""
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> CopilotEvent | None:
@@ -153,18 +146,12 @@ class SessionStartEvent(CopilotEvent):
     def __init__(self, session_id: str | None):
         self.session_id = session_id
 
-    def render(self, log_prefix: str) -> str | None:
-        return None
-
 
 class IntentEvent(CopilotEvent):
     """Ephemeral agent intent update."""
 
     def __init__(self, intent: str):
         self.intent = intent
-
-    def render(self, log_prefix: str) -> str:
-        return f"{log_prefix} \033[36m[Intent] {self.intent}\033[0m"
 
 
 class MessageEvent(CopilotEvent):
@@ -175,9 +162,6 @@ class MessageEvent(CopilotEvent):
         self.content = content
         self.output_tokens = output_tokens
 
-    def render(self, log_prefix: str) -> str | None:
-        return self.content
-
 
 class MessageDeltaEvent(CopilotEvent):
     """Streaming assistant message delta."""
@@ -186,18 +170,12 @@ class MessageDeltaEvent(CopilotEvent):
         self.message_id = message_id
         self.delta_content = delta_content
 
-    def render(self, log_prefix: str) -> str | None:
-        return self.delta_content
-
 
 class TurnEndEvent(CopilotEvent):
     """Turn completion marker."""
 
     def __init__(self, turn_id: str | None):
         self.turn_id = turn_id
-
-    def render(self, log_prefix: str) -> str | None:
-        return None
 
 
 class UsageEvent(CopilotEvent):
@@ -219,9 +197,6 @@ class UsageEvent(CopilotEvent):
         self.cache_write_tokens = cache_write_tokens
         self.reasoning_tokens = reasoning_tokens
 
-    def render(self, log_prefix: str) -> str | None:
-        return None
-
 
 class ToolUseEvent(CopilotEvent):
     """Tool execution start event."""
@@ -230,10 +205,6 @@ class ToolUseEvent(CopilotEvent):
         self.tool_id = tool_id
         self.tool_name = tool_name
         self.arguments = arguments
-
-    def render(self, log_prefix: str) -> str:
-        truncated = truncate_tool_params(self.tool_name, self.arguments)
-        return f"{log_prefix} \033[34m[Tool Use] {self.tool_name} {truncated}\033[0m"
 
 
 class ToolResultEvent(CopilotEvent):
@@ -254,16 +225,6 @@ class ToolResultEvent(CopilotEvent):
         self.exit_code = exit_code
         self.tool_name_resolved: str = "Tool"
 
-    def render(self, log_prefix: str) -> str:
-        if self.output:
-            truncated = truncate_content(self.output)
-            return f"{log_prefix} \033[32m[Tool Result] {truncated}\033[0m"
-        if self.error_message:
-            return f"{log_prefix} \033[31m[Tool Error] {self.error_message}\033[0m"
-        if self.success:
-            return f"{log_prefix} \033[32m{self.tool_name_resolved} ran successfully\033[0m"
-        return f"{log_prefix} \033[31m[Tool Error] {self.tool_name_resolved} failed\033[0m"
-
 
 class ErrorEvent(CopilotEvent):
     """Session-level error event."""
@@ -271,10 +232,6 @@ class ErrorEvent(CopilotEvent):
     def __init__(self, message: str, error_type: str | None = None):
         self.message = message
         self.error_type = error_type
-
-    def render(self, log_prefix: str) -> str:
-        label = f"{self.error_type}: " if self.error_type else ""
-        return f"{log_prefix} \033[31m[Error] {label}{self.message}\033[0m"
 
 
 class ResultEvent(CopilotEvent):
@@ -284,6 +241,3 @@ class ResultEvent(CopilotEvent):
         self.session_id = session_id
         self.exit_code = exit_code
         self.usage = usage or {}
-
-    def render(self, log_prefix: str) -> str | None:
-        return None

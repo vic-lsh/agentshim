@@ -119,26 +119,38 @@ class TestCopilotGenerationSession:
 
     def test_process_stdout_parses_session_start(self):
         session = self._make_session()
-        session._process_stdout('{"type":"session.start","data":{"sessionId":"sid-1","version":1,"producer":"copilot-agent","copilotVersion":"1.0.34","startTime":"2026-01-01T00:00:00Z"}}\n')
+        session._process_stdout(
+            '{"type":"session.start","data":{"sessionId":"sid-1","version":1,"producer":"copilot-agent","copilotVersion":"1.0.34","startTime":"2026-01-01T00:00:00Z"}}\n'
+        )
         assert session.session_id == "sid-1"
 
     def test_process_stdout_parses_message(self):
         session = self._make_session()
-        session._process_stdout('{"type":"assistant.message","data":{"messageId":"msg-1","content":"hello","outputTokens":5}}\n')
+        session._process_stdout(
+            '{"type":"assistant.message","data":{"messageId":"msg-1","content":"hello","outputTokens":5}}\n'
+        )
         assert session.final_result == "hello"
         assert "hello" in session.stdout_lines
         assert session.usage.tokens.output_tokens == 5
 
     def test_process_stdout_parses_message_delta(self):
         session = self._make_session()
-        session._process_stdout('{"type":"assistant.message_delta","ephemeral":true,"data":{"messageId":"msg-1","deltaContent":"hel"}}\n')
-        session._process_stdout('{"type":"assistant.message_delta","ephemeral":true,"data":{"messageId":"msg-1","deltaContent":"lo"}}\n')
+        session._process_stdout(
+            '{"type":"assistant.message_delta","ephemeral":true,"data":{"messageId":"msg-1","deltaContent":"hel"}}\n'
+        )
+        session._process_stdout(
+            '{"type":"assistant.message_delta","ephemeral":true,"data":{"messageId":"msg-1","deltaContent":"lo"}}\n'
+        )
         assert "".join(session._streamed_text_chunks) == "hello"
 
     def test_process_stdout_parses_tool_lifecycle(self):
         session = self._make_session()
-        session._process_stdout('{"type":"tool.execution_start","data":{"toolCallId":"t1","toolName":"shell","arguments":{"command":"ls"}}}\n')
-        session._process_stdout('{"type":"tool.execution_complete","data":{"toolCallId":"t1","success":true,"result":{"content":"ok","contents":[{"type":"terminal","text":"ok","exitCode":0}]}}}\n')
+        session._process_stdout(
+            '{"type":"tool.execution_start","data":{"toolCallId":"t1","toolName":"shell","arguments":{"command":"ls"}}}\n'
+        )
+        session._process_stdout(
+            '{"type":"tool.execution_complete","data":{"toolCallId":"t1","success":true,"result":{"content":"ok","contents":[{"type":"terminal","text":"ok","exitCode":0}]}}}\n'
+        )
         assert session.tool_map["t1"] == "shell"
 
     def test_process_stdout_parses_result_event_session_id(self):
@@ -154,13 +166,17 @@ class TestCopilotGenerationSession:
     def test_event_handler_on_thinking_called_for_delta(self):
         handler = MagicMock()
         session = self._make_session(event_handler=handler)
-        session._process_stdout('{"type":"assistant.message_delta","ephemeral":true,"data":{"messageId":"msg-1","deltaContent":"thinking"}}\n')
+        session._process_stdout(
+            '{"type":"assistant.message_delta","ephemeral":true,"data":{"messageId":"msg-1","deltaContent":"thinking"}}\n'
+        )
         handler.on_thinking.assert_called_once_with("thinking")
 
     def test_event_handler_on_tool_call_called(self):
         handler = MagicMock()
         session = self._make_session(event_handler=handler)
-        session._process_stdout('{"type":"tool.execution_start","data":{"toolCallId":"t1","toolName":"read","arguments":{"path":"/tmp"}}}\n')
+        session._process_stdout(
+            '{"type":"tool.execution_start","data":{"toolCallId":"t1","toolName":"read","arguments":{"path":"/tmp"}}}\n'
+        )
         handler.on_tool_call.assert_called_once_with("read", {"path": "/tmp"})
 
     def test_create_session_returns_copilot_session(self, agent):

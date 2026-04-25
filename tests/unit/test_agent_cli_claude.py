@@ -197,10 +197,7 @@ class TestClaudeGenerationSession:
     def test_assistant_without_usage_does_not_call_on_usage(self):
         handler = MagicMock()
         session = self._make_session(event_handler=handler)
-        line = (
-            '{"type":"assistant","message":{"content":'
-            '[{"type":"text","text":"ok"}]}}\n'
-        )
+        line = '{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]}}\n'
         session._process_stdout(line)
         handler.on_usage.assert_not_called()
 

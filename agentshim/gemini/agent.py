@@ -2,7 +2,7 @@ import json
 import logging
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -62,10 +62,6 @@ class GeminiGenerationSession(CLIGenerationSession):
     def run(self, prompt: str) -> str:
         """Execute the generation process, writing call metadata first."""
         self._write_call_metadata()
-
-        if not self.silent:
-            self._log_raw(f"{self.log_prefix} Input Prompt:\n{prompt}\n")
-
         return super().run(prompt)
 
     def _process_stdout(self, line: str) -> None:
@@ -78,18 +74,13 @@ class GeminiGenerationSession(CLIGenerationSession):
             if event:
                 self._handle_event(event)
         except json.JSONDecodeError:
-            if not self.silent:
-                if self._at_line_start:
-                    self._log_raw(f"{self.log_prefix} ")
-                self._log_raw(line.rstrip() + "\n")
-                self._at_line_start = True
+            stripped = line.rstrip()
+            if stripped:
+                self.event_handler.on_thinking(stripped + "\n")
 
     def _handle_event(self, event: GeminiEvent):
         """Handle a single parsed Gemini event."""
         self._update_state(event)
-
-        if not self.silent:
-            self._render_event(event)
 
     def _update_state(self, event: GeminiEvent):
         """Update internal state based on the event."""
@@ -114,8 +105,8 @@ class GeminiGenerationSession(CLIGenerationSession):
                 self.tool_map[event.tool_id] = event.tool_name
                 self.tool_start_times[event.tool_id] = time.time()
                 self.tool_args[event.tool_id] = event.parameters
-                if self.event_handler:
-                    self.event_handler.on_tool_call(event.tool_name, event.parameters)
+            if self.event_handler:
+                self.event_handler.on_tool_call(event.tool_name, event.parameters)
 
         elif isinstance(event, ToolResultEvent) and event.tool_id:
             event.tool_name_resolved = self.tool_map.get(event.tool_id, "Tool")
@@ -138,21 +129,6 @@ class GeminiGenerationSession(CLIGenerationSession):
                     duration=duration,
                 )
 
-    def _render_event(self, event: GeminiEvent):
-        """Render the event to stdout."""
-        if isinstance(event, MessageEvent):
-            if event.role == "assistant":
-                self._print_stream_content(event.content)
-            return
-
-        if not self._at_line_start:
-            self._log_raw("\n")
-            self._at_line_start = True
-
-        output = event.render(self.log_prefix)
-        if output:
-            self._log_raw(output + "\n")
-
 
 @register_provider("gemini")
 class GeminiCodingAgent(CLICodingAgent):
@@ -163,6 +139,7 @@ class GeminiCodingAgent(CLICodingAgent):
         model: str | None = None,
         recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
+        event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: list[object] | None = None,
         sandbox: bool | SandboxConfig = False,
     ):
@@ -183,7 +160,7 @@ class GeminiCodingAgent(CLICodingAgent):
             raise ValueError("GeminiCodingAgent does not support programmatic MCP server configuration via CLI flags")
         if sandbox:
             raise NotImplementedError("sandbox is not supported for GeminiCodingAgent")
-        super().__init__("gemini", model, recorder, event_handler)
+        super().__init__("gemini", model, recorder, event_handler, event_handlers)
 
     @property
     def gemini_path(self) -> str:

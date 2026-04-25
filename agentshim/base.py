@@ -185,7 +185,7 @@ def register_provider(
     *extra_names: str,
     aliases: tuple[str, ...] = (),
     overwrite: bool = False,
-) -> Callable[[type[_T]], _T]:
+) -> Callable[[type[_T]], type[_T]]:
     """Decorator to register a coding agent provider.
 
     Registration is import-driven: the decorated class becomes available only
@@ -201,7 +201,7 @@ def register_provider(
     all_aliases = (*extra_names, *aliases)
     _PROVIDER_REGISTRY._normalize_names(canonical_name, all_aliases)
 
-    def decorator(cls: type[_T]) -> _T:
+    def decorator(cls: type[_T]) -> type[_T]:
         return _PROVIDER_REGISTRY.register(
             cls,
             canonical_name=canonical_name,

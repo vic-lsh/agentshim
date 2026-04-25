@@ -6,7 +6,6 @@ import pytest
 from agentshim.cli_agent import CLICodingAgent
 from agentshim.copilot import CopilotCodingAgent, CopilotGenerationSession
 from agentshim.mcp_config import HttpMcpServer, StdioMcpServer
-from agentshim.trajectory import NullTrajectoryRecorder
 
 
 @pytest.fixture
@@ -105,7 +104,7 @@ class TestCopilotCommandConstruction:
 
 
 class TestCopilotGenerationSession:
-    def _make_session(self, event_handler=None, recorder=None):
+    def _make_session(self, event_handler=None):
         return CopilotGenerationSession(
             binary_name="copilot",
             env={},
@@ -113,7 +112,6 @@ class TestCopilotGenerationSession:
             cmd=["copilot", "--output-format", "json"],
             logger=MagicMock(),
             silent=True,
-            recorder=recorder or NullTrajectoryRecorder(),
             event_handler=event_handler,
         )
 
@@ -178,6 +176,22 @@ class TestCopilotGenerationSession:
             '{"type":"tool.execution_start","data":{"toolCallId":"t1","toolName":"read","arguments":{"path":"/tmp"}}}\n'
         )
         handler.on_tool_call.assert_called_once_with("read", {"path": "/tmp"})
+
+    def test_usage_event_forwarded_to_event_handler(self):
+        handler = MagicMock()
+        session = self._make_session(event_handler=handler)
+        session._process_stdout(
+            '{"type":"assistant.usage","data":{"inputTokens":100,"outputTokens":20,'
+            '"cacheReadTokens":5,"cacheWriteTokens":3,"reasoningTokens":2}}\n'
+        )
+        handler.on_usage.assert_called_once_with(
+            {
+                "input_tokens": 100,
+                "output_tokens": 22,
+                "cache_read_input_tokens": 5,
+                "cache_creation_input_tokens": 3,
+            }
+        )
 
     def test_create_session_returns_copilot_session(self, agent):
         session = agent._create_session(cmd=["copilot", "--output-format", "json"])

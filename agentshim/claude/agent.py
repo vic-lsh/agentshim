@@ -4,8 +4,6 @@ import time
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from agentshim.trajectory import TrajectoryRecorderProtocol
-
 from ..base import register_provider
 from ..cli_agent import CLICodingAgent, CLIGenerationSession
 from ..events import AgentEventHandler
@@ -86,14 +84,7 @@ class ClaudeGenerationSession(CLIGenerationSession):
 
                 start_time = self.tool_start_times.get(event.tool_id)
                 duration = time.time() - start_time if start_time else None
-                args = self.tool_args.get(event.tool_id, {})
 
-                self.recorder.add_tool_call(
-                    tool=event.tool_name_resolved,
-                    args=args,
-                    stdout=event.output,
-                    duration=duration,
-                )
                 if self.event_handler:
                     self.event_handler.on_tool_result(
                         tool=event.tool_name_resolved,
@@ -137,7 +128,6 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
     def __init__(
         self,
         model: str | None = None,
-        recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
         event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: list[McpServerConfig] | None = None,
@@ -147,7 +137,6 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
 
         Args:
             model: Optional model name to use with Claude Code. If None, uses default.
-            recorder: Trajectory recorder instance.
             event_handler: Optional event handler for UI updates.
             mcp_servers: Optional list of MCP server configurations.
             sandbox: If True (or a ``SandboxConfig``), enable Claude Code's
@@ -157,7 +146,7 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
                 sandboxed; the Claude process itself is not wrapped.
                 Defaults to False (no sandbox).
         """
-        super().__init__("claude", model, recorder, event_handler, event_handlers, mcp_servers)
+        super().__init__("claude", model, event_handler, event_handlers, mcp_servers)
         self.sandbox = resolve_sandbox(sandbox)
         if self.sandbox is not None:
             # Without this, Claude Code cd's into a per-invocation scratch dir
@@ -234,7 +223,6 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        recorder: TrajectoryRecorderProtocol | None = None,
         on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
     ) -> ClaudeGenerationSession:
         return ClaudeGenerationSession(
@@ -246,7 +234,6 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
             cwd=cwd,
             timeout=timeout,
             silent=silent,
-            recorder=recorder,
             event_handler=self.event_handler,
             on_process_started=on_process_started,
         )

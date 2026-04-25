@@ -9,7 +9,6 @@ from typing import Any, TypeVar
 from agentshim.events import AgentEventHandler
 from agentshim.mcp_config import McpServerConfig
 from agentshim.sandbox import SandboxConfig
-from agentshim.trajectory import NullTrajectoryRecorder, TrajectoryRecorderProtocol
 
 _T = TypeVar("_T")
 _READABLE_NAME_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
@@ -28,7 +27,6 @@ def _readable_name_from_class_name(class_name: str) -> str:
 class BaseCodingAgent(ABC):
     """Abstract base class for coding agents."""
 
-    recorder: TrajectoryRecorderProtocol = NullTrajectoryRecorder()
     event_handler: Any | None = None
 
     @property
@@ -235,7 +233,6 @@ class CodingAgent(BaseCodingAgent):
         self,
         provider: str,
         model: str | None = None,
-        recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
         event_handlers: Sequence[AgentEventHandler] | None = None,
         mcp_servers: Sequence[McpServerConfig] | None = None,
@@ -249,8 +246,6 @@ class CodingAgent(BaseCodingAgent):
         portable_kwargs: dict[str, Any] = {}
         if model is not None:
             portable_kwargs["model"] = model
-        if recorder is not None:
-            portable_kwargs["recorder"] = recorder
         if event_handler is not None:
             portable_kwargs["event_handler"] = event_handler
         if event_handlers is not None:
@@ -289,14 +284,6 @@ class CodingAgent(BaseCodingAgent):
     @model.setter
     def model(self, value: Any) -> None:
         self._backend.model = value  # type: ignore[attr-defined]
-
-    @property
-    def recorder(self) -> TrajectoryRecorderProtocol:
-        return self._backend.recorder
-
-    @recorder.setter
-    def recorder(self, value: TrajectoryRecorderProtocol) -> None:
-        self._backend.recorder = value
 
     @property
     def event_handler(self) -> Any | None:

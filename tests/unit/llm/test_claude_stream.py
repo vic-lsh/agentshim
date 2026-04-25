@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from loguru import logger
 
+from agentshim import CompositeEventHandler, ConsoleEventHandler
 from agentshim.claude import ClaudeCodeCodingAgent
 
 
@@ -16,17 +17,13 @@ def mock_env():
 
 
 @pytest.fixture
-def mock_recorder():
-    """Mock TrajectoryRecorder."""
-    recorder = MagicMock()
-    recorder.add_tool_call = MagicMock()
-    recorder.add_user_message = MagicMock()
-    recorder.add_assistant_message = MagicMock()
-    return recorder
+def mock_event_handler():
+    """Mock AgentEventHandler."""
+    return MagicMock()
 
 
 @pytest.fixture
-def claude_agent(mock_llm_subprocess, mock_env, mock_recorder):
+def claude_agent(mock_llm_subprocess, mock_env, mock_event_handler):
     """Create a ClaudeCodeCodingAgent instance with mocked environment."""
     mock_popen, mock_which = mock_llm_subprocess
     mock_which.return_value = "/usr/bin/claude"
@@ -36,7 +33,15 @@ def claude_agent(mock_llm_subprocess, mock_env, mock_recorder):
         return_value=mock_env,
     ):
         with patch("agentshim.cli_agent.CLICodingAgent._check_cli"):
-            agent = ClaudeCodeCodingAgent(recorder=mock_recorder)
+            agent = ClaudeCodeCodingAgent(
+                event_handler=CompositeEventHandler(
+                    [
+                        ConsoleEventHandler(),
+                        mock_event_handler,
+                    ]
+                )
+            )
+            agent.mock_event_handler = mock_event_handler
             yield agent
 
 
@@ -164,7 +169,7 @@ def test_parse_tool_use(claude_agent, mock_llm_subprocess):
 
 
 def test_parse_tool_result(claude_agent, mock_llm_subprocess):
-    """Test that tool results render with green color and record to trajectory."""
+    """Test that tool results render with green color and emit events."""
     mock_popen, _ = mock_llm_subprocess
     mock_process = mock_popen.return_value
     mock_process.returncode = 0
@@ -215,12 +220,8 @@ def test_parse_tool_result(claude_agent, mock_llm_subprocess):
     handler_id = logger.add(captured_stdout, format="{message}")
     try:
         claude_agent.generate("Test")
-        # Verify trajectory recording was called
-        mock_recorder = claude_agent.recorder
-        mock_recorder.add_tool_call.assert_called_once()
-        call_args = mock_recorder.add_tool_call.call_args
-        # Accessing call_args kwargs or positional args
-        # add_tool_call(tool=..., args=..., stdout=..., duration=...)  # noqa: ERA001
+        claude_agent.mock_event_handler.on_tool_result.assert_called_once()
+        call_args = claude_agent.mock_event_handler.on_tool_result.call_args
         assert call_args.kwargs["tool"] == "read_file"
         assert call_args.kwargs["stdout"] == "File contents here"
     finally:
@@ -285,8 +286,7 @@ def test_tool_result_mapping(claude_agent, mock_llm_subprocess):
     try:
         claude_agent.generate("Test")
         # Verify the correct tool name was used
-        mock_recorder = claude_agent.recorder
-        call_args = mock_recorder.add_tool_call.call_args
+        call_args = claude_agent.mock_event_handler.on_tool_result.call_args
         assert call_args.kwargs["tool"] == "custom_tool"
     finally:
         logger.remove(handler_id)
@@ -508,7 +508,7 @@ def test_empty_tool_result(claude_agent, mock_llm_subprocess):
     assert "write_file ran successfully" in output
 
 
-def test_trajectory_recording(claude_agent, mock_llm_subprocess):
+def test_tool_result_event_emission(claude_agent, mock_llm_subprocess):
     """Test that tool calls are recorded with correct args and duration."""
     mock_popen, _ = mock_llm_subprocess
     mock_process = mock_popen.return_value
@@ -557,13 +557,12 @@ def test_trajectory_recording(claude_agent, mock_llm_subprocess):
 
     claude_agent.generate("Test")
 
-    # Verify recording
-    mock_recorder = claude_agent.recorder
-    mock_recorder.add_tool_call.assert_called_once()
-    call_args = mock_recorder.add_tool_call.call_args[1]
+    # Verify event emission
+    claude_agent.mock_event_handler.on_tool_call.assert_called_once_with("bash", tool_args)
+    claude_agent.mock_event_handler.on_tool_result.assert_called_once()
+    call_args = claude_agent.mock_event_handler.on_tool_result.call_args[1]
 
     assert call_args["tool"] == "bash"
-    assert call_args["args"] == tool_args
     assert call_args["stdout"] == "total 0"
     assert call_args["duration"] is not None
     assert call_args["duration"] >= 0
@@ -594,9 +593,8 @@ def test_parse_real_fixture(claude_agent, mock_llm_subprocess):
     # The fixture has a result event at the end
     assert "AI-native infrastructure automation system" in result
 
-    # Count tool calls (should be 38 based on fixture)
-    mock_recorder = claude_agent.recorder
-    assert mock_recorder.add_tool_call.call_count == 38
+    # Count tool results (should be 38 based on fixture)
+    assert claude_agent.mock_event_handler.on_tool_result.call_count == 38
 
     # Count text events by checking if result contains multiple parts
     # The fixture should have processed text events successfully

@@ -11,8 +11,6 @@ from typing import Any
 
 from loguru import logger
 
-from agentshim.trajectory import NullTrajectoryRecorder, TrajectoryRecorderProtocol
-
 from .base import BaseAgentSession, BaseCodingAgent
 from .events import AgentEventHandler, compose_event_handlers, default_event_handler
 from .mcp_config import McpServerConfig
@@ -33,7 +31,6 @@ class CLIGenerationSession:
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
         on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
     ):
@@ -45,7 +42,6 @@ class CLIGenerationSession:
         self.cwd = cwd
         self.timeout = timeout
         self.silent = silent
-        self.recorder = recorder or NullTrajectoryRecorder()
         self.event_handler = default_event_handler(
             event_handler=event_handler,
             silent=silent,
@@ -184,7 +180,6 @@ class CLICodingAgent(BaseCodingAgent):
         self,
         binary_name: str,
         model: str | None = None,
-        recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
         event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: list[McpServerConfig] | None = None,
@@ -194,7 +189,6 @@ class CLICodingAgent(BaseCodingAgent):
         Args:
             binary_name: The name of the executable to use.
             model: Optional model name to use.
-            recorder: Trajectory recorder instance.
             event_handler: Optional event handler for UI updates.
             event_handlers: Optional event handlers to compose in order.
             mcp_servers: Optional list of MCP server configurations.
@@ -205,7 +199,6 @@ class CLICodingAgent(BaseCodingAgent):
         self.env = get_interactive_env()
         self.binary_name = binary_name
         self.model = model
-        self.recorder: TrajectoryRecorderProtocol = recorder or NullTrajectoryRecorder()
         self.event_handler = compose_event_handlers(event_handler, event_handlers)
         self.mcp_servers: list[McpServerConfig] = mcp_servers or []
 
@@ -277,7 +270,6 @@ class CLICodingAgent(BaseCodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        recorder: TrajectoryRecorderProtocol | None = None,
         on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
     ) -> CLIGenerationSession:
         """Create a session for a single generation request.
@@ -293,7 +285,6 @@ class CLICodingAgent(BaseCodingAgent):
             cwd=cwd,
             timeout=timeout,
             silent=silent,
-            recorder=recorder,
             event_handler=self.event_handler,
             on_process_started=on_process_started,
         )
@@ -392,15 +383,12 @@ class CLIAgentSession(BaseAgentSession):
         effective_timeout = timeout if timeout is not None else self._timeout
         effective_silent = silent if silent is not None else self._silent
 
-        self.agent.recorder.add_user_message(prompt)
-
         cmd = self.agent._get_command(prompt, resume_session_id=self.session_id)  # pyright: ignore[reportPrivateUsage]
         run_session = self.agent._create_session(  # pyright: ignore[reportPrivateUsage]
             cmd,
             effective_cwd,
             effective_timeout,
             effective_silent,
-            recorder=self.agent.recorder,
             on_process_started=on_process_started,
         )
         result = run_session.run(prompt)
@@ -413,5 +401,4 @@ class CLIAgentSession(BaseAgentSession):
         if captured:
             self.session_id = captured
 
-        self.agent.recorder.add_assistant_message(result)
         return result

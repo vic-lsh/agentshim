@@ -4,8 +4,6 @@ import time
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from agentshim.trajectory import TrajectoryRecorderProtocol
-
 from ..base import register_provider
 from ..cli_agent import CLICodingAgent, CLIGenerationSession
 from ..events import AgentEventHandler
@@ -147,13 +145,6 @@ class CodexGenerationSession(CLIGenerationSession):
                 if event.tool_id not in self.tool_map and self.event_handler and event.tool_name:
                     self.event_handler.on_tool_call(event.tool_name, args)
 
-            self.recorder.add_tool_call(
-                tool=event.tool_name_resolved,
-                args=args,
-                stdout=event.output,
-                exit_code=event.exit_code,
-                duration=duration,
-            )
             if self.event_handler:
                 self.event_handler.on_tool_result(
                     tool=event.tool_name_resolved,
@@ -192,7 +183,6 @@ class CodexCodingAgent(CLICodingAgent):
     def __init__(
         self,
         model: str | None = None,
-        recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
         event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: list[McpServerConfig] | None = None,
@@ -202,14 +192,13 @@ class CodexCodingAgent(CLICodingAgent):
 
         Args:
             model: Optional model name to use with codex. If None, uses default.
-            recorder: Trajectory recorder instance.
             event_handler: Optional event handler for UI updates.
             mcp_servers: Optional list of MCP server configurations.
             sandbox: Not supported for Codex; must be False.
         """
         if sandbox:
             raise NotImplementedError("sandbox is not supported for CodexCodingAgent")
-        super().__init__("codex", model, recorder, event_handler, event_handlers, mcp_servers)
+        super().__init__("codex", model, event_handler, event_handlers, mcp_servers)
 
     @property
     def codex_path(self) -> str:
@@ -257,7 +246,6 @@ class CodexCodingAgent(CLICodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        recorder: TrajectoryRecorderProtocol | None = None,
         on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
     ) -> CodexGenerationSession:
         return CodexGenerationSession(
@@ -269,7 +257,6 @@ class CodexCodingAgent(CLICodingAgent):
             cwd=cwd,
             timeout=timeout,
             silent=silent,
-            recorder=recorder,
             event_handler=self.event_handler,
             on_process_started=on_process_started,
         )

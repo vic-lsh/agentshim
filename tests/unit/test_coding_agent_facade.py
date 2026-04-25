@@ -14,7 +14,6 @@ from agentshim import (
 from agentshim.base import BaseCodingAgent
 from agentshim.cli_agent import CLICodingAgent
 from agentshim.mcp_config import HttpMcpServer
-from agentshim.trajectory import NullTrajectoryRecorder
 
 
 @pytest.fixture
@@ -54,13 +53,10 @@ def test_coding_agent_delegates_generate(mock_binaries):
     agent.backend.generate.assert_called_once_with("hi", cwd="/tmp", timeout=12, silent=True)  # type: ignore[attr-defined]
 
 
-def test_coding_agent_forwards_mutable_common_properties(mock_binaries):
+def test_coding_agent_forwards_event_handler_property(mock_binaries):
     agent = CodingAgent(provider="claude", model="test-model")
-    recorder = NullTrajectoryRecorder()
     handler = object()
-    agent.recorder = recorder
     agent.event_handler = handler
-    assert agent.backend.recorder is recorder
     assert agent.backend.event_handler is handler
 
 
@@ -117,7 +113,6 @@ def test_register_provider_works_with_coding_agent_backend_kwargs():
             self.model = model
             self.location = location
             self.dspy_config = dspy_config
-            self.recorder = NullTrajectoryRecorder()
             self.event_handler = None
 
         def generate(self, prompt, cwd=None, timeout=300, silent=False):
@@ -148,7 +143,6 @@ def test_coding_agent_surfaces_backend_constructor_errors_for_backend_kwargs():
     class DummyAgent(BaseCodingAgent):
         def __init__(self, model=None):
             self.model = model
-            self.recorder = NullTrajectoryRecorder()
             self.event_handler = None
 
         def generate(self, prompt, cwd=None, timeout=300, silent=False):

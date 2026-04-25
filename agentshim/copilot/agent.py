@@ -6,8 +6,6 @@ import time
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from agentshim.trajectory import TrajectoryRecorderProtocol
-
 from ..base import register_provider
 from ..cli_agent import CLICodingAgent, CLIGenerationSession
 from ..events import AgentEventHandler
@@ -123,16 +121,8 @@ class CopilotGenerationSession(CLIGenerationSession):
             event.tool_name_resolved = self.tool_map.get(event.tool_id, "Tool")
             start_time = self.tool_start_times.get(event.tool_id)
             duration = time.time() - start_time if start_time else None
-            args = self.tool_args.get(event.tool_id, {})
             stdout = event.output or event.error_message
 
-            self.recorder.add_tool_call(
-                tool=event.tool_name_resolved,
-                args=args,
-                stdout=stdout,
-                exit_code=event.exit_code,
-                duration=duration,
-            )
             if self.event_handler:
                 self.event_handler.on_tool_result(
                     tool=event.tool_name_resolved,
@@ -152,6 +142,17 @@ class CopilotGenerationSession(CLIGenerationSession):
                 turns=0,
             )
             self._refresh_usage()
+            if self.event_handler is not None:
+                on_usage = getattr(self.event_handler, "on_usage", None)
+                if on_usage is not None:
+                    on_usage(
+                        {
+                            "input_tokens": event.input_tokens,
+                            "output_tokens": event.output_tokens + event.reasoning_tokens,
+                            "cache_read_input_tokens": event.cache_read_tokens,
+                            "cache_creation_input_tokens": event.cache_write_tokens,
+                        }
+                    )
             return
 
         if isinstance(event, TurnEndEvent):
@@ -185,7 +186,6 @@ class CopilotCodingAgent(CLICodingAgent):
     def __init__(
         self,
         model: str | None = None,
-        recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
         event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: list[McpServerConfig] | None = None,
@@ -193,7 +193,7 @@ class CopilotCodingAgent(CLICodingAgent):
     ):
         if sandbox:
             raise NotImplementedError("sandbox is not supported for CopilotCodingAgent")
-        super().__init__("copilot", model, recorder, event_handler, event_handlers, mcp_servers)
+        super().__init__("copilot", model, event_handler, event_handlers, mcp_servers)
 
     @property
     def copilot_path(self) -> str:
@@ -245,7 +245,6 @@ class CopilotCodingAgent(CLICodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        recorder: TrajectoryRecorderProtocol | None = None,
         on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
     ) -> CopilotGenerationSession:
         return CopilotGenerationSession(
@@ -257,7 +256,6 @@ class CopilotCodingAgent(CLICodingAgent):
             cwd=cwd,
             timeout=timeout,
             silent=silent,
-            recorder=recorder,
             event_handler=self.event_handler,
             on_process_started=on_process_started,
         )

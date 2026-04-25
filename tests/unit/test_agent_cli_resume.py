@@ -13,7 +13,6 @@ from agentshim.codex import CodexCodingAgent, CodexGenerationSession
 from agentshim.gemini import GeminiCodingAgent, GeminiGenerationSession
 from agentshim.gemini.events import GeminiEvent, InitEvent
 from agentshim.opencode import OpencodeCodingAgent, OpencodeGenerationSession
-from agentshim.trajectory import NullTrajectoryRecorder
 
 
 @pytest.fixture
@@ -39,7 +38,6 @@ class TestCopilotResume:
             cmd=["copilot", "--output-format", "json"],
             logger=MagicMock(),
             silent=True,
-            recorder=NullTrajectoryRecorder(),
         )
 
     def test_session_start_event_parses_session_id(self):
@@ -96,7 +94,6 @@ class TestClaudeResume:
             cmd=["claude", "-p"],
             logger=MagicMock(),
             silent=True,
-            recorder=NullTrajectoryRecorder(),
         )
 
     def test_system_event_parses_session_id(self):
@@ -144,7 +141,6 @@ class TestCodexResume:
             cmd=["codex", "exec", "--json"],
             logger=MagicMock(),
             silent=True,
-            recorder=NullTrajectoryRecorder(),
         )
 
     def test_get_command_includes_json_flag(self, mock_binaries):
@@ -190,7 +186,6 @@ class TestGeminiResume:
             cmd=["gemini"],
             logger=MagicMock(),
             silent=True,
-            recorder=NullTrajectoryRecorder(),
         )
 
     def test_init_event_parses_session_id(self):
@@ -230,7 +225,6 @@ class TestOpencodeResume:
             cmd=["opencode", "run"],
             logger=MagicMock(),
             silent=True,
-            recorder=NullTrajectoryRecorder(),
         )
 
     def test_session_captures_session_id(self):

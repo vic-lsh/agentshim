@@ -14,7 +14,6 @@ prompting, session resumption, event parsing, or MCP configuration.
 - MCP server config models for providers that support MCP
 - sandbox settings helpers for Claude Code
 - a lightweight LiteLLM client and subagent helper
-- trajectory/usage helpers used by higher-level runtimes
 
 ## Install
 
@@ -215,7 +214,6 @@ class MyAgent(BaseCodingAgent):
         self,
         model: str | None = None,
         region: str | None = None,
-        recorder=None,
         event_handler=None,
         event_handlers=None,
         mcp_servers=None,
@@ -223,7 +221,6 @@ class MyAgent(BaseCodingAgent):
     ):
         self.model = model
         self.region = region
-        self.recorder = recorder
         self.event_handler = event_handler
 
     def generate(self, prompt: str, cwd=None, timeout=300, silent=False) -> str:
@@ -243,7 +240,7 @@ Notes:
 - Registration is import-driven. Your provider is available only after the module defining it has been imported in the current Python process.
 - `list_providers()` returns canonical provider names only. Aliases resolve via `get_provider_class(...)` and `CodingAgent(provider=...)`.
 - `register_provider(...)` rejects invalid names, abstract classes, and accidental name collisions unless you pass `overwrite=True`.
-- If you want `CodingAgent(...)` to instantiate your provider, its constructor should accept the shared kwargs `model`, `recorder`, `event_handler`, `event_handlers`, `mcp_servers`, and `sandbox` as needed.
+- If you want `CodingAgent(...)` to instantiate your provider, its constructor should accept the shared kwargs `model`, `event_handler`, `event_handlers`, `mcp_servers`, and `sandbox` as needed.
 - If your provider needs extra constructor arguments beyond the shared portable set, pass them via `backend_kwargs={...}` when constructing `CodingAgent(...)`.
 
 ## Development

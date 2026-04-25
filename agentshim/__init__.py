@@ -3,6 +3,15 @@ from .claude import ClaudeCodeCodingAgent
 from .copilot import CopilotCodingAgent
 from .codex import CodexCodingAgent
 from .events import CompositeEventHandler, ConsoleEventHandler, NullEventHandler
+from .executor import (
+    CallbackCommandStreamSink,
+    CommandExecutor,
+    CommandHandle,
+    CommandRequest,
+    CommandResult,
+    CommandStreamSink,
+    HostCommandExecutor,
+)
 from .gemini import GeminiCodingAgent
 from .mcp_config import HttpMcpServer, McpServerConfig, StdioMcpServer
 from .opencode import OpencodeCodingAgent
@@ -18,6 +27,13 @@ __all__ = [
     "CompositeEventHandler",
     "ConsoleEventHandler",
     "NullEventHandler",
+    "CallbackCommandStreamSink",
+    "CommandExecutor",
+    "CommandHandle",
+    "CommandRequest",
+    "CommandResult",
+    "CommandStreamSink",
+    "HostCommandExecutor",
     "CopilotCodingAgent",
     "CodexCodingAgent",
     "GeminiCodingAgent",

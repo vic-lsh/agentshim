@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, TypeVar
 
 from agentshim.events import AgentEventHandler
+from agentshim.executor import CommandExecutor, CommandHandle
 from agentshim.mcp_config import McpServerConfig
 from agentshim.sandbox import SandboxConfig
 
@@ -83,7 +84,7 @@ class BaseAgentSession(ABC):
         cwd: str | None = None,
         timeout: int | None = None,
         silent: bool | None = None,
-        on_process_started: Callable[[Any], None] | None = None,
+        on_process_started: Callable[[CommandHandle], None] | None = None,
     ) -> str:
         """Send ``prompt`` within an existing chat session."""
 
@@ -237,6 +238,7 @@ class CodingAgent(BaseCodingAgent):
         event_handlers: Sequence[AgentEventHandler] | None = None,
         mcp_servers: Sequence[McpServerConfig] | None = None,
         sandbox: bool | SandboxConfig | None = False,
+        executor: CommandExecutor | None = None,
         backend_kwargs: dict[str, Any] | None = None,
     ) -> None:
         requested_provider = _PROVIDER_REGISTRY.get_canonical_name(provider)
@@ -254,6 +256,8 @@ class CodingAgent(BaseCodingAgent):
             portable_kwargs["mcp_servers"] = list(mcp_servers)
         if sandbox is not None and sandbox is not False:
             portable_kwargs["sandbox"] = sandbox
+        if executor is not None:
+            portable_kwargs["executor"] = executor
 
         advanced_kwargs = dict(backend_kwargs or {})
         overlapping_keys = sorted(portable_kwargs.keys() & advanced_kwargs.keys())

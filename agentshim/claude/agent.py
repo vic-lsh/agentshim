@@ -1,5 +1,4 @@
 import json
-import subprocess
 import time
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
@@ -7,6 +6,7 @@ from typing import Any
 from ..base import register_provider
 from ..cli_agent import CLICodingAgent, CLIGenerationSession
 from ..events import AgentEventHandler
+from ..executor import CommandExecutor, CommandHandle
 from ..mcp_config import HttpMcpServer, McpServerConfig
 from ..sandbox import SandboxConfig, build_claude_sandbox_settings, resolve_sandbox
 from ..usage import ProviderUsage, TokenUsage
@@ -132,6 +132,7 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
         event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: Sequence[McpServerConfig] | None = None,
         sandbox: bool | SandboxConfig = False,
+        executor: CommandExecutor | None = None,
     ):
         """Initialize the Claude Code coding agent.
 
@@ -145,8 +146,9 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
                 ``--settings``. Only bash subprocess commands are
                 sandboxed; the Claude process itself is not wrapped.
                 Defaults to False (no sandbox).
+            executor: Optional command executor for binary lookup and process execution.
         """
-        super().__init__("claude", model, event_handler, event_handlers, mcp_servers)
+        super().__init__("claude", model, event_handler, event_handlers, mcp_servers, executor=executor)
         self.sandbox = resolve_sandbox(sandbox)
         if self.sandbox is not None:
             # Without this, Claude Code cd's into a per-invocation scratch dir
@@ -223,7 +225,7 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
+        on_process_started: Callable[[CommandHandle], None] | None = None,
     ) -> ClaudeGenerationSession:
         return ClaudeGenerationSession(
             binary_name=self.binary_name,
@@ -235,5 +237,6 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
             timeout=timeout,
             silent=silent,
             event_handler=self.event_handler,
+            executor=self.executor,
             on_process_started=on_process_started,
         )

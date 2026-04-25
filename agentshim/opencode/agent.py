@@ -1,11 +1,11 @@
 import json
-import subprocess
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from ..base import register_provider
 from ..cli_agent import CLICodingAgent, CLIGenerationSession
 from ..events import AgentEventHandler
+from ..executor import CommandExecutor, CommandHandle
 from ..sandbox import SandboxConfig
 from ..usage import ProviderUsage, TokenUsage
 from .events import OpencodeEvent, StepFinishEvent, TextEvent, ToolUseEvent
@@ -114,6 +114,7 @@ class OpencodeCodingAgent(CLICodingAgent):
         event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: Sequence[object] | None = None,
         sandbox: bool | SandboxConfig = False,
+        executor: CommandExecutor | None = None,
     ):
         """Initialize the Opencode coding agent.
 
@@ -122,6 +123,7 @@ class OpencodeCodingAgent(CLICodingAgent):
             event_handler: Optional event handler for UI updates.
             mcp_servers: Optional list of MCP server configurations.
             sandbox: Not supported for Opencode; must be False.
+            executor: Optional command executor for binary lookup and process execution.
 
         Raises:
             ValueError: If mcp_servers is non-empty (not supported).
@@ -133,7 +135,7 @@ class OpencodeCodingAgent(CLICodingAgent):
             raise NotImplementedError("sandbox is not supported for OpencodeCodingAgent")
         if not model:
             model = OPENCODE_DEFAULT_MODEL
-        super().__init__("opencode", model, event_handler, event_handlers)
+        super().__init__("opencode", model, event_handler, event_handlers, executor=executor)
 
     @property
     def _log_prefix(self) -> str:
@@ -161,7 +163,7 @@ class OpencodeCodingAgent(CLICodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
+        on_process_started: Callable[[CommandHandle], None] | None = None,
     ) -> OpencodeGenerationSession:
         return OpencodeGenerationSession(
             binary_name=self.binary_name,
@@ -173,5 +175,6 @@ class OpencodeCodingAgent(CLICodingAgent):
             timeout=timeout,
             silent=silent,
             event_handler=self.event_handler,
+            executor=self.executor,
             on_process_started=on_process_started,
         )

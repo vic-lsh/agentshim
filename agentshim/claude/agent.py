@@ -1,7 +1,7 @@
 import json
 import subprocess
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from ..base import register_provider
@@ -130,7 +130,7 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
         model: str | None = None,
         event_handler: AgentEventHandler | None = None,
         event_handlers: Iterable[AgentEventHandler] | None = None,
-        mcp_servers: list[McpServerConfig] | None = None,
+        mcp_servers: Sequence[McpServerConfig] | None = None,
         sandbox: bool | SandboxConfig = False,
     ):
         """Initialize the Claude Code coding agent.

@@ -6,7 +6,7 @@ import subprocess
 import sys
 import threading
 from abc import abstractmethod
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from loguru import logger
@@ -182,7 +182,7 @@ class CLICodingAgent(BaseCodingAgent):
         model: str | None = None,
         event_handler: AgentEventHandler | None = None,
         event_handlers: Iterable[AgentEventHandler] | None = None,
-        mcp_servers: list[McpServerConfig] | None = None,
+        mcp_servers: Sequence[McpServerConfig] | None = None,
     ):
         """Initialize the CLI coding agent.
 
@@ -200,7 +200,7 @@ class CLICodingAgent(BaseCodingAgent):
         self.binary_name = binary_name
         self.model = model
         self.event_handler = compose_event_handlers(event_handler, event_handlers)
-        self.mcp_servers: list[McpServerConfig] = mcp_servers or []
+        self.mcp_servers: list[McpServerConfig] = list(mcp_servers or [])
 
         # Search for binary in the captured environment's PATH
         binary_path = shutil.which(binary_name, path=self.env.get("PATH"))

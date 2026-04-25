@@ -6,7 +6,6 @@ import pytest
 from agentshim.claude import ClaudeCodeCodingAgent, ClaudeGenerationSession
 from agentshim.cli_agent import CLICodingAgent
 from agentshim.mcp_config import HttpMcpServer, StdioMcpServer
-from agentshim.trajectory import NullTrajectoryRecorder
 
 
 @pytest.fixture
@@ -88,7 +87,7 @@ class TestClaudeCommandConstruction:
 class TestClaudeGenerationSession:
     """Tests for ClaudeGenerationSession event processing."""
 
-    def _make_session(self, event_handler=None, recorder=None):
+    def _make_session(self, event_handler=None):
         return ClaudeGenerationSession(
             binary_name="claude",
             env={},
@@ -96,7 +95,6 @@ class TestClaudeGenerationSession:
             cmd=["claude", "-p"],
             logger=MagicMock(),
             silent=True,
-            recorder=recorder or NullTrajectoryRecorder(),
             event_handler=event_handler,
         )
 
@@ -117,7 +115,8 @@ class TestClaudeGenerationSession:
         assert session.tool_map["t1"] == "Bash"
 
     def test_process_stdout_parses_tool_result_event(self):
-        session = self._make_session()
+        handler = MagicMock()
+        session = self._make_session(event_handler=handler)
         # Set up tool map first
         session.tool_map["t1"] = "Bash"
         session.tool_start_times["t1"] = 1000.0
@@ -127,7 +126,7 @@ class TestClaudeGenerationSession:
             '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"file1.txt"}]}}\n'
         )
         session._process_stdout(line)
-        # Tool result was processed (recorder recorded it via NullTrajectoryRecorder)
+        handler.on_tool_result.assert_called_once()
 
     def test_process_stdout_parses_result_event(self):
         session = self._make_session()
@@ -197,10 +196,7 @@ class TestClaudeGenerationSession:
     def test_assistant_without_usage_does_not_call_on_usage(self):
         handler = MagicMock()
         session = self._make_session(event_handler=handler)
-        line = (
-            '{"type":"assistant","message":{"content":'
-            '[{"type":"text","text":"ok"}]}}\n'
-        )
+        line = '{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]}}\n'
         session._process_stdout(line)
         handler.on_usage.assert_not_called()
 

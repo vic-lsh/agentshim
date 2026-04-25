@@ -1,10 +1,8 @@
 import json
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
-
-from agentshim.trajectory import TrajectoryRecorderProtocol
 
 from ..base import register_provider
 from ..cli_agent import CLICodingAgent, CLIGenerationSession
@@ -44,11 +42,8 @@ class ClaudeGenerationSession(CLIGenerationSession):
         except json.JSONDecodeError:
             # Fallback for non-JSON lines - still accumulate them
             self.stdout_lines.append(line.rstrip())
-            if not self.silent:
-                if self._at_line_start:
-                    self._log_raw(f"{self.log_prefix} ")
-                self._log_raw(line.rstrip() + "\n")
-                self._at_line_start = True
+            if line.rstrip():
+                self.event_handler.on_thinking(line.rstrip() + "\n")
 
     def _handle_event(self, event: ClaudeEvent):
         """Handle a single parsed Claude event."""
@@ -62,9 +57,6 @@ class ClaudeGenerationSession(CLIGenerationSession):
             return
 
         self._update_state(event)
-
-        if not self.silent:
-            self._render_event(event)
 
     def _update_state(self, event: ClaudeEvent):
         """Update internal state based on the event."""
@@ -92,14 +84,7 @@ class ClaudeGenerationSession(CLIGenerationSession):
 
                 start_time = self.tool_start_times.get(event.tool_id)
                 duration = time.time() - start_time if start_time else None
-                args = self.tool_args.get(event.tool_id, {})
 
-                self.recorder.add_tool_call(
-                    tool=event.tool_name_resolved,
-                    args=args,
-                    stdout=event.output,
-                    duration=duration,
-                )
                 if self.event_handler:
                     self.event_handler.on_tool_result(
                         tool=event.tool_name_resolved,
@@ -128,20 +113,6 @@ class ClaudeGenerationSession(CLIGenerationSession):
                 provider="claude",
             )
 
-    def _render_event(self, event: ClaudeEvent):
-        """Render the event to stdout."""
-        if isinstance(event, TextEvent):
-            self._print_stream_content(event.text)
-            return
-
-        if not self._at_line_start:
-            self._log_raw("\n")
-            self._at_line_start = True
-
-        output = event.render(self.log_prefix)
-        if output:
-            self._log_raw(output + "\n")
-
     def run(self, prompt: str) -> str:
         """Execute the command and return the result."""
         super().run(prompt)
@@ -157,8 +128,8 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
     def __init__(
         self,
         model: str | None = None,
-        recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
+        event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: list[McpServerConfig] | None = None,
         sandbox: bool | SandboxConfig = False,
     ):
@@ -166,7 +137,6 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
 
         Args:
             model: Optional model name to use with Claude Code. If None, uses default.
-            recorder: Trajectory recorder instance.
             event_handler: Optional event handler for UI updates.
             mcp_servers: Optional list of MCP server configurations.
             sandbox: If True (or a ``SandboxConfig``), enable Claude Code's
@@ -176,7 +146,7 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
                 sandboxed; the Claude process itself is not wrapped.
                 Defaults to False (no sandbox).
         """
-        super().__init__("claude", model, recorder, event_handler, mcp_servers)
+        super().__init__("claude", model, event_handler, event_handlers, mcp_servers)
         self.sandbox = resolve_sandbox(sandbox)
         if self.sandbox is not None:
             # Without this, Claude Code cd's into a per-invocation scratch dir
@@ -253,7 +223,6 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        recorder: TrajectoryRecorderProtocol | None = None,
         on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
     ) -> ClaudeGenerationSession:
         return ClaudeGenerationSession(
@@ -265,7 +234,6 @@ class ClaudeCodeCodingAgent(CLICodingAgent):
             cwd=cwd,
             timeout=timeout,
             silent=silent,
-            recorder=recorder,
             event_handler=self.event_handler,
             on_process_started=on_process_started,
         )

@@ -1,17 +1,10 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from typing import Any, cast
 
-from ..utils import truncate_content, truncate_tool_params
 
-
-class ClaudeEvent(ABC):
+class ClaudeEvent:
     """Base class for Claude Code stream events."""
-
-    @abstractmethod
-    def render(self, log_prefix: str) -> str | None:
-        """Render the event as a string for terminal output."""
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> ClaudeEvent | None:
@@ -71,10 +64,6 @@ class MultiEvent(ClaudeEvent):
         self.events = events
         self.usage = usage
 
-    def render(self, log_prefix: str) -> str | None:
-        # MultiEvent doesn't render itself; events are handled individually
-        return None
-
 
 class SystemEvent(ClaudeEvent):
     """System initialization event.
@@ -87,20 +76,12 @@ class SystemEvent(ClaudeEvent):
         self.data = data
         self.session_id: str | None = data.get("session_id")
 
-    def render(self, log_prefix: str) -> str | None:
-        # System events are silent
-        return None
-
 
 class TextEvent(ClaudeEvent):
     """Assistant text content event."""
 
     def __init__(self, text: str):
         self.text = text
-
-    def render(self, log_prefix: str) -> str | None:
-        # Text rendering is handled specially due to streaming
-        return self.text
 
 
 class ToolUseEvent(ClaudeEvent):
@@ -110,10 +91,6 @@ class ToolUseEvent(ClaudeEvent):
         self.tool_name = tool_name
         self.tool_id = tool_id
         self.parameters = parameters
-
-    def render(self, log_prefix: str) -> str:
-        truncated = truncate_tool_params(self.tool_name, self.parameters)
-        return f"{log_prefix} \033[34m[Tool Use] {self.tool_name} {truncated}\033[0m"
 
 
 class ToolResultEvent(ClaudeEvent):
@@ -128,12 +105,6 @@ class ToolResultEvent(ClaudeEvent):
             self.output = str(output) if output else ""
         self.tool_id = tool_id
         self.tool_name_resolved: str = "Tool"  # To be set externally
-
-    def render(self, log_prefix: str) -> str:
-        if not self.output:
-            return f"{log_prefix} \033[32m{self.tool_name_resolved} ran successfully\033[0m"
-        truncated = truncate_content(self.output)
-        return f"{log_prefix} \033[32m[Tool Result] {truncated}\033[0m"
 
 
 class ResultEvent(ClaudeEvent):
@@ -152,7 +123,3 @@ class ResultEvent(ClaudeEvent):
         self.usage = usage
         self.total_cost_usd = total_cost_usd
         self.duration_ms = duration_ms
-
-    def render(self, log_prefix: str) -> str | None:
-        # Result events are silent (result is captured separately)
-        return None

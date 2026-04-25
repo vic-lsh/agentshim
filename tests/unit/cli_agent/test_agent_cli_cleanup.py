@@ -555,4 +555,3 @@ def test_multiple_generates_dont_leak_resources(agent_type, mock_which):
                 for i in range(5):
                     result = agent.generate(f"test {i}", silent=True)
                     assert result is not None
-

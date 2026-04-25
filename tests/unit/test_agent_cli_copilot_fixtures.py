@@ -24,10 +24,10 @@ def _make_process(lines: list[str]) -> MagicMock:
     return process
 
 
-def _build_agent(recorder=None) -> CopilotCodingAgent:
+def _build_agent(event_handler=None) -> CopilotCodingAgent:
     with patch("shutil.which", return_value="/usr/bin/copilot"):
         with patch("subprocess.run", return_value=MagicMock(returncode=0, stderr="")):
-            return CopilotCodingAgent(recorder=recorder)
+            return CopilotCodingAgent(event_handler=event_handler)
 
 
 class TestCopilotFixtureReplay:
@@ -78,11 +78,11 @@ class TestCopilotFixtureReplay:
         assert agent.last_usage.tokens.turns == 1
 
     def test_generate_replays_tool_and_usage_fixture_and_prefers_usage_event(self):
-        recorder = MagicMock()
+        event_handler = MagicMock()
         process = _make_process(_read_fixture_lines("tool_and_usage.jsonl"))
 
         with patch("subprocess.Popen", return_value=process):
-            agent = _build_agent(recorder=recorder)
+            agent = _build_agent(event_handler=event_handler)
             result = agent.generate("ignored", silent=True)
 
         assert result == "done"
@@ -91,9 +91,9 @@ class TestCopilotFixtureReplay:
         assert agent.last_usage.tokens.output_tokens == 24
         assert agent.last_usage.tokens.cached_input_tokens == 15
         assert agent.last_usage.tokens.turns == 1
-        recorder.add_tool_call.assert_called_once()
-        call_kwargs = recorder.add_tool_call.call_args.kwargs
+        event_handler.on_tool_call.assert_called_once_with("shell", {"command": "printf ok"})
+        event_handler.on_tool_result.assert_called_once()
+        call_kwargs = event_handler.on_tool_result.call_args.kwargs
         assert call_kwargs["tool"] == "shell"
-        assert call_kwargs["args"] == {"command": "printf ok"}
         assert call_kwargs["stdout"] == "ok\nfull"
         assert call_kwargs["exit_code"] == 0

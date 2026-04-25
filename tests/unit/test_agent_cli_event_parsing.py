@@ -205,53 +205,6 @@ class TestToolResultEventOutputParsing:
         assert event.output == "42"
 
 
-class TestEventRendering:
-    """Tests for event render methods."""
-
-    def test_system_event_renders_none(self):
-        event = SystemEvent({"type": "system"})
-        assert event.render("[P]") is None
-
-    def test_text_event_renders_text(self):
-        event = TextEvent("hello")
-        assert event.render("[P]") == "hello"
-
-    def test_tool_use_event_renders_with_prefix(self):
-        event = ToolUseEvent("Bash", "t1", {"cmd": "ls"})
-        rendered = event.render("[Claude]")
-        assert "[Claude]" in rendered
-        assert "Bash" in rendered
-        assert "[Tool Use]" in rendered
-
-    def test_memory_tool_use_event_preserves_large_payload(self):
-        event = ToolUseEvent("store_incident", "t1", {"summary": "x" * 300})
-        rendered = event.render("[Claude]")
-        assert "[Tool Use]" in rendered
-        assert "..." not in rendered
-        assert "x" * 300 in rendered
-
-    def test_tool_result_event_renders_with_output(self):
-        event = ToolResultEvent(output="file.txt", tool_id="t1")
-        event.tool_name_resolved = "Bash"
-        rendered = event.render("[Claude]")
-        assert "[Tool Result]" in rendered
-        assert "file.txt" in rendered
-
-    def test_tool_result_event_renders_success_when_empty(self):
-        event = ToolResultEvent(output="", tool_id="t1")
-        event.tool_name_resolved = "Bash"
-        rendered = event.render("[Claude]")
-        assert "ran successfully" in rendered
-
-    def test_result_event_renders_none(self):
-        event = ResultEvent("done")
-        assert event.render("[P]") is None
-
-    def test_multi_event_renders_none(self):
-        event = MultiEvent([TextEvent("a")])
-        assert event.render("[P]") is None
-
-
 class TestCopilotEventFromDict:
     def test_assistant_message_event(self):
         event = CopilotEvent.from_dict(
@@ -321,7 +274,6 @@ class TestCodexEventFromDict:
         event = CodexEvent.from_dict({"type": "thread.started", "thread_id": "abc"})
         assert isinstance(event, ThreadStartedEvent)
         assert event.thread_id == "abc"
-        assert event.render("[Codex]") is None
 
     def test_turn_started_is_lifecycle(self):
         from agentshim.codex_events import CodexEvent, LifecycleEvent

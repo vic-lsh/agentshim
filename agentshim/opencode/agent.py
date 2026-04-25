@@ -1,9 +1,7 @@
 import json
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
-
-from agentshim.trajectory import TrajectoryRecorderProtocol
 
 from ..base import register_provider
 from ..cli_agent import CLICodingAgent, CLIGenerationSession
@@ -44,11 +42,9 @@ class OpencodeGenerationSession(CLIGenerationSession):
             if event:
                 self._handle_event(event)
         except json.JSONDecodeError:
-            if not self.silent:
-                if self._at_line_start:
-                    self._log_raw(f"{self.log_prefix} ")
-                self._log_raw(line.rstrip() + "\n")
-                self._at_line_start = True
+            stripped = line.rstrip()
+            if stripped:
+                self.event_handler.on_thinking(stripped + "\n")
 
     def _handle_event(self, event: OpencodeEvent):
         """Handle a single parsed Opencode event."""
@@ -65,21 +61,12 @@ class OpencodeGenerationSession(CLIGenerationSession):
                 args = _to_args_dict(event.input_data)
                 stdout = str(event.output_data) if event.output_data is not None else ""
 
-                self.recorder.add_tool_call(
-                    tool=event.tool_name,
-                    args=args,
-                    stdout=stdout,
-                )
-
                 if self.event_handler:
                     self.event_handler.on_tool_call(event.tool_name, args)
                     self.event_handler.on_tool_result(
                         tool=event.tool_name,
                         stdout=stdout,
                     )
-
-        if not self.silent:
-            self._render_event(event)
 
     def _update_usage_from_step(self, event: StepFinishEvent) -> None:
         """Fold a step_finish payload into the running usage totals."""
@@ -103,20 +90,17 @@ class OpencodeGenerationSession(CLIGenerationSession):
             total_cost_usd=self._accumulated_cost_usd if self._saw_cost else None,
             provider="opencode",
         )
-
-    def _render_event(self, event: OpencodeEvent):
-        """Render the event to stdout."""
-        if isinstance(event, TextEvent):
-            self._print_stream_content(event.text)
-            return
-
-        if not self._at_line_start:
-            self._log_raw("\n")
-            self._at_line_start = True
-
-        output = event.render(self.log_prefix)
-        if output:
-            self._log_raw(output + "\n")
+        if self.event_handler is not None:
+            on_usage = getattr(self.event_handler, "on_usage", None)
+            if on_usage is not None:
+                on_usage(
+                    {
+                        "input_tokens": step_usage.input_tokens,
+                        "output_tokens": step_usage.output_tokens,
+                        "cache_read_input_tokens": cache_read,
+                        "cache_creation_input_tokens": cache_write,
+                    }
+                )
 
 
 @register_provider("opencode")
@@ -126,8 +110,8 @@ class OpencodeCodingAgent(CLICodingAgent):
     def __init__(
         self,
         model: str | None = None,
-        recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
+        event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: list[object] | None = None,
         sandbox: bool | SandboxConfig = False,
     ):
@@ -135,7 +119,6 @@ class OpencodeCodingAgent(CLICodingAgent):
 
         Args:
             model: Optional model name to use.
-            recorder: Trajectory recorder instance.
             event_handler: Optional event handler for UI updates.
             mcp_servers: Optional list of MCP server configurations.
             sandbox: Not supported for Opencode; must be False.
@@ -150,7 +133,7 @@ class OpencodeCodingAgent(CLICodingAgent):
             raise NotImplementedError("sandbox is not supported for OpencodeCodingAgent")
         if not model:
             model = OPENCODE_DEFAULT_MODEL
-        super().__init__("opencode", model, recorder, event_handler)
+        super().__init__("opencode", model, event_handler, event_handlers)
 
     @property
     def _log_prefix(self) -> str:
@@ -178,7 +161,6 @@ class OpencodeCodingAgent(CLICodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        recorder: TrajectoryRecorderProtocol | None = None,
         on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
     ) -> OpencodeGenerationSession:
         return OpencodeGenerationSession(
@@ -190,7 +172,6 @@ class OpencodeCodingAgent(CLICodingAgent):
             cwd=cwd,
             timeout=timeout,
             silent=silent,
-            recorder=recorder,
             event_handler=self.event_handler,
             on_process_started=on_process_started,
         )

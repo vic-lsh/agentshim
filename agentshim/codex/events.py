@@ -1,17 +1,10 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from typing import Any, cast
 
-from ..utils import truncate_content, truncate_tool_params
 
-
-class CodexEvent(ABC):
+class CodexEvent:
     """Base class for Codex (``codex exec --json``) stream events."""
-
-    @abstractmethod
-    def render(self, log_prefix: str) -> str | None:
-        """Render the event as a string for terminal output."""
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> CodexEvent | None:
@@ -126,9 +119,6 @@ class ThreadStartedEvent(CodexEvent):
     def __init__(self, thread_id: str | None):
         self.thread_id = thread_id
 
-    def render(self, log_prefix: str) -> str | None:
-        return None
-
 
 class LifecycleEvent(CodexEvent):
     """Turn lifecycle marker; not rendered."""
@@ -136,18 +126,12 @@ class LifecycleEvent(CodexEvent):
     def __init__(self, event_type: str):
         self.event_type = event_type
 
-    def render(self, log_prefix: str) -> str | None:
-        return None
-
 
 class TextEvent(CodexEvent):
     """Assistant text content event (``agent_message`` item)."""
 
     def __init__(self, text: str):
         self.text = text
-
-    def render(self, log_prefix: str) -> str | None:
-        return self.text
 
 
 class ToolUseEvent(CodexEvent):
@@ -157,10 +141,6 @@ class ToolUseEvent(CodexEvent):
         self.tool_name = tool_name
         self.tool_id = tool_id
         self.parameters = parameters
-
-    def render(self, log_prefix: str) -> str:
-        truncated = truncate_tool_params(self.tool_name, self.parameters)
-        return f"{log_prefix} \033[34m[Tool Use] {self.tool_name} {truncated}\033[0m"
 
 
 class ToolResultEvent(CodexEvent):
@@ -186,12 +166,6 @@ class ToolResultEvent(CodexEvent):
         self.tool_name = tool_name
         self.parameters = parameters
         self.tool_name_resolved: str = tool_name or "Tool"
-
-    def render(self, log_prefix: str) -> str:
-        if not self.output:
-            return f"{log_prefix} \033[32m{self.tool_name_resolved} ran successfully\033[0m"
-        truncated = truncate_content(self.output)
-        return f"{log_prefix} \033[32m[Tool Result] {truncated}\033[0m"
 
 
 class TurnCompletedEvent(CodexEvent):
@@ -224,15 +198,9 @@ class TurnCompletedEvent(CodexEvent):
     def has_usage(self) -> bool:
         return self.usage is not None
 
-    def render(self, log_prefix: str) -> str | None:
-        return None
-
 
 class ErrorEvent(CodexEvent):
     """Error event emitted on turn failure or top-level error."""
 
     def __init__(self, message: str):
         self.message = message
-
-    def render(self, log_prefix: str) -> str:
-        return f"{log_prefix} \033[31m[Error] {self.message}\033[0m"

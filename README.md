@@ -14,7 +14,6 @@ prompting, session resumption, event parsing, or MCP configuration.
 - MCP server config models for providers that support MCP
 - sandbox settings helpers for Claude Code
 - a lightweight LiteLLM client and subagent helper
-- trajectory/usage helpers used by higher-level runtimes
 
 ## Install
 
@@ -70,7 +69,79 @@ reply = agent.generate("Write a short summary of this codebase.", cwd=".")
 print(reply)
 ```
 
-### 2. Instantiate a Specific Provider Directly
+### 2. Handle Agent Events
+
+By default, `agentshim` prints provider events to the terminal through a
+`ConsoleEventHandler`. That default is used only when you do not provide your
+own event handler and `silent=False`.
+
+If you pass `event_handler=...`, you take ownership of event handling. The
+built-in console printer is not added implicitly, which avoids surprising
+duplicate output.
+
+```python
+from agentshim import CodingAgent
+
+
+class MyHandler:
+    def on_thinking(self, text: str) -> None:
+        ...
+
+    def on_tool_call(self, tool: str, args=None) -> None:
+        ...
+
+    def on_tool_result(
+        self,
+        tool: str,
+        stdout: str = "",
+        stderr: str = "",
+        exit_code: int | None = None,
+        duration: float | None = None,
+    ) -> None:
+        ...
+
+    def on_usage(self, usage: dict) -> None:
+        ...
+
+
+agent = CodingAgent(provider="claude", event_handler=MyHandler())
+agent.generate("Inspect this repository.")
+```
+
+To keep the default console output and add your own handler, compose them
+explicitly:
+
+```python
+from agentshim import CodingAgent, ConsoleEventHandler
+
+agent = CodingAgent(
+    provider="claude",
+    event_handlers=[
+        ConsoleEventHandler(),
+        MyHandler(),
+    ],
+)
+agent.generate("Inspect this repository.")
+```
+
+You can also build the composition yourself:
+
+```python
+from agentshim import CompositeEventHandler, ConsoleEventHandler
+
+handler = CompositeEventHandler([ConsoleEventHandler(), MyHandler()])
+agent = CodingAgent(provider="codex", event_handler=handler)
+```
+
+Use `silent=True` to suppress the default console handler when you have not
+provided any handler:
+
+```python
+agent = CodingAgent(provider="claude")
+reply = agent.generate("Return only the answer.", silent=True)
+```
+
+### 3. Instantiate a Specific Provider Directly
 
 If you already know which backend you want, construct the provider class
 yourself.
@@ -92,7 +163,7 @@ The bundled provider classes are:
 - `GeminiCodingAgent`
 - `OpencodeCodingAgent`
 
-### 3. Configure MCP Servers
+### 4. Configure MCP Servers
 
 Claude Code and Codex can be configured with MCP servers by passing
 `HttpMcpServer` and `StdioMcpServer` objects at construction time.
@@ -143,14 +214,13 @@ class MyAgent(BaseCodingAgent):
         self,
         model: str | None = None,
         region: str | None = None,
-        recorder=None,
         event_handler=None,
+        event_handlers=None,
         mcp_servers=None,
         sandbox=False,
     ):
         self.model = model
         self.region = region
-        self.recorder = recorder
         self.event_handler = event_handler
 
     def generate(self, prompt: str, cwd=None, timeout=300, silent=False) -> str:
@@ -170,7 +240,7 @@ Notes:
 - Registration is import-driven. Your provider is available only after the module defining it has been imported in the current Python process.
 - `list_providers()` returns canonical provider names only. Aliases resolve via `get_provider_class(...)` and `CodingAgent(provider=...)`.
 - `register_provider(...)` rejects invalid names, abstract classes, and accidental name collisions unless you pass `overwrite=True`.
-- If you want `CodingAgent(...)` to instantiate your provider, its constructor should accept the shared kwargs `model`, `recorder`, `event_handler`, `mcp_servers`, and `sandbox` as needed.
+- If you want `CodingAgent(...)` to instantiate your provider, its constructor should accept the shared kwargs `model`, `event_handler`, `event_handlers`, `mcp_servers`, and `sandbox` as needed.
 - If your provider needs extra constructor arguments beyond the shared portable set, pass them via `backend_kwargs={...}` when constructing `CodingAgent(...)`.
 
 ## Development

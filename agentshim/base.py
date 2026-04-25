@@ -9,7 +9,6 @@ from typing import Any, TypeVar
 from agentshim.events import AgentEventHandler
 from agentshim.mcp_config import McpServerConfig
 from agentshim.sandbox import SandboxConfig
-from agentshim.trajectory import NullTrajectoryRecorder, TrajectoryRecorderProtocol
 
 _T = TypeVar("_T")
 _READABLE_NAME_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
@@ -28,7 +27,6 @@ def _readable_name_from_class_name(class_name: str) -> str:
 class BaseCodingAgent(ABC):
     """Abstract base class for coding agents."""
 
-    recorder: TrajectoryRecorderProtocol = NullTrajectoryRecorder()
     event_handler: Any | None = None
 
     @property
@@ -113,9 +111,7 @@ class ProviderRegistry:
         if not normalized:
             raise ValueError("provider name must not be empty")
         if not _PROVIDER_NAME_PATTERN.fullmatch(normalized):
-            raise ValueError(
-                f"invalid provider name '{name}'; use lowercase letters, digits, hyphens, or underscores"
-            )
+            raise ValueError(f"invalid provider name '{name}'; use lowercase letters, digits, hyphens, or underscores")
         return normalized
 
     def _normalize_names(self, canonical_name: str, aliases: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
@@ -147,9 +143,7 @@ class ProviderRegistry:
         all_names = (canonical, *normalized_aliases)
 
         collisions = [
-            name
-            for name in all_names
-            if name in self._providers and self._providers[name] is not provider_cls
+            name for name in all_names if name in self._providers and self._providers[name] is not provider_cls
         ]
         if collisions and not overwrite:
             raise ValueError(
@@ -172,18 +166,14 @@ class ProviderRegistry:
         normalized = self._normalize_name(name)
         provider_cls = self._providers.get(normalized)
         if provider_cls is None:
-            raise ValueError(
-                f"Unknown coding agent provider '{name}'. Available providers: {self.list_providers()}"
-            )
+            raise ValueError(f"Unknown coding agent provider '{name}'. Available providers: {self.list_providers()}")
         return provider_cls
 
     def get_canonical_name(self, name: str) -> str:
         normalized = self._normalize_name(name)
         canonical = self._canonical_names.get(normalized)
         if canonical is None:
-            raise ValueError(
-                f"Unknown coding agent provider '{name}'. Available providers: {self.list_providers()}"
-            )
+            raise ValueError(f"Unknown coding agent provider '{name}'. Available providers: {self.list_providers()}")
         return canonical
 
 
@@ -243,8 +233,8 @@ class CodingAgent(BaseCodingAgent):
         self,
         provider: str,
         model: str | None = None,
-        recorder: TrajectoryRecorderProtocol | None = None,
         event_handler: AgentEventHandler | None = None,
+        event_handlers: Sequence[AgentEventHandler] | None = None,
         mcp_servers: Sequence[McpServerConfig] | None = None,
         sandbox: bool | SandboxConfig | None = False,
         backend_kwargs: dict[str, Any] | None = None,
@@ -256,10 +246,10 @@ class CodingAgent(BaseCodingAgent):
         portable_kwargs: dict[str, Any] = {}
         if model is not None:
             portable_kwargs["model"] = model
-        if recorder is not None:
-            portable_kwargs["recorder"] = recorder
         if event_handler is not None:
             portable_kwargs["event_handler"] = event_handler
+        if event_handlers is not None:
+            portable_kwargs["event_handlers"] = list(event_handlers)
         if mcp_servers is not None:
             portable_kwargs["mcp_servers"] = list(mcp_servers)
         if sandbox is not None and sandbox is not False:
@@ -269,8 +259,7 @@ class CodingAgent(BaseCodingAgent):
         overlapping_keys = sorted(portable_kwargs.keys() & advanced_kwargs.keys())
         if overlapping_keys:
             raise ValueError(
-                "backend_kwargs must not override portable CodingAgent arguments: "
-                + ", ".join(overlapping_keys)
+                "backend_kwargs must not override portable CodingAgent arguments: " + ", ".join(overlapping_keys)
             )
 
         self._backend: BaseCodingAgent = provider_cls(**portable_kwargs, **advanced_kwargs)
@@ -295,14 +284,6 @@ class CodingAgent(BaseCodingAgent):
     @model.setter
     def model(self, value: Any) -> None:
         self._backend.model = value  # type: ignore[attr-defined]
-
-    @property
-    def recorder(self) -> TrajectoryRecorderProtocol:
-        return self._backend.recorder
-
-    @recorder.setter
-    def recorder(self, value: TrajectoryRecorderProtocol) -> None:
-        self._backend.recorder = value
 
     @property
     def event_handler(self) -> Any | None:

@@ -7,7 +7,8 @@ from agentshim.claude.events import (
     ToolResultEvent,
     ToolUseEvent,
 )
-from agentshim.copilot.events import CopilotEvent, MessageDeltaEvent as CopilotMessageDeltaEvent
+from agentshim.copilot.events import CopilotEvent
+from agentshim.copilot.events import MessageDeltaEvent as CopilotMessageDeltaEvent
 from agentshim.copilot.events import MessageEvent as CopilotMessageEvent
 from agentshim.copilot.events import ResultEvent as CopilotResultEvent
 from agentshim.copilot.events import ToolResultEvent as CopilotToolResultEvent

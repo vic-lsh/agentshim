@@ -20,6 +20,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.408",
     "pytest>=8.0.0",
     "ruff>=0.11.0",
 ]
@@ -40,7 +41,8 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "UP", "B", "PT", "RUF010", "RUF013"]
+select = ["E", "F", "W", "I", "UP", "PIE", "C4", "ERA", "B", "RUF010", "RUF013", "RUF100", "PT", "SIM", "RSE", "FURB", "A", "PERF401", "RET505", "TCH", "S602"]
+ignore = ["SIM117", "SIM105", "SIM108", "PT009"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -2,15 +2,11 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Iterable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..base import register_provider
 from ..cli_agent import CLICodingAgent, CLIGenerationSession
-from ..events import AgentEventHandler
-from ..executor import CommandExecutor, CommandHandle
-from ..mcp_config import HttpMcpServer, McpServerConfig
-from ..sandbox import SandboxConfig
+from ..mcp_config import HttpMcpServer
 from ..usage import ProviderUsage, TokenUsage
 from .events import (
     CopilotEvent,
@@ -24,6 +20,14 @@ from .events import (
     TurnEndEvent,
     UsageEvent,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Sequence
+
+    from ..events import AgentEventHandler
+    from ..executor import CommandExecutor, CommandHandle
+    from ..mcp_config import McpServerConfig
+    from ..sandbox import SandboxConfig
 
 
 class CopilotGenerationSession(CLIGenerationSession):
@@ -71,6 +75,7 @@ class CopilotGenerationSession(CLIGenerationSession):
 
         if not isinstance(data, dict):
             return
+        data = cast("dict[str, Any]", data)
 
         event = CopilotEvent.from_dict(data)
         if event is None:
@@ -165,10 +170,9 @@ class CopilotGenerationSession(CLIGenerationSession):
                 self.session_id = event.session_id
             return
 
-        if isinstance(event, ErrorEvent):
-            if event.message:
-                self.stdout_lines.append(event.message)
-                self.event_handler.on_thinking(f"[copilot error] {event.message}")
+        if isinstance(event, ErrorEvent) and event.message:
+            self.stdout_lines.append(event.message)
+            self.event_handler.on_thinking(f"[copilot error] {event.message}")
 
     def run(self, prompt: str) -> str:
         super().run(prompt)

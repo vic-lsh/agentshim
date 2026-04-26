@@ -3,13 +3,15 @@ from __future__ import annotations
 import inspect
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-from agentshim.events import AgentEventHandler
-from agentshim.executor import CommandExecutor, CommandHandle
-from agentshim.mcp_config import McpServerConfig
-from agentshim.sandbox import SandboxConfig
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    from agentshim.events import AgentEventHandler
+    from agentshim.executor import CommandExecutor, CommandHandle
+    from agentshim.mcp_config import McpServerConfig
+    from agentshim.sandbox import SandboxConfig
 
 _T = TypeVar("_T")
 _READABLE_NAME_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
@@ -105,7 +107,7 @@ class ProviderRegistry:
         self._providers: dict[str, ProviderClass] = {}
         self._canonical_names: dict[str, str] = {}
 
-    def _normalize_name(self, name: str) -> str:
+    def _normalize_name(self, name: object) -> str:
         if not isinstance(name, str):
             raise TypeError(f"provider name must be a string, got {type(name).__name__}")
         normalized = name.strip().lower()
@@ -121,6 +123,9 @@ class ProviderRegistry:
             dict.fromkeys(self._normalize_name(alias) for alias in aliases if alias != canonical_name)
         )
         return canonical, normalized_aliases
+
+    def validate_names(self, canonical_name: str, aliases: tuple[str, ...]) -> None:
+        self._normalize_names(canonical_name, aliases)
 
     def _validate_provider_class(self, cls: type[Any]) -> ProviderClass:
         if not inspect.isclass(cls):
@@ -200,14 +205,17 @@ def register_provider(
     """
 
     all_aliases = (*extra_names, *aliases)
-    _PROVIDER_REGISTRY._normalize_names(canonical_name, all_aliases)
+    _PROVIDER_REGISTRY.validate_names(canonical_name, all_aliases)
 
     def decorator(cls: type[_T]) -> type[_T]:
-        return _PROVIDER_REGISTRY.register(
-            cls,
-            canonical_name=canonical_name,
-            aliases=all_aliases,
-            overwrite=overwrite,
+        return cast(
+            "type[_T]",
+            _PROVIDER_REGISTRY.register(
+                cls,
+                canonical_name=canonical_name,
+                aliases=all_aliases,
+                overwrite=overwrite,
+            ),
         )
 
     return decorator

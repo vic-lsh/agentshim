@@ -1,0 +1,10 @@
+{
+  "include": ["agentshim", "tests"],
+  "exclude": [".venv/", "build/", "dist/"],
+  "typeCheckingMode": "standard",
+  "pythonVersion": "3.10",
+  "venvPath": ".",
+  "venv": ".venv",
+  "reportMissingTypeStubs": false,
+  "strict": ["agentshim"]
+}

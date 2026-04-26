@@ -20,7 +20,22 @@ jobs:
         with:
           python-version: "3.11"
       - run: uv sync --locked --dev
-      - run: uv run ruff check .
+      - run: bash scripts/format_code.sh --check
+      - run: bash scripts/check_errors.sh
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: uv sync --locked --dev
+      - run: bash scripts/type_check.sh
 
   test:
     runs-on: ubuntu-latest

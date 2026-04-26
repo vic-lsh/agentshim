@@ -1,5 +1,5 @@
-import subprocess
 import shutil
+import subprocess
 import sys
 from abc import abstractmethod
 from collections.abc import Callable, Iterable, Sequence

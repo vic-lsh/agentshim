@@ -1,6 +1,7 @@
 import io
 import json
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -41,7 +42,7 @@ def claude_agent(mock_llm_subprocess, mock_env, mock_event_handler):
                     ]
                 )
             )
-            agent.mock_event_handler = mock_event_handler
+            cast("Any", agent).mock_event_handler = mock_event_handler
             yield agent
 
 

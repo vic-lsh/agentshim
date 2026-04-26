@@ -1,0 +1,43 @@
+site_name: agentshim
+site_description: Provider-agnostic coding-agent CLI shims
+site_url: https://vic-lsh.github.io/agentshim/
+repo_url: https://github.com/vic-lsh/agentshim
+repo_name: vic-lsh/agentshim
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.instant
+    - content.code.copy
+    - content.tabs.link
+
+nav:
+  - Overview: index.md
+  - Getting Started: getting-started.md
+  - Events: events.md
+  - Executors: executors.md
+  - MCP Servers: mcp.md
+  - Providers: providers.md
+  - Extending: extending.md
+  - API Reference: api.md
+  - Development: development.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - .
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false

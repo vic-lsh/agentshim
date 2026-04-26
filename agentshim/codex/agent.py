@@ -1,5 +1,4 @@
 import json
-import subprocess
 import time
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
@@ -7,6 +6,7 @@ from typing import Any
 from ..base import register_provider
 from ..cli_agent import CLICodingAgent, CLIGenerationSession
 from ..events import AgentEventHandler
+from ..executor import CommandExecutor, CommandHandle
 from ..mcp_config import HttpMcpServer, McpServerConfig
 from ..sandbox import SandboxConfig
 from ..usage import ProviderUsage, TokenUsage
@@ -187,6 +187,7 @@ class CodexCodingAgent(CLICodingAgent):
         event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: Sequence[McpServerConfig] | None = None,
         sandbox: bool | SandboxConfig = False,
+        executor: CommandExecutor | None = None,
     ):
         """Initialize the Codex coding agent.
 
@@ -195,10 +196,11 @@ class CodexCodingAgent(CLICodingAgent):
             event_handler: Optional event handler for UI updates.
             mcp_servers: Optional list of MCP server configurations.
             sandbox: Not supported for Codex; must be False.
+            executor: Optional command executor for binary lookup and process execution.
         """
         if sandbox:
             raise NotImplementedError("sandbox is not supported for CodexCodingAgent")
-        super().__init__("codex", model, event_handler, event_handlers, mcp_servers)
+        super().__init__("codex", model, event_handler, event_handlers, mcp_servers, executor=executor)
 
     @property
     def codex_path(self) -> str:
@@ -246,7 +248,7 @@ class CodexCodingAgent(CLICodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
+        on_process_started: Callable[[CommandHandle], None] | None = None,
     ) -> CodexGenerationSession:
         return CodexGenerationSession(
             binary_name=self.binary_name,
@@ -258,5 +260,6 @@ class CodexCodingAgent(CLICodingAgent):
             timeout=timeout,
             silent=silent,
             event_handler=self.event_handler,
+            executor=self.executor,
             on_process_started=on_process_started,
         )

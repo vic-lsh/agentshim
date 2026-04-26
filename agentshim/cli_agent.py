@@ -1,10 +1,6 @@
-import io
-import os
-import shutil
-import signal
 import subprocess
+import shutil
 import sys
-import threading
 from abc import abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
@@ -13,9 +9,14 @@ from loguru import logger
 
 from .base import BaseAgentSession, BaseCodingAgent
 from .events import AgentEventHandler, compose_event_handlers, default_event_handler
+from .executor import CallbackCommandStreamSink, CommandExecutor, CommandHandle, CommandRequest, HostCommandExecutor
 from .mcp_config import McpServerConfig
 from .usage import ProviderUsage
 from .utils import get_interactive_env
+
+
+def _default_executor() -> HostCommandExecutor:
+    return HostCommandExecutor(shutil_module=shutil, subprocess_module=subprocess)
 
 
 class CLIGenerationSession:
@@ -32,7 +33,8 @@ class CLIGenerationSession:
         timeout: int = 300,
         silent: bool = False,
         event_handler: AgentEventHandler | None = None,
-        on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
+        executor: CommandExecutor | None = None,
+        on_process_started: Callable[[CommandHandle], None] | None = None,
     ):
         self.binary_name = binary_name
         self.env = env
@@ -48,6 +50,7 @@ class CLIGenerationSession:
             logger=logger,
             log_prefix=log_prefix,
         )
+        self.executor = executor or _default_executor()
         self.on_process_started = on_process_started
 
         # State initialization
@@ -90,85 +93,29 @@ class CLIGenerationSession:
             on_run_start(self.cmd)
             sys.stdout.flush()
 
-        def read_stdout(pipe: io.TextIOWrapper) -> None:
-            for line in iter(pipe.readline, ""):
-                if not line:
-                    break
-                self._process_stdout(line)
-            pipe.close()
-
-        def read_stderr(pipe: io.TextIOWrapper) -> None:
-            for line in iter(pipe.readline, ""):
-                if not line:
-                    break
-                self._process_stderr(line)
-            pipe.close()
-
-        process = subprocess.Popen(
-            self.cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            cwd=self.cwd,
-            env=self.env,
-            start_new_session=True,
+        result = self.executor.run(
+            CommandRequest(
+                argv=self.cmd,
+                stdin=prompt,
+                cwd=self.cwd,
+                env=self.env,
+                timeout=self.timeout,
+            ),
+            CallbackCommandStreamSink(
+                on_stdout=self._process_stdout,
+                on_stderr=self._process_stderr,
+                on_started=self.on_process_started,
+            ),
         )
-
-        if self.on_process_started is not None:
-            try:
-                self.on_process_started(process)
-            except Exception as exc:
-                self.logger.warning(f"on_process_started callback raised: {exc}")
-
-        stdout_thread = threading.Thread(target=read_stdout, args=(process.stdout,))
-        stderr_thread = threading.Thread(target=read_stderr, args=(process.stderr,))
-
-        stdout_thread.daemon = True
-        stderr_thread.daemon = True
-
-        stdout_thread.start()
-        stderr_thread.start()
-
-        try:
-            if process.stdin:
-                process.stdin.write(prompt)
-                process.stdin.close()
-        except BrokenPipeError:
-            pass
-
-        try:
-            process.wait(timeout=self.timeout)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait()
-            raise subprocess.TimeoutExpired(self.cmd, self.timeout) from None
-        finally:
-            if process.poll() is None:
-                try:
-                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-                    process.wait()
-                except (ProcessLookupError, OSError):
-                    pass
-
-        stdout_thread.join(timeout=1)
-        stderr_thread.join(timeout=1)
-
-        stdout_data = "".join(self.stdout_lines)
-        stderr_data = "".join(self.stderr_lines)
 
         on_run_end = getattr(self.event_handler, "on_run_end", None)
         if on_run_end is not None:
-            on_run_end(process.returncode)
+            on_run_end(result.returncode)
 
-        if process.returncode != 0:
-            raise RuntimeError(f"{self.binary_name} exited with code {process.returncode}: {stderr_data}")
+        if result.returncode != 0:
+            raise RuntimeError(f"{self.binary_name} exited with code {result.returncode}: {result.stderr}")
 
-        return stdout_data.strip()
+        return "".join(self.stdout_lines).strip()
 
 
 class CLICodingAgent(BaseCodingAgent):
@@ -183,6 +130,7 @@ class CLICodingAgent(BaseCodingAgent):
         event_handler: AgentEventHandler | None = None,
         event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: Sequence[McpServerConfig] | None = None,
+        executor: CommandExecutor | None = None,
     ):
         """Initialize the CLI coding agent.
 
@@ -192,28 +140,20 @@ class CLICodingAgent(BaseCodingAgent):
             event_handler: Optional event handler for UI updates.
             event_handlers: Optional event handlers to compose in order.
             mcp_servers: Optional list of MCP server configurations.
+            executor: Optional command executor controlling binary lookup,
+                validation, and process execution.
 
         Raises:
             RuntimeError: If binary is not found in PATH or is not working.
         """
         self.env = get_interactive_env()
+        self.executor = executor or _default_executor()
         self.binary_name = binary_name
         self.model = model
         self.event_handler = compose_event_handlers(event_handler, event_handlers)
         self.mcp_servers: list[McpServerConfig] = list(mcp_servers or [])
 
-        # Search for binary in the captured environment's PATH
-        binary_path = shutil.which(binary_name, path=self.env.get("PATH"))
-
-        if not binary_path:
-            # Fallback to current PATH if not found in interactive env
-            binary_path = shutil.which(binary_name)
-
-        if not binary_path:
-            raise RuntimeError(
-                f"{binary_name} binary not found in PATH. Please ensure {binary_name} is installed and available."
-            )
-        self.binary_path = binary_path
+        self.binary_path = self.executor.find_binary(binary_name, self.env)
         self._check_cli()
         self.logger = logger.bind(agent_prefix=self._log_prefix)
         # Populated after each generate() call from the session's usage.
@@ -222,31 +162,11 @@ class CLICodingAgent(BaseCodingAgent):
     def _check_cli(self):
         """Check if the CLI tool is available and executable."""
         try:
-            result = subprocess.run(
-                [self.binary_path, "--help"],
-                capture_output=True,
-                text=True,
-                check=False,
-                env=self.env,
-                stdin=subprocess.DEVNULL,
+            self.executor.check_binary(
+                self.binary_path,
+                self.env,
                 timeout=self.CLI_CHECK_TIMEOUT_SECONDS,
             )
-            if result.returncode != 0:
-                raise RuntimeError(
-                    f"{self.binary_name} CLI tool at '{self.binary_path}' is not working correctly. "
-                    f"'{self.binary_path} --help' exited with code {result.returncode}. "
-                    f"Stderr: {result.stderr}"
-                )
-        except subprocess.TimeoutExpired as e:
-            raise RuntimeError(
-                f"{self.binary_name} CLI tool at '{self.binary_path}' did not respond to "
-                f"'--help' within {self.CLI_CHECK_TIMEOUT_SECONDS}s."
-            ) from e
-        except FileNotFoundError as e:
-            raise RuntimeError(
-                f"{self.binary_name} CLI tool not found at '{self.binary_path}'. "
-                f"Please ensure {self.binary_name} is installed and in your PATH."
-            ) from e
         except Exception as e:
             raise RuntimeError(f"Failed to check {self.binary_name} CLI tool: {e}") from e
 
@@ -270,7 +190,7 @@ class CLICodingAgent(BaseCodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
+        on_process_started: Callable[[CommandHandle], None] | None = None,
     ) -> CLIGenerationSession:
         """Create a session for a single generation request.
 
@@ -286,6 +206,7 @@ class CLICodingAgent(BaseCodingAgent):
             timeout=timeout,
             silent=silent,
             event_handler=self.event_handler,
+            executor=self.executor,
             on_process_started=on_process_started,
         )
 
@@ -314,7 +235,7 @@ class CLICodingAgent(BaseCodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
+        on_process_started: Callable[[CommandHandle], None] | None = None,
     ) -> str:
         """One-shot prompt → reply. Convenience wrapper around
         ``start_session(...).generate(prompt)``; no conversation state is
@@ -360,7 +281,7 @@ class CLIAgentSession(BaseAgentSession):
         cwd: str | None = None,
         timeout: int | None = None,
         silent: bool | None = None,
-        on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
+        on_process_started: Callable[[CommandHandle], None] | None = None,
     ) -> str:
         """Send ``prompt``, returning the assistant's text reply.
 
@@ -374,10 +295,9 @@ class CLIAgentSession(BaseAgentSession):
             cwd: Override the session's default working directory.
             timeout: Override the session's default timeout (seconds).
             silent: Override the session's default silent flag.
-            on_process_started: Optional callback invoked with the spawned
-                ``subprocess.Popen`` immediately after the CLI subprocess
-                starts (used by callers that need to kill it externally,
-                e.g. crucible's short-circuit).
+            on_process_started: Optional callback invoked with an
+                executor-neutral command handle immediately after the CLI
+                command starts.
         """
         effective_cwd = cwd if cwd is not None else self._cwd
         effective_timeout = timeout if timeout is not None else self._timeout

@@ -73,15 +73,22 @@ def test_coding_agent_identity_properties(mock_binaries):
 
 
 def test_coding_agent_passes_supported_optional_args(mock_binaries):
+    class Executor:
+        def find_binary(self, binary_name, env):
+            return f"/usr/local/bin/{binary_name}"
+
+    executor = Executor()
     servers = [HttpMcpServer(name="docs", url="http://localhost:9000/sse")]
     agent = CodingAgent(
         provider="claude",
         model="test-model",
         mcp_servers=servers,
         sandbox=True,
+        executor=executor,
     )
     assert agent.backend.mcp_servers == servers
     assert agent.backend.sandbox is not None
+    assert agent.backend.executor is executor
 
 
 def test_coding_agent_passes_composable_event_handlers(mock_binaries):

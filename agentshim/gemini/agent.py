@@ -1,5 +1,4 @@
 import json
-import subprocess
 import time
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
@@ -7,6 +6,7 @@ from typing import Any
 from ..base import register_provider
 from ..cli_agent import CLICodingAgent, CLIGenerationSession
 from ..events import AgentEventHandler
+from ..executor import CommandExecutor, CommandHandle
 from ..sandbox import SandboxConfig
 from ..usage import ProviderUsage, TokenUsage
 from .events import GeminiEvent, InitEvent, MessageEvent, ToolResultEvent, ToolUseEvent
@@ -92,6 +92,7 @@ class GeminiCodingAgent(CLICodingAgent):
         event_handlers: Iterable[AgentEventHandler] | None = None,
         mcp_servers: Sequence[object] | None = None,
         sandbox: bool | SandboxConfig = False,
+        executor: CommandExecutor | None = None,
     ):
         """Initialize the Gemini coding agent.
 
@@ -100,6 +101,7 @@ class GeminiCodingAgent(CLICodingAgent):
             event_handler: Optional event handler for UI updates.
             mcp_servers: Optional list of MCP server configurations.
             sandbox: Not supported for Gemini; must be False.
+            executor: Optional command executor for binary lookup and process execution.
 
         Raises:
             ValueError: If mcp_servers is non-empty (not supported).
@@ -109,7 +111,7 @@ class GeminiCodingAgent(CLICodingAgent):
             raise ValueError("GeminiCodingAgent does not support programmatic MCP server configuration via CLI flags")
         if sandbox:
             raise NotImplementedError("sandbox is not supported for GeminiCodingAgent")
-        super().__init__("gemini", model, event_handler, event_handlers)
+        super().__init__("gemini", model, event_handler, event_handlers, executor=executor)
 
     @property
     def gemini_path(self) -> str:
@@ -142,7 +144,7 @@ class GeminiCodingAgent(CLICodingAgent):
         cwd: str | None = None,
         timeout: int = 300,
         silent: bool = False,
-        on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
+        on_process_started: Callable[[CommandHandle], None] | None = None,
     ) -> GeminiGenerationSession:
         return GeminiGenerationSession(
             binary_name=self.binary_name,
@@ -154,5 +156,6 @@ class GeminiCodingAgent(CLICodingAgent):
             timeout=timeout,
             silent=silent,
             event_handler=self.event_handler,
+            executor=self.executor,
             on_process_started=on_process_started,
         )

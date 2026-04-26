@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agentshim.claude import ClaudeCodeCodingAgent
-from agentshim.copilot import CopilotCodingAgent
 from agentshim.codex import CodexCodingAgent
+from agentshim.copilot import CopilotCodingAgent
 from agentshim.gemini import GeminiCodingAgent
 from agentshim.opencode import OpencodeCodingAgent
 

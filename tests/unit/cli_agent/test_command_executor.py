@@ -15,6 +15,7 @@ from agentshim.executor import (
     CommandResult,
     CommandStreamSink,
     HostCommandExecutor,
+    ProcessCommandHandle,
 )
 
 
@@ -94,12 +95,8 @@ def test_cli_agent_uses_injected_executor_for_lookup_check_and_run(monkeypatch):
     result = agent.generate("hello", cwd="/workspace", timeout=123, silent=True)
 
     assert result == "executor output"
-    assert executor.find_binary_calls == [
-        ("dummy", {"PATH": "/custom/bin", "HOME": "/tmp"})
-    ]
-    assert executor.check_binary_calls == [
-        ("/executor/bin/dummy", {"PATH": "/custom/bin", "HOME": "/tmp"}, 15)
-    ]
+    assert executor.find_binary_calls == [("dummy", {"PATH": "/custom/bin", "HOME": "/tmp"})]
+    assert executor.check_binary_calls == [("/executor/bin/dummy", {"PATH": "/custom/bin", "HOME": "/tmp"}, 15)]
     assert executor.run_calls == [
         CommandRequest(
             argv=["/executor/bin/dummy", "run"],
@@ -242,4 +239,5 @@ def test_host_executor_timeout_kills_real_process():
         HostCommandExecutor().run(request, sink)
 
     assert len(sink.handles) == 1
+    assert isinstance(sink.handles[0], ProcessCommandHandle)
     assert sink.handles[0].process.poll() is not None

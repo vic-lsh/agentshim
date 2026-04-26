@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import io
 import os
 import shutil
 import signal
 import subprocess
 import threading
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    import io
+    from collections.abc import Callable
 
 
 class CommandHandle(Protocol):
@@ -48,7 +50,7 @@ class CommandRequest:
     stdin: str
     cwd: str | None
     env: dict[str, str]
-    timeout: int | None
+    timeout: float | None
 
 
 @dataclass(frozen=True)
@@ -230,9 +232,7 @@ class HostCommandExecutor:
                     f"Stderr: {result.stderr}"
                 )
         except self._subprocess.TimeoutExpired as e:
-            raise RuntimeError(
-                f"CLI tool at '{binary_path}' did not respond to '--help' within {timeout}s."
-            ) from e
+            raise RuntimeError(f"CLI tool at '{binary_path}' did not respond to '--help' within {timeout}s.") from e
         except FileNotFoundError as e:
             raise RuntimeError(
                 f"CLI tool not found at '{binary_path}'. Please ensure it is installed and in your PATH."

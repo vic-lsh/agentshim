@@ -5,11 +5,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from agentshim.claude import ClaudeCodeCodingAgent, ClaudeGenerationSession
-from agentshim.copilot import CopilotCodingAgent, CopilotGenerationSession
-from agentshim.copilot.events import CopilotEvent, ResultEvent, SessionStartEvent
 from agentshim.claude.events import ClaudeEvent, SystemEvent
 from agentshim.cli_agent import CLIAgentSession, CLICodingAgent
 from agentshim.codex import CodexCodingAgent, CodexGenerationSession
+from agentshim.copilot import CopilotCodingAgent, CopilotGenerationSession
+from agentshim.copilot.events import CopilotEvent, ResultEvent, SessionStartEvent
 from agentshim.gemini import GeminiCodingAgent, GeminiGenerationSession
 from agentshim.gemini.events import GeminiEvent, InitEvent
 from agentshim.opencode import OpencodeCodingAgent, OpencodeGenerationSession

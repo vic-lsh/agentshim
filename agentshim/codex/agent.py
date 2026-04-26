@@ -1,7 +1,7 @@
 import json
 import time
 from collections.abc import Callable, Iterable, Sequence
-from typing import Any
+from typing import Any, cast
 
 from ..base import register_provider
 from ..cli_agent import CLICodingAgent, CLIGenerationSession
@@ -20,6 +20,10 @@ from .events import (
     ToolUseEvent,
     TurnCompletedEvent,
 )
+
+
+def _tool_args(value: Any) -> dict[str, Any]:
+    return cast("dict[str, Any]", value) if isinstance(value, dict) else {}
 
 
 class CodexGenerationSession(CLIGenerationSession):
@@ -128,7 +132,7 @@ class CodexGenerationSession(CLIGenerationSession):
                 if event.tool_name is None:
                     return
                 event.tool_name_resolved = event.tool_name
-                args = event.parameters or {}
+                args = _tool_args(event.parameters)
                 duration = None
                 if self.event_handler:
                     self.event_handler.on_tool_call(event.tool_name, args)
@@ -140,7 +144,7 @@ class CodexGenerationSession(CLIGenerationSession):
 
                 start_time = self.tool_start_times.get(event.tool_id)
                 duration = time.time() - start_time if start_time else None
-                args = self.tool_args.get(event.tool_id, event.parameters or {})
+                args = _tool_args(self.tool_args.get(event.tool_id, event.parameters))
 
                 if event.tool_id not in self.tool_map and self.event_handler and event.tool_name:
                     self.event_handler.on_tool_call(event.tool_name, args)

@@ -104,15 +104,6 @@ def _item_parameters(item: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in item.items() if k not in excluded}
 
 
-def _summarize_item(item: dict[str, Any]) -> str:
-    """Summarize a generic codex item for the tool-result output field."""
-    for key in ("text", "summary", "output", "result"):
-        value = item.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return ""
-
-
 class ThreadStartedEvent(CodexEvent):
     """Thread-level start event carrying the resumable ``thread_id``."""
 

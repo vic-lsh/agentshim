@@ -331,6 +331,9 @@ Notes:
 
 ```bash
 uv sync --dev
+bash scripts/format_code.sh --check
+bash scripts/check_errors.sh
+bash scripts/type_check.sh
 uv run pytest
 ```
 

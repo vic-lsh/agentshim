@@ -20,8 +20,9 @@ def _extract_tool_result(result_raw: Any) -> tuple[str, int | None]:
 
     contents = result.get("contents")
     if isinstance(contents, list):
+        typed_contents = cast("list[Any]", contents)
         rendered_blocks: list[str] = []
-        for item_raw in contents:
+        for item_raw in typed_contents:
             item = _as_dict(item_raw)
             item_type = item.get("type")
             if item_type in ("text", "terminal"):

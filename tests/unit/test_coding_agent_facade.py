@@ -13,6 +13,7 @@ from agentshim import (
 )
 from agentshim.base import BaseCodingAgent
 from agentshim.cli_agent import CLICodingAgent
+from agentshim.executor import CommandRequest, CommandResult, CommandStreamSink
 from agentshim.mcp_config import HttpMcpServer
 
 
@@ -62,6 +63,7 @@ def test_coding_agent_forwards_event_handler_property(mock_binaries):
 
 def test_coding_agent_requires_explicit_backend_access_for_backend_attributes(mock_binaries):
     agent = CodingAgent(provider="claude", model="test-model")
+    assert isinstance(agent.backend, ClaudeCodeCodingAgent)
     assert agent.backend.binary_name == "claude"
     assert agent.backend.claude_path == "/usr/local/bin/claude"
 
@@ -74,8 +76,14 @@ def test_coding_agent_identity_properties(mock_binaries):
 
 def test_coding_agent_passes_supported_optional_args(mock_binaries):
     class Executor:
-        def find_binary(self, binary_name, env):
+        def find_binary(self, binary_name: str, env: dict[str, str]) -> str:
             return f"/usr/local/bin/{binary_name}"
+
+        def check_binary(self, binary_path: str, env: dict[str, str], *, timeout: int) -> None:
+            return None
+
+        def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
+            raise AssertionError("not expected")
 
     executor = Executor()
     servers = [HttpMcpServer(name="docs", url="http://localhost:9000/sse")]
@@ -86,6 +94,7 @@ def test_coding_agent_passes_supported_optional_args(mock_binaries):
         sandbox=True,
         executor=executor,
     )
+    assert isinstance(agent.backend, ClaudeCodeCodingAgent)
     assert agent.backend.mcp_servers == servers
     assert agent.backend.sandbox is not None
     assert agent.backend.executor is executor

@@ -1,7 +1,7 @@
 from .base import BaseAgentSession, BaseCodingAgent, CodingAgent, get_provider_class, list_providers, register_provider
 from .claude import ClaudeCodeCodingAgent
-from .copilot import CopilotCodingAgent
 from .codex import CodexCodingAgent
+from .copilot import CopilotCodingAgent
 from .events import CompositeEventHandler, ConsoleEventHandler, NullEventHandler
 from .executor import (
     CallbackCommandStreamSink,

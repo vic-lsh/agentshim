@@ -305,6 +305,17 @@ class CodingAgent(BaseCodingAgent):
     def event_handler(self, value: Any | None) -> None:
         self._backend.event_handler = value
 
+    @property
+    def last_usage(self) -> Any:
+        """Token/turn usage from the backend's most recent ``generate``.
+
+        ``generate`` writes usage onto the concrete backend, so the
+        portable wrapper must surface it here — otherwise callers holding a
+        ``CodingAgent`` (rather than the raw provider class) read a missing
+        attribute and lose all usage accounting.
+        """
+        return getattr(self._backend, "last_usage", None)
+
     def start_session(
         self,
         cwd: str | None = None,

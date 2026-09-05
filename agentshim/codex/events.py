@@ -70,8 +70,10 @@ class CodexEvent:
             status_raw = item.get("status")
             status = status_raw if isinstance(status_raw, str) else None
             if completed:
-                return ToolUseEvent(
+                return ToolResultEvent(
                     tool_id=item_id,
+                    output=_summarize_item(item),
+                    status=status,
                     tool_name=item_type or "item",
                     parameters=_item_parameters(item),
                 )
@@ -102,6 +104,15 @@ def _item_parameters(item: dict[str, Any]) -> dict[str, Any]:
     """Extract a parameter dict from a generic codex item payload."""
     excluded = {"id", "type", "status"}
     return {k: v for k, v in item.items() if k not in excluded}
+
+
+def _summarize_item(item: dict[str, Any]) -> str:
+    """Summarize a generic codex item for the tool-result output field."""
+    for key in ("text", "summary", "output", "result"):
+        value = item.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
 
 
 class ThreadStartedEvent(CodexEvent):

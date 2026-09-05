@@ -86,7 +86,7 @@ class CodexGenerationSession(CLIGenerationSession):
             return
 
         if isinstance(event, ToolUseEvent):
-            if event.tool_name == "execute" and event.tool_id:
+            if event.tool_id:
                 self.tool_map[event.tool_id] = event.tool_name
                 self.tool_start_times[event.tool_id] = time.time()
                 self.tool_args[event.tool_id] = event.parameters

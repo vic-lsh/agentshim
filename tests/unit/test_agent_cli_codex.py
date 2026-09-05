@@ -200,7 +200,47 @@ class TestCodexGenerationSession:
             duration=None,
         )
 
-    def test_unknown_item_completed_surfaces_tool_call_with_full_payload(self):
+    def test_generic_item_lifecycle_emits_one_call_and_one_result(self):
+        handler = MagicMock()
+        session = _session(event_handler=handler)
+        session._process_stdout(
+            json.dumps(
+                {
+                    "type": "item.started",
+                    "item": {
+                        "id": "fc1",
+                        "type": "file_change",
+                        "status": "in_progress",
+                        "path": "engine.py",
+                        "kind": "update",
+                    },
+                }
+            )
+        )
+        session._process_stdout(
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "fc1",
+                        "type": "file_change",
+                        "status": "completed",
+                        "path": "engine.py",
+                        "kind": "update",
+                    },
+                }
+            )
+        )
+        handler.on_tool_call.assert_called_once_with(
+            "file_change",
+            {"path": "engine.py", "kind": "update"},
+        )
+        handler.on_tool_result.assert_called_once()
+        result_kwargs = handler.on_tool_result.call_args.kwargs
+        assert result_kwargs["tool"] == "file_change"
+        assert result_kwargs["duration"] is not None
+
+    def test_unknown_item_completed_without_started_event_emits_call_and_result(self):
         handler = MagicMock()
         session = _session(event_handler=handler)
         session._process_stdout(
@@ -219,6 +259,12 @@ class TestCodexGenerationSession:
         handler.on_tool_call.assert_called_once_with(
             "file_change",
             {"path": "engine.py", "kind": "update"},
+        )
+        handler.on_tool_result.assert_called_once_with(
+            tool="file_change",
+            stdout="",
+            exit_code=None,
+            duration=None,
         )
 
     def test_non_json_stdout_line_is_forwarded_to_event_handler(self):

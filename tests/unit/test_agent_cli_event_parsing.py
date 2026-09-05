@@ -383,22 +383,45 @@ class TestCodexEventFromDict:
         }
         assert CodexEvent.from_dict(data) is None
 
-    def test_generic_item_completed_becomes_tool_use_with_full_payload(self):
+    def test_generic_item_started_is_tool_use(self):
         from agentshim.codex_events import CodexEvent
         from agentshim.codex_events import ToolUseEvent as CodexToolUseEvent
 
         data = {
-            "type": "item.completed",
+            "type": "item.started",
             "item": {
                 "id": "fc1",
                 "type": "file_change",
+                "status": "in_progress",
                 "path": "engine.py",
                 "kind": "update",
             },
         }
         event = CodexEvent.from_dict(data)
         assert isinstance(event, CodexToolUseEvent)
+        assert event.tool_id == "fc1"
         assert event.tool_name == "file_change"
+        assert event.parameters == {"path": "engine.py", "kind": "update"}
+
+    def test_generic_item_completed_becomes_tool_result_with_full_payload(self):
+        from agentshim.codex_events import CodexEvent
+        from agentshim.codex_events import ToolResultEvent as CodexToolResultEvent
+
+        data = {
+            "type": "item.completed",
+            "item": {
+                "id": "fc1",
+                "type": "file_change",
+                "status": "completed",
+                "path": "engine.py",
+                "kind": "update",
+            },
+        }
+        event = CodexEvent.from_dict(data)
+        assert isinstance(event, CodexToolResultEvent)
+        assert event.tool_id == "fc1"
+        assert event.tool_name == "file_change"
+        assert event.status == "completed"
         assert event.parameters == {"path": "engine.py", "kind": "update"}
 
     def test_turn_failed_is_error(self):

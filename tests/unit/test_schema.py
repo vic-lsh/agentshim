@@ -44,13 +44,24 @@ class TestDialectProblems:
     def test_non_object_root_is_a_problem(self) -> None:
         assert dialect_problems({"type": "array"}, SchemaDialect.OPEN) != []
 
-    @pytest.mark.parametrize(
-        "keyword", ["allOf", "oneOf", "not", "if", "patternProperties", "$schema"]
-    )
+    @pytest.mark.parametrize("keyword", ["allOf", "oneOf", "not", "if", "patternProperties"])
     def test_unsupported_keywords_are_reported(self, keyword: str) -> None:
         schema = {"type": "object", "properties": {"a": {"type": "string"}}, keyword: {}}
         problems = dialect_problems(schema, SchemaDialect.OPEN)
         assert any(keyword in problem for problem in problems)
+
+    @pytest.mark.parametrize("keyword", ["$schema", "$id"])
+    def test_document_metadata_is_strict_only(self, keyword: str) -> None:
+        """Codex refuses these; an open-dialect CLI just ignores them."""
+        schema = {**_SIMPLE, keyword: "https://example.invalid/thing"}
+        assert dialect_problems(schema, SchemaDialect.OPEN) == []
+        assert any(keyword in problem for problem in dialect_problems(schema, SchemaDialect.STRICT))
+
+    @pytest.mark.parametrize("keyword", ["title", "description", "examples"])
+    def test_annotations_are_accepted_by_both_dialects(self, keyword: str) -> None:
+        schema = {**_SIMPLE, keyword: "note"}
+        assert dialect_problems(schema, SchemaDialect.OPEN) == []
+        assert dialect_problems(schema, SchemaDialect.STRICT) == []
 
     def test_a_property_named_like_a_keyword_is_fine(self) -> None:
         schema = {
@@ -122,6 +133,52 @@ class TestNormalize:
         schema = {"type": "object", "properties": {"a": {"type": "string", "default": "x"}}}
         normalize(schema, SchemaDialect.STRICT)
         assert schema["properties"]["a"]["default"] == "x"  # pyright: ignore[reportIndexIssue]
+
+    @pytest.mark.parametrize("dialect", [SchemaDialect.OPEN, SchemaDialect.STRICT])
+    def test_metadata_is_dropped(self, dialect: SchemaDialect) -> None:
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.invalid/report",
+            "title": "Report",
+            "description": "what the agent found",
+            "examples": [{"a": 1}],
+            "type": "object",
+            "properties": {"a": {"type": "integer", "title": "A", "description": "a count"}},
+            "additionalProperties": False,
+        }
+
+        result = normalize(schema, dialect)
+
+        assert result == {
+            "type": "object",
+            "properties": {"a": {"type": "integer"}},
+            "additionalProperties": False,
+            "required": ["a"],
+        }
+
+    def test_normalize_repairs_what_the_strict_dialect_rejects(self) -> None:
+        """``dialect_problems`` reports metadata under STRICT; ``normalize`` fixes it."""
+        schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.invalid/report",
+            "type": "object",
+            "properties": {"a": {"type": "integer"}},
+        }
+        assert dialect_problems(schema, SchemaDialect.STRICT) != []
+
+        assert dialect_problems(normalize(schema, SchemaDialect.STRICT), SchemaDialect.STRICT) == []
+
+    def test_a_property_named_like_metadata_survives(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {"title": {"type": "string"}, "description": {"type": "string"}},
+            "additionalProperties": False,
+        }
+
+        result = normalize(schema, SchemaDialect.STRICT)
+
+        assert sorted(result["properties"]) == ["description", "title"]
+        assert result["required"] == ["title", "description"]
 
 
 class TestCompactJson:

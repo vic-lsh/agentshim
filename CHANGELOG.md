@@ -158,6 +158,16 @@ needs a `cwd`, and raises `ProviderCapabilityError` without one.
   `parse_json_object` returns `None` for blank lines, invalid JSON and
   non-objects alike, and the parser emits `RawOutput` so the line stays
   observable instead of crashing the turn or being dropped.
+- **`$schema` and `$id` were rejected everywhere, and unfixable.** Both
+  dialects reported them as unsupported keywords, so a schema straight out of
+  a generator failed before the process started, and `normalize()` could not
+  repair it because it did not strip them. `dialect_problems` now reports them
+  under `STRICT` only, which is where they are genuinely refused (Codex's
+  `--output-schema` subset); `OPEN` ignores them the way the CLI does. And
+  `normalize()` drops the document metadata, `$schema`, `$id`, `title`,
+  `description` and `examples`, so a normalized schema is accepted in either
+  dialect. A property named `title` is untouched: `properties` is traversed as
+  a map of subschemas, not as keywords.
 - **A cancel before the CLI spawned was dropped.** `cancel()` looked only at
   the process handle, which the executor publishes after it has started the
   process. A cancel arriving while the turn was installing MCP servers,

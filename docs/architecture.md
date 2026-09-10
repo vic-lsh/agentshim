@@ -412,6 +412,12 @@ caller feeding one of those to a `STRICT` provider needs it fixed up.
 Splitting the two lets the caller decide: `dialect_problems` reports,
 `normalize` rewrites, and the session only ever calls the first.
 
+`normalize` also drops the document metadata (`$schema`, `$id`, `title`,
+`description`, `examples`) that a generator emits and Codex's subset refuses,
+so a normalized schema passes `dialect_problems` in either dialect. The
+`OPEN` dialect does not report `$schema` or `$id` at all: a CLI that accepts
+open-ended schemas ignores them.
+
 **`CliAgent` and `AgentSession` live in `agentshim/agent.py`, above
 `providers/`.** `CliAgent("claude")` has to work, so something must turn a
 provider name into a provider, and `core/` must not depend on `providers/`.

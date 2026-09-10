@@ -51,6 +51,18 @@ UNSUPPORTED_KEYWORDS = frozenset(
 
 _SUBSCHEMA_MAPS = frozenset({"properties", "$defs", "definitions"})
 
+# Annotations that describe a schema rather than constrain a value. They are
+# what a generator such as Pydantic emits alongside the real constraints, and
+# what the strictest CLI subset refuses to read, so ``normalize`` removes
+# them. Field names are never matched against this set: ``properties`` is
+# traversed as a map of subschemas, so a property named ``title`` survives.
+_METADATA_KEYWORDS = frozenset({"$schema", "$id", "title", "description", "examples"})
+
+# ``$schema`` and ``$id`` identify the dialect and the document; a CLI that
+# accepts open-ended schemas ignores them rather than failing on them. Codex's
+# ``--output-schema`` subset does not, so ``STRICT`` keeps reporting them.
+_OPEN_DIALECT_TOLERATES = frozenset({"$schema", "$id"})
+
 
 def dialect_problems(schema: Mapping[str, Any], dialect: SchemaDialect) -> list[str]:
     """Return every reason *schema* is not expressible in *dialect*.
@@ -152,7 +164,12 @@ def _visit_members(
         if key in _SUBSCHEMA_MAPS:
             _visit_subschema_map(value, f"{location}/{key}", dialect, problems)
         elif key in UNSUPPORTED_KEYWORDS:
+            if dialect is not SchemaDialect.STRICT and key in _OPEN_DIALECT_TOLERATES:
+                continue
             problems.append(f"{location} uses unsupported keyword {key!r}")
+        elif key in _METADATA_KEYWORDS:
+            # Annotations, not constraints: nothing below them is a schema.
+            continue
         else:
             _visit_for_problems(value, f"{location}/{key}", dialect, problems)
 
@@ -181,9 +198,12 @@ def normalize(schema: Mapping[str, Any], dialect: SchemaDialect) -> dict[str, An
     Generators such as Pydantic omit defaulted properties from ``required``
     and leave ``additionalProperties`` unset, which the CLIs read as "any
     subset of these keys, plus anything else". This closes every object,
-    requires every declared property, drops ``default``, and strips the
-    annotation siblings of a ``$ref`` that the strict subset forbids.
-    Callers that want the schema passed through untouched skip this.
+    requires every declared property, drops ``default``, strips the annotation
+    siblings of a ``$ref`` that the strict subset forbids, and removes the
+    document metadata (``$schema``, ``$id``, ``title``, ``description``,
+    ``examples``) that ``dialect_problems`` reports under ``STRICT``. What
+    comes back is therefore a schema the strict subset accepts. Callers that
+    want the schema passed through untouched skip this.
     """
     return cast("dict[str, Any]", _normalized(copy.deepcopy(dict(schema)), dialect))
 
@@ -200,6 +220,8 @@ def _normalized(node: object, dialect: SchemaDialect) -> object:
         return {"$ref": reference}
 
     mapping.pop("default", None)
+    for annotation in _METADATA_KEYWORDS:
+        mapping.pop(annotation, None)
     properties = mapping.get("properties")
     if isinstance(properties, dict):
         _close_object(mapping, dialect)

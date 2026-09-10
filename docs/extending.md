@@ -28,6 +28,12 @@ the caller's extra args. It deliberately does not carry the prompt: the prompt
 always goes on stdin, so an agent's own `pkill -f` cannot match the CLI by
 prompt text.
 
+`install_mcp` returns an `McpInstallation` whose
+`restore() -> str | None` must be idempotent and must never raise: it runs
+from the session's `finally`, where an exception would destroy the turn's
+result or mask the error it failed with. Return a note describing anything
+cleanup could not do normally, and `None` otherwise.
+
 `ProviderProfile` declares every optional behaviour. Fill in all of it,
 including `state_dirs`, `auth_env_vars`, `skill_dirs` and
 `container_install`: callers read these instead of hardcoding provider names.

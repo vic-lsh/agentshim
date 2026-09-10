@@ -38,7 +38,8 @@ print(session.session_id)
 
 `session.session_id` is readable and writable. `adopt(session_id)` continues a
 conversation you checkpointed earlier and returns `False` if the provider
-cannot resume or a turn is in flight; `forget()` starts fresh next turn.
+cannot resume or a turn is in flight; `forget()` starts fresh next turn and
+follows the same rule, returning `False` rather than racing a live turn.
 
 ## Per-turn options
 

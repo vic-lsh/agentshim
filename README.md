@@ -69,8 +69,10 @@ print(session.session_id)
 
 `adopt(session_id)` continues a conversation you checkpointed earlier and
 returns `False` if the provider cannot resume or a turn is in flight;
-`forget()` starts fresh on the next turn. `cancel()` is thread-safe: it
-terminates the process group, then kills it after a grace period.
+`forget()` starts fresh on the next turn, and likewise returns `False` while
+a turn is in flight. `cancel()` is thread-safe: it terminates the process
+group, then kills it after a grace period, and works even before the CLI has
+been spawned.
 
 ## Per-turn options
 

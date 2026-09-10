@@ -20,8 +20,7 @@ Pass a provider instance instead of a name when you need a provider-specific
 option:
 
 ```python
-from agentshim import CliAgent, interactive_env
-from agentshim.providers.claude import ClaudeProvider, SandboxConfig
+from agentshim import ClaudeProvider, CliAgent, SandboxConfig, interactive_env
 
 provider = ClaudeProvider(sandbox=SandboxConfig(allowed_domains=["github.com"]))
 agent = CliAgent(provider, env={**interactive_env(), **provider.sandbox_env})

@@ -218,11 +218,30 @@ class ProviderProfile:
     auth_env_vars: tuple[str, ...]     # ("ANTHROPIC_API_KEY", ...)
     skill_dirs: tuple[str, ...]        # workspace-relative skill discovery dirs
     container_install: tuple[str, ...] # shell commands installing the CLI on Debian
+    container_env: Mapping[str, str]   # env a root container run needs beyond auth; default empty
+    state_root_env: str | None         # var that relocates state_dirs[0]; None if undocumented
+    auth_files: tuple[str, ...]        # home-relative credential/config files, inside state_dirs
+    mcp_config_file: str | None        # workspace-relative MCP config path; set iff mcp is CONFIG_FILE
 ```
 
 `STRICT` is Codex's `--output-schema` subset: every object declares its
 properties and forbids undeclared keys. `OPEN` accepts schema-valued or
 `true` `additionalProperties`.
+
+The last four fields are additive (0.6.1): every one defaults, so an
+existing keyword-built `ProviderProfile` keeps working unchanged.
+`container_env` covers what a CLI needs to run as root in a container beyond
+credentials (Claude Code's `IS_SANDBOX=1`, required before it accepts
+`--dangerously-skip-permissions` as root); it is empty for the other four.
+`state_root_env` names the provider's own documented variable for relocating
+`state_dirs[0]` (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`); it is
+`None` where the CLI documents none, rather than guessed. `auth_files` are
+the minimal home-relative files to copy elsewhere so the CLI is already
+logged in; every entry lies inside a `state_dirs` entry. `mcp_config_file` is
+the workspace-relative path a `CONFIG_FILE` provider writes its MCP config
+to for a turn (`.mcp.json`, `.gemini/settings.json`, `opencode.json`); the
+provider module defines it as the same constant `install_mcp` writes to, so
+the two cannot drift, and it is `None` for `CLI_FLAGS`/`NONE` providers.
 
 ### Provider protocol
 

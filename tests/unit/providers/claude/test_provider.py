@@ -65,6 +65,15 @@ class TestProfile:
         assert "ANTHROPIC_API_KEY" in profile.auth_env_vars
         assert profile.skill_dirs == (".claude/skills",)
         assert any("claude.ai/install.sh" in command for command in profile.container_install)
+        assert profile.container_env == {"IS_SANDBOX": "1"}
+        assert profile.state_root_env == "CLAUDE_CONFIG_DIR"
+        assert profile.auth_files == (
+            ".claude/.credentials.json",
+            ".claude/settings.json",
+            ".claude/settings.local.json",
+            ".claude.json",
+        )
+        assert profile.mcp_config_file == ".mcp.json"
 
 
 class TestInstallMcp:

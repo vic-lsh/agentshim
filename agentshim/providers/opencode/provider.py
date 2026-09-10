@@ -70,6 +70,18 @@ PROFILE = ProviderProfile(
         "ln -sf /root/.opencode/bin/opencode /usr/local/bin/opencode 2>/dev/null || "
         "ln -sf /root/.local/bin/opencode /usr/local/bin/opencode",
     ),
+    # opencode follows the XDG layout and documents no opencode-specific
+    # variable that relocates it, so this stays unset rather than guessed.
+    state_root_env=None,
+    auth_files=(
+        ".local/share/opencode/auth.json",
+        ".config/opencode/opencode.json",
+        ".config/opencode/opencode.jsonc",
+        ".config/opencode/config.json",
+        ".config/opencode/config.jsonc",
+        ".config/opencode/.env",
+    ),
+    mcp_config_file=MCP_CONFIG_FILENAME,
 )
 
 

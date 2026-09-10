@@ -16,9 +16,11 @@ import pytest
 from agentshim import (
     ArgvContext,
     CliAgent,
+    McpMechanism,
     OutputSchemaStyle,
     RawOutput,
     SchemaDialect,
+    StdioMcpServer,
     TokenUsage,
     UsageReport,
     get_provider,
@@ -28,6 +30,8 @@ from agentshim.providers import get_scripted_lines
 from agentshim.testing import FakeExecutor, RecordingEventHandler, scripted_turn
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from agentshim.core.events import AgentEvent
 
 PROVIDERS = provider_names()
@@ -46,6 +50,11 @@ RESUME_FLAGS = {
 
 #: Fields a profile may legitimately leave empty.
 _MAY_BE_EMPTY = frozenset({"darwin_state_dirs", "auth_env_vars"})
+
+#: Fields a profile may legitimately leave unset: not every provider's CLI
+#: documents a state-relocation variable, and only CONFIG_FILE providers
+#: write an MCP config file.
+_MAY_BE_NONE = frozenset({"schema_dialect", "state_root_env", "mcp_config_file"})
 
 
 def _argv(name: str, *, resume_session_id: str | None = None) -> list[str]:
@@ -84,7 +93,7 @@ class TestProfile:
         profile = get_provider(name).profile
         for field in dataclasses.fields(profile):
             value: Any = getattr(profile, field.name)
-            if field.name == "schema_dialect":
+            if field.name in _MAY_BE_NONE:
                 continue
             assert value is not None, field.name
             if field.name not in _MAY_BE_EMPTY:
@@ -101,6 +110,51 @@ class TestProfile:
             assert profile.schema_dialect is None
         else:
             assert isinstance(profile.schema_dialect, SchemaDialect)
+
+
+@pytest.mark.parametrize("name", PROVIDERS)
+class TestEnvAndAuthConventions:
+    """Invariants for the 0.6.1 env/auth-file fields, pinned across providers."""
+
+    def test_auth_files_lie_inside_state_dirs(self, name: str) -> None:
+        profile = get_provider(name).profile
+        for auth_file in profile.auth_files:
+            assert any(
+                auth_file == state_dir or auth_file.startswith(f"{state_dir}/")
+                for state_dir in profile.state_dirs
+            ), auth_file
+
+    def test_mcp_config_file_is_set_exactly_for_config_file_providers(self, name: str) -> None:
+        profile = get_provider(name).profile
+        if profile.mcp is McpMechanism.CONFIG_FILE:
+            assert profile.mcp_config_file is not None
+        else:
+            assert profile.mcp_config_file is None
+
+    def test_mcp_config_file_matches_where_the_installation_really_writes(
+        self, name: str, tmp_path: Path
+    ) -> None:
+        profile = get_provider(name).profile
+        if profile.mcp is not McpMechanism.CONFIG_FILE:
+            pytest.skip("only CONFIG_FILE providers write a workspace MCP config")
+        provider = get_provider(name)
+        server = StdioMcpServer(name="probe", command="probe-cmd")
+        assert profile.mcp_config_file is not None
+        installation = provider.install_mcp(tmp_path, [server])
+        try:
+            assert (tmp_path / profile.mcp_config_file).is_file()
+        finally:
+            installation.restore()
+
+    def test_state_root_env_is_an_uppercase_variable_name_when_set(self, name: str) -> None:
+        profile = get_provider(name).profile
+        if profile.state_root_env is not None:
+            assert profile.state_root_env == profile.state_root_env.upper()
+
+    def test_container_env_keys_are_uppercase(self, name: str) -> None:
+        profile = get_provider(name).profile
+        for key in profile.container_env:
+            assert key == key.upper(), key
 
 
 @pytest.mark.parametrize("name", PROVIDERS)

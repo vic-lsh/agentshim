@@ -1,0 +1,221 @@
+"""MCP server specs and the JSON config-file merge/restore used to install them.
+
+A CONFIG_FILE provider discovers MCP servers from a JSON file in the
+workspace that the user may also own. Installing merges into that file and
+keeps the original bytes; restoring puts them back, and when the file changed
+during the turn only the entries agentshim added are removed.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, cast
+
+from ._files import atomic_write
+from .errors import McpConfigError
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
+
+
+#: Shared empty default; a frozen spec must not carry a mutable one.
+_NO_ENV: Mapping[str, str] = MappingProxyType({})
+
+
+@dataclass(frozen=True)
+class StdioMcpServer:
+    """MCP server launched as a subprocess over stdio."""
+
+    name: str
+    command: str
+    args: Sequence[str] = ()
+    env: Mapping[str, str] = _NO_ENV
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("MCP server name must not be empty")
+        if not self.command:
+            raise ValueError(f"MCP server {self.name!r} must declare a command")
+
+
+@dataclass(frozen=True)
+class HttpMcpServer:
+    """MCP server reached over HTTP/SSE."""
+
+    name: str
+    url: str
+    headers: Mapping[str, str] = _NO_ENV
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("MCP server name must not be empty")
+        if not self.url:
+            raise ValueError(f"MCP server {self.name!r} must declare a url")
+
+
+McpServer = StdioMcpServer | HttpMcpServer
+
+
+class NoopInstallation:
+    """Installation for a turn that asked for no MCP servers."""
+
+    argv: Sequence[str] = ()
+
+    def restore(self) -> None:
+        """Nothing was installed."""
+
+
+@dataclass
+class FlagsInstallation:
+    """Installation for a provider that takes MCP servers as CLI flags."""
+
+    argv: Sequence[str]
+
+    def restore(self) -> None:
+        """Flags live only in one argv; nothing outlives the process."""
+
+
+_MISSING = object()
+
+
+@dataclass(frozen=True)
+class _Backup:
+    original_bytes: bytes | None
+    original_config: dict[str, Any]
+    installed_config: dict[str, Any]
+    server_key: str
+
+
+class ConfigFileInstallation:
+    """Undo record for one merged JSON config file.
+
+    Owns exactly one file for the lifetime of one turn. ``restore`` is
+    idempotent so a caller can run it from a ``finally`` without tracking
+    whether the install succeeded.
+    """
+
+    argv: Sequence[str] = ()
+
+    def __init__(self, target: Path, backup: _Backup) -> None:
+        self._target = target
+        self._backup = backup
+        self._done = False
+
+    @property
+    def target(self) -> Path:
+        return self._target
+
+    def restore(self) -> None:
+        if self._done:
+            return
+        self._done = True
+        target = self._target
+        backup = self._backup
+
+        if not target.exists():
+            # Deleting the config during the turn is a workspace edit, not
+            # something cleanup should silently undo.
+            return
+
+        current = _load_json_object(target.read_bytes(), target)
+        if current == backup.installed_config:
+            if backup.original_bytes is None:
+                target.unlink()
+            else:
+                atomic_write(target, backup.original_bytes)
+            return
+
+        # The file changed during the turn. Remove only what we added, and
+        # only where the agent did not overwrite it in the meantime.
+        current[backup.server_key] = _restored_servers(current, backup, target)
+        if not current[backup.server_key] and backup.server_key not in backup.original_config:
+            current.pop(backup.server_key, None)
+        _restore_top_level_defaults(current, backup)
+
+        if current:
+            atomic_write(target, json.dumps(current, indent=2).encode())
+        else:
+            target.unlink()
+
+
+def _restored_servers(current: dict[str, Any], backup: _Backup, target: Path) -> dict[str, Any]:
+    original_servers = _servers_object(backup.original_config.get(backup.server_key, {}), backup.server_key, target)
+    installed_servers = _servers_object(backup.installed_config.get(backup.server_key, {}), backup.server_key, target)
+    restored = dict(_servers_object(current.get(backup.server_key, {}), backup.server_key, target))
+
+    for name, installed_value in installed_servers.items():
+        original_value = original_servers.get(name, _MISSING)
+        if installed_value == original_value:
+            continue
+        if restored.get(name, _MISSING) != installed_value:
+            # The agent edited this entry during the turn; leave its edit.
+            continue
+        if original_value is _MISSING:
+            restored.pop(name, None)
+        else:
+            restored[name] = original_value
+    return restored
+
+
+def _restore_top_level_defaults(current: dict[str, Any], backup: _Backup) -> None:
+    for key, installed_value in backup.installed_config.items():
+        if key == backup.server_key:
+            continue
+        original_value = backup.original_config.get(key, _MISSING)
+        if installed_value == original_value or current.get(key, _MISSING) != installed_value:
+            continue
+        if original_value is _MISSING:
+            current.pop(key, None)
+        else:
+            current[key] = original_value
+
+
+def install_config_file(
+    target: Path,
+    *,
+    server_key: str,
+    servers: Mapping[str, Mapping[str, Any]],
+    defaults: Mapping[str, Any] | None = None,
+) -> ConfigFileInstallation:
+    """Merge *servers* into the JSON config at *target*, returning the undo record.
+
+    *defaults* are top-level keys the provider needs (``$schema`` and the
+    like) that are only added when the file does not already set them.
+    """
+    original = target.read_bytes() if target.exists() else None
+    original_config = _load_json_object(original, target) if original is not None else {}
+    config = dict(original_config)
+
+    existing = _servers_object(config.get(server_key, {}), server_key, target)
+    if defaults:
+        for key, value in defaults.items():
+            config.setdefault(key, value)
+    config[server_key] = {**existing, **{name: dict(entry) for name, entry in servers.items()}}
+
+    backup = _Backup(
+        original_bytes=original,
+        original_config=original_config,
+        installed_config=config,
+        server_key=server_key,
+    )
+    atomic_write(target, json.dumps(config, indent=2).encode())
+    return ConfigFileInstallation(target, backup)
+
+
+def _load_json_object(raw: bytes, target: Path) -> dict[str, Any]:
+    try:
+        loaded: object = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise McpConfigError(f"cannot merge MCP servers into invalid JSON config: {target}") from exc
+    if not isinstance(loaded, dict):
+        raise McpConfigError(f"MCP config must contain a JSON object: {target}")
+    return dict(cast("dict[str, Any]", loaded))
+
+
+def _servers_object(value: object, server_key: str, target: Path) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise McpConfigError(f"{server_key!r} must be a JSON object in MCP config: {target}")
+    return cast("dict[str, Any]", value)

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.1 (unreleased)
+## 0.6.1 (2026-09-10)
 
 Additive only: every new field defaults, so a 0.6.0 consumer's existing
 `ProviderProfile` construction and every shipped provider keep working

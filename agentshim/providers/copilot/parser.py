@@ -65,7 +65,23 @@ def fold_usage(frame: UsageFrame) -> TokenUsage:
 
 
 class CopilotStreamParser:
-    """Stateful parser for one Copilot CLI run."""
+    """Stateful parser for one Copilot CLI run.
+
+    Known gap, verified against Copilot CLI 1.0.83: a run reports no billed
+    token counts at all. The ``assistant.usage`` frame this parser folds into
+    ``TokenUsage`` is not printed, and neither is ``assistant.message``'s
+    ``outputTokens``, so ``ParsedTurn.usage.tokens`` is all zeros. What the
+    CLI does print is a ``session.usage_checkpoint`` frame carrying
+    ``totalPremiumRequests`` and ``totalNanoAiu`` (billing units, not
+    tokens) plus prompt-cache diagnostics: ``prompt_tokens``,
+    ``frontier_tokens``, ``tool_tokens`` and per-segment ``tokens``. Those
+    describe how the prompt was assembled for the cache, not what the turn
+    was charged, so reading them into ``input_tokens`` would report a number
+    that is not the turn's usage. The frame is therefore left unparsed until
+    the CLI prints real counts.
+    ``tests/fixtures/copilot/usage_checkpoint_1_0_83.jsonl`` is a recording
+    of such a run, and the fixture suite pins this behaviour.
+    """
 
     def __init__(
         self,

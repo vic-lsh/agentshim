@@ -8,10 +8,11 @@ describe.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
-from agentshim import AssistantText, CliAgent, RawOutput, ToolCall, ToolResult
+from agentshim import AssistantText, CliAgent, RawOutput, ToolCall, ToolResult, UsageReport
 from agentshim.core.events import AgentEvent
 from agentshim.core.provider import ParsedTurn
 from agentshim.providers.copilot import CopilotStreamParser
@@ -19,6 +20,7 @@ from agentshim.testing import FakeExecutor, FakeRun, RecordingEventHandler
 
 FIXTURE_DIR = Path(__file__).resolve().parents[3] / "fixtures" / "copilot"
 RESUMED_SESSION_ID = "33333333-3333-4333-8333-333333333333"
+CHECKPOINT_SESSION_ID = "44444444-4444-4444-8444-444444444444"
 
 
 def fixture_lines(name: str) -> list[str]:
@@ -42,6 +44,7 @@ def replay(name: str) -> tuple[ParsedTurn, list[AgentEvent]]:
         "session_turn_2_resumed.jsonl",
         "streaming_dedup.jsonl",
         "tool_and_usage.jsonl",
+        "usage_checkpoint_1_0_83.jsonl",
     ],
 )
 def test_every_recording_parses_without_raw_output(name: str) -> None:
@@ -136,3 +139,44 @@ class TestRecordedToolsAndUsage:
         assert {"SessionStarted", "AssistantText", "ToolCall", "ToolResult", "UsageReport"} <= {
             type(event).__name__ for event in recorder.events
         }
+
+
+class TestRecordedUsageCheckpoint:
+    """Copilot CLI 1.0.83 prints no billed token counts.
+
+    The recording is a whole real run. It carries no ``assistant.usage``
+    frame and no ``outputTokens``, only a ``session.usage_checkpoint`` whose
+    numbers are billing units and prompt-cache diagnostics. Reading those
+    into ``TokenUsage`` would report something that is not the turn's usage,
+    so the parser leaves them alone; these tests pin that until the CLI
+    prints real counts.
+    """
+
+    def test_the_run_still_yields_its_text_and_session_id(self) -> None:
+        parsed, _ = replay("usage_checkpoint_1_0_83.jsonl")
+        assert parsed.text == "pong"
+        assert parsed.session_id == CHECKPOINT_SESSION_ID
+        assert parsed.error is None
+
+    def test_the_stream_carries_no_usage_frame(self) -> None:
+        kinds = {
+            json.loads(line)["type"] for line in fixture_lines("usage_checkpoint_1_0_83.jsonl")
+        }
+        assert "session.usage_checkpoint" in kinds
+        assert "assistant.usage" not in kinds
+
+    def test_no_token_counts_are_reported(self) -> None:
+        parsed, _ = replay("usage_checkpoint_1_0_83.jsonl")
+        tokens = parsed.usage.tokens
+        assert tokens.input_tokens == 0
+        assert tokens.output_tokens == 0
+        assert tokens.cached_input_tokens <= tokens.input_tokens
+        assert tokens.turns == 1
+
+    def test_the_streamed_message_is_not_duplicated(self) -> None:
+        _, events = replay("usage_checkpoint_1_0_83.jsonl")
+        assert [event.text for event in events if isinstance(event, AssistantText)] == ["pong"]
+
+    def test_a_usage_report_is_still_emitted_for_the_turn(self) -> None:
+        _, events = replay("usage_checkpoint_1_0_83.jsonl")
+        assert [event for event in events if isinstance(event, UsageReport)]

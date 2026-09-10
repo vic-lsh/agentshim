@@ -1,20 +1,32 @@
 # agentshim
 
-`agentshim` wraps coding-agent CLIs behind one small Python interface.
+`agentshim` runs coding-agent CLIs (Claude Code, Codex, Gemini CLI, opencode,
+Copilot CLI) as subprocesses and turns their output into typed events and a
+typed turn result.
 
-It is useful when you want to drive tools like Claude Code, Codex, Gemini, or
-Opencode from Python without writing provider-specific subprocess plumbing for
-prompting, session resumption, event parsing, or MCP configuration.
+It owns everything that answers "how do I run provider X and understand what
+it printed". It does not own application policy: which provider to use, when
+to retire a conversation, how to sandbox the host, or how to render events.
 
-## What It Includes
+No required runtime dependencies. Python 3.10+.
 
-- a shared CLI agent abstraction with a provider registry
-- adapters for Claude Code, Codex, Gemini, and Opencode
-- stateful chat sessions that automatically resume provider-native threads
-- injectable command executors for custom process launching or sandboxing
-- MCP server config models for providers that support MCP
-- sandbox settings helpers for Claude Code
-- a lightweight LiteLLM client and subagent helper
+## What it includes
+
+- `CliAgent` / `AgentSession`: one turn at a time, resumable, cancellable
+- typed events delivered on the calling thread
+- normalized token accounting where `cached_input_tokens <= input_tokens` on
+  every provider
+- declared capabilities on `ProviderProfile`, so no caller probes a provider
+- injectable `CommandExecutor`s for running the CLI in a container or over a
+  remote shell
+- MCP server installation and restoration per turn
+- native structured output with per-provider schema dialect checks
+- `agentshim.testing`: doubles that emit each provider's real stream format
+
+0.6 ships the core, the execution layer, and all five providers: Claude
+Code, Codex, Gemini CLI, opencode, and Copilot CLI. It is not
+source-compatible with 0.5; see [`CHANGELOG.md`](CHANGELOG.md) for what
+changed and how to migrate.
 
 ## Install
 
@@ -22,331 +34,195 @@ prompting, session resumption, event parsing, or MCP configuration.
 uv add agentshim
 ```
 
-`agentshim` does not bundle the underlying agent CLIs. You still need the
-provider tool you want to use installed and authenticated on your machine, for
-example `claude`, `codex`, `gemini`, or `opencode`.
+agentshim does not bundle the agent CLIs. Install and authenticate the one
+you want (`claude`, `codex`, `gemini`, `opencode`, or `copilot`) yourself.
 
-## Getting Started
-
-### 1. Use the Generic Agent Interface for Chat and Resume
-
-If you want to choose a provider at runtime, instantiate `CodingAgent`
-directly with a provider name.
+## One turn
 
 ```python
-from agentshim import CodingAgent
+from agentshim import CliAgent
 
-agent = CodingAgent(provider="claude", model="sonnet")
-chat = agent.start_session(cwd=".")
+agent = CliAgent("claude", model="sonnet")
+result = agent.run("Write a short summary of this codebase.", cwd=".")
 
-first_reply = chat.generate("Summarize this repository.")
-follow_up = chat.generate("Now list the three highest-risk modules.")
-
-print(first_reply)
-print(follow_up)
-print(chat.session_id)
+print(result.text)
+print(result.usage.tokens.input_tokens, result.cost_usd, result.duration_ms)
 ```
 
-`start_session()` returns a stateful chat object. On the first `generate(...)`
-call, `agentshim` starts a fresh provider conversation. On later calls, it
-automatically resumes the same underlying provider session using the session id
-captured from the first run.
+`model` is an opaque provider-specific string, passed through to the CLI
+unchanged; `None` leaves the CLI's own default.
 
-That corresponds roughly to these native CLI flows:
+Binary lookup and the CLI health check run once, in the constructor, so a
+broken install fails immediately rather than halfway through a turn.
 
-- Claude Code: first call is like `claude -p ...`, later calls add `claude --resume <session_id> ...`
-- Codex: first call is like `codex exec ...`, later calls add `codex exec resume <thread_id> ...`
-- Gemini: first call is like `gemini ...`, later calls add `gemini --resume <session_id> ...`
-- Opencode: first call is like `opencode run ...`, later calls add `opencode run --session <session_id> ...`
-
-If you only want a one-shot request, use `generate(...)` directly instead of
-opening a session:
+## A conversation
 
 ```python
-from agentshim import CodexCodingAgent
+session = agent.start_session(cwd=".", timeout=600)
 
-agent = CodexCodingAgent(model="gpt-5")
-reply = agent.generate("Write a short summary of this codebase.", cwd=".")
-print(reply)
+session.turn("What does this project do?")
+second = session.turn("Which files should I read first?")
+
+assert second.resumed
+print(session.session_id)
 ```
 
-### 2. Handle Agent Events
+`adopt(session_id)` continues a conversation you checkpointed earlier and
+returns `False` if the provider cannot resume or a turn is in flight;
+`forget()` starts fresh on the next turn, and likewise returns `False` while
+a turn is in flight. `cancel()` is thread-safe: it terminates the process
+group, then kills it after a grace period, and works even before the CLI has
+been spawned.
 
-By default, `agentshim` prints provider events to the terminal through a
-`ConsoleEventHandler`. That default is used only when you do not provide your
-own event handler and `silent=False`.
-
-If you pass `event_handler=...`, you take ownership of event handling. The
-built-in console printer is not added implicitly, which avoids surprising
-duplicate output.
-
-```python
-from agentshim import CodingAgent
-
-
-class MyHandler:
-    def on_thinking(self, text: str) -> None:
-        ...
-
-    def on_tool_call(self, tool: str, args=None) -> None:
-        ...
-
-    def on_tool_result(
-        self,
-        tool: str,
-        stdout: str = "",
-        stderr: str = "",
-        exit_code: int | None = None,
-        duration: float | None = None,
-    ) -> None:
-        ...
-
-    def on_usage(self, usage: dict) -> None:
-        ...
-
-
-agent = CodingAgent(provider="claude", event_handler=MyHandler())
-agent.generate("Inspect this repository.")
-```
-
-To keep the default console output and add your own handler, compose them
-explicitly:
+## Per-turn options
 
 ```python
-from agentshim import CodingAgent, ConsoleEventHandler
+from pathlib import Path
+from agentshim import OutputSchema, StdioMcpServer, TurnRequest
 
-agent = CodingAgent(
-    provider="claude",
-    event_handlers=[
-        ConsoleEventHandler(),
-        MyHandler(),
-    ],
-)
-agent.generate("Inspect this repository.")
-```
+schema = {
+    "type": "object",
+    "properties": {"summary": {"type": "string"}},
+    "required": ["summary"],
+    "additionalProperties": False,
+}
 
-You can also build the composition yourself:
-
-```python
-from agentshim import CompositeEventHandler, ConsoleEventHandler
-
-handler = CompositeEventHandler([ConsoleEventHandler(), MyHandler()])
-agent = CodingAgent(provider="codex", event_handler=handler)
-```
-
-Use `silent=True` to suppress the default console handler when you have not
-provided any handler:
-
-```python
-agent = CodingAgent(provider="claude")
-reply = agent.generate("Return only the answer.", silent=True)
-```
-
-### 3. Run Commands Through a Custom Executor
-
-Provider classes accept an optional `executor=`. The executor controls binary
-lookup, CLI validation, and streaming process execution while `agentshim` keeps
-owning provider command construction, stdout/stderr parsing, session state, and
-event emission.
-
-This is useful when a caller needs to run the CLI somewhere other than the
-current host process, for example through an existing container, remote shell,
-or custom sandbox.
-
-```python
-from agentshim import (
-    CodexCodingAgent,
-    CommandHandle,
-    CommandRequest,
-    CommandResult,
-    CommandStreamSink,
+result = session.turn(
+    TurnRequest(
+        prompt="Summarize the failing test.",
+        cwd="/workspace",
+        timeout=300,                       # None means no limit
+        reasoning_effort="high",
+        output_schema=OutputSchema(schema=schema, host_dir=Path("/tmp/schemas")),
+        mcp_servers=[StdioMcpServer(name="issues", command="python", args=["-m", "board.mcp"])],
+        env={"CI": "1"},
+        extra_args=("--append-system-prompt", "Be terse."),
+    )
 )
 
-
-class MyCommandHandle:
-    def terminate(self) -> None:
-        ...
-
-    def kill(self) -> None:
-        ...
-
-
-class MyExecutor:
-    def find_binary(self, binary_name: str, env: dict[str, str]) -> str:
-        # This value becomes request.argv[0]. Container or remote executors can
-        # return the binary name if lookup happens in the target runtime.
-        return binary_name
-
-    def check_binary(self, binary_path: str, env: dict[str, str], *, timeout: int) -> None:
-        # Raise RuntimeError if the target CLI is unavailable. No-op is fine
-        # when validation is not cheap or is handled by the runtime.
-        return None
-
-    def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
-        handle = MyCommandHandle()
-        sink.started(handle)
-
-        stdout = ""
-        stderr = ""
-
-        # Run request.argv in your target runtime, with request.stdin,
-        # request.cwd, request.env, and request.timeout. Stream each complete
-        # line as it arrives, preserving trailing newlines when present.
-        line = "streamed output\n"
-        stdout += line
-        sink.stdout(line)
-
-        return CommandResult(returncode=0, stdout=stdout, stderr=stderr)
-
-
-agent = CodexCodingAgent(executor=MyExecutor())
+print(result.structured_output)
 ```
 
-The default `HostCommandExecutor` preserves the normal local `subprocess`
-behavior. `CodingAgent(provider=..., executor=...)` forwards the same executor
-to the selected provider.
+MCP servers are installed before the turn and restored after it, including
+when the turn fails. Asking for something the provider cannot do raises
+`ProviderCapabilityError` before the process starts.
 
-Executor contract:
-
-- `CommandRequest.argv` is the complete provider CLI command. `argv[0]` is the
-  value returned by `find_binary`.
-- `CommandRequest.stdin` is the prompt text to write to the command's standard
-  input, then stdin should be closed.
-- `CommandRequest.cwd`, `env`, and `timeout` should be honored by the executor.
-- Call `sink.started(handle)` once after the command starts. The handle only
-  needs `terminate()` and `kill()`.
-- Call `sink.stdout(line)` and `sink.stderr(line)` as output is produced. Lines
-  should include trailing newlines when the underlying stream provided them.
-- Return `CommandResult(returncode, stdout, stderr)` after the command exits.
-  The returned text should match what was streamed through the sink.
-
-If you were using the pre-0.5 executor preview, replace
-`run_streaming(cmd, ..., on_stdout, on_stderr, on_process_started)` with
-`run(request, sink)`. The parser/event APIs remain internal; custom executors
-only provide a stable command runtime.
-
-### 4. Instantiate a Specific Provider Directly
-
-If you already know which backend you want, construct the provider class
-yourself.
+## Events
 
 ```python
-from agentshim import ClaudeCodeCodingAgent
+from agentshim import AssistantText, CliAgent, EventHandlerBase, ToolCall
 
-agent = ClaudeCodeCodingAgent(model="sonnet")
-chat = agent.start_session(cwd=".")
+class Watcher(EventHandlerBase):
+    def on_event(self, event):
+        if isinstance(event, ToolCall):
+            print("tool:", event.tool)
+        elif isinstance(event, AssistantText):
+            print(event.text, end="")
 
-print(chat.generate("What does this project do?"))
-print(chat.generate("Which files should I read first?"))
+agent = CliAgent("claude", event_handler=Watcher())
 ```
 
-The bundled provider classes are:
+`on_event` always runs on the thread that called `turn()`. The executor reads
+the CLI's pipes on helper threads but drains them on the calling thread, so a
+handler needs no locking of its own.
 
-- `ClaudeCodeCodingAgent`
-- `CodexCodingAgent`
-- `GeminiCodingAgent`
-- `OpencodeCodingAgent`
+`ConsoleEventHandler` renders to any text stream; `CompositeEventHandler` fans
+out; `NullEventHandler` drops everything.
 
-### 5. Configure MCP Servers
+## Executors
 
-Claude Code and Codex can be configured with MCP servers by passing
-`HttpMcpServer` and `StdioMcpServer` objects at construction time.
+Implement `CommandExecutor` to run a provider CLI somewhere other than the
+local host. `TransformingExecutor` covers the common case of rewriting argv,
+and applies to the health check too.
 
 ```python
-from agentshim import ClaudeCodeCodingAgent, HttpMcpServer, StdioMcpServer
+from dataclasses import replace
+from agentshim import CliAgent, CommandRequest, HostCommandExecutor, TransformingExecutor
 
-agent = ClaudeCodeCodingAgent(
-    model="sonnet",
-    mcp_servers=[
-        HttpMcpServer(
-            name="docs",
-            url="http://localhost:9000/sse",
-            headers={"Authorization": "Bearer dev-token"},
-        ),
-        StdioMcpServer(
-            name="github",
-            command="npx",
-            args=["-y", "@modelcontextprotocol/server-github"],
-            env={"GITHUB_TOKEN": "ghp_example"},
-        ),
-    ],
+def in_container(request: CommandRequest) -> CommandRequest:
+    return replace(request, argv=["docker", "exec", "-i", "workspace", *request.argv])
+
+agent = CliAgent("claude", executor=TransformingExecutor(HostCommandExecutor(), in_container))
+```
+
+## Testing against agentshim
+
+`agentshim.testing` emits each provider's real stream format, so your tests
+never encode a provider's JSON shape.
+
+```python
+from agentshim import AssistantText, CliAgent
+from agentshim.testing import FakeExecutor, RecordingEventHandler, scripted_turn
+
+events = RecordingEventHandler()
+agent = CliAgent(
+    "claude",
+    executor=FakeExecutor(scripted_turn("claude", text="pong", session_id="s1")),
+    event_handler=events,
 )
 
-chat = agent.start_session(cwd=".")
-print(chat.generate("Use the MCP tools to inspect the repo."))
+result = agent.run("ping")
+assert result.text == "pong"
+assert result.session_id == "s1"
+assert any(isinstance(event, AssistantText) for event in events.events)
 ```
 
-Notes:
+Assert on `TurnResult` and the typed events, never on internal attributes.
 
-- `HttpMcpServer` is for HTTP/SSE-backed MCP servers.
-- `StdioMcpServer` is for subprocess-backed MCP servers.
-- Gemini and Opencode currently reject `mcp_servers`; use Claude Code or Codex if you need MCP.
+## Errors
 
-## Extending agentshim
+Everything that escapes `turn()` is an `AgentShimError`:
 
-Advanced users can register their own providers. `CodingAgent(...)` keeps its
-main constructor portable; provider-specific constructor extras should go
-through `backend_kwargs`.
-
-```python
-from agentshim import BaseCodingAgent, CodingAgent, register_provider
-
-
-@register_provider("my-agent", aliases=("my-agent-dev",))
-class MyAgent(BaseCodingAgent):
-    def __init__(
-        self,
-        model: str | None = None,
-        region: str | None = None,
-        event_handler=None,
-        event_handlers=None,
-        mcp_servers=None,
-        sandbox=False,
-    ):
-        self.model = model
-        self.region = region
-        self.event_handler = event_handler
-
-    def generate(self, prompt: str, cwd=None, timeout=300, silent=False) -> str:
-        return f"handled: {prompt}"
-
-
-agent = CodingAgent(
-    provider="my-agent-dev",
-    model="demo",
-    backend_kwargs={"region": "us-west1"},
-)
-print(agent.generate("hello"))
+```
+AgentShimError
+  CliNotFoundError            binary not on PATH
+  CliCheckError               binary found but the health check failed
+  CliExitError                nonzero exit: argv, returncode, stdout, stderr
+    SessionResumeError        the conversation is gone: session_id
+  CliTimeoutError             argv, timeout
+  ProviderCapabilityError     the provider cannot do what the request asked
+    SchemaDialectError        problems: list[str]
+  McpConfigError              config file unreadable or not an object
 ```
 
-Notes:
+## Adding a provider
 
-- Registration is import-driven. Your provider is available only after the module defining it has been imported in the current Python process.
-- `list_providers()` returns canonical provider names only. Aliases resolve via `get_provider_class(...)` and `CodingAgent(provider=...)`.
-- `register_provider(...)` rejects invalid names, abstract classes, and accidental name collisions unless you pass `overwrite=True`.
-- If you want `CodingAgent(...)` to instantiate your provider, its constructor should accept the shared kwargs `model`, `event_handler`, `event_handlers`, `mcp_servers`, `sandbox`, and `executor` as needed.
-- If your provider needs extra constructor arguments beyond the shared portable set, pass them via `backend_kwargs={...}` when constructing `CodingAgent(...)`.
+See [`docs/extending.md`](docs/extending.md) and
+[`docs/architecture.md`](docs/architecture.md). A provider package holds only
+argv construction, stream parsing, and provider-specific options; everything
+shared already lives in `agentshim/core/`.
 
 ## Development
 
 ```bash
 uv sync --dev
-bash scripts/format_code.sh --check
-bash scripts/check_errors.sh
-bash scripts/type_check.sh
 uv run pytest
+./scripts/format_code.sh --check
+./scripts/check_errors.sh
+./scripts/type_check.sh
+./scripts/check_imports.sh
 ```
 
-## Publishing
-
-Build locally with:
+End-to-end tests under `tests/e2e/` run the real CLIs. They are skipped
+unless `AGENTSHIM_E2E=1` and the binary is on PATH, so CI never runs them.
 
 ```bash
-uv build
+AGENTSHIM_E2E=1 uv run pytest tests/e2e -q
 ```
 
-Publish with:
+Gemini needs a model the account is entitled to, and opencode takes one when
+the model in your own opencode config is not the one to test:
 
 ```bash
-uv publish
+AGENTSHIM_E2E=1 AGENTSHIM_E2E_GEMINI_MODEL=gemini-2.5-flash \
+  uv run pytest tests/e2e/test_gemini_e2e.py -q
+```
+
+See [`docs/development.md`](docs/development.md) for the full gate list.
+
+```bash
+uv build          # package
+uv publish        # release
+
+uv run --group docs mkdocs build --strict
 ```

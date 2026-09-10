@@ -1,45 +1,109 @@
 # Getting Started
 
-## Use the Generic Agent Interface
+## A single turn
 
-If you want to choose a provider at runtime, instantiate `CodingAgent` directly
-with a provider name.
+`CliAgent.run` is a one-shot: it opens a throwaway session, runs one turn, and
+returns everything the turn produced.
 
 ```python
-from agentshim import CodingAgent
+from agentshim import CliAgent
 
-agent = CodingAgent(provider="claude", model="sonnet")
-chat = agent.start_session(cwd=".")
+agent = CliAgent("claude", model="sonnet")
+result = agent.run("List the top-level packages.", cwd=".")
 
-first_reply = chat.generate("Summarize this repository.")
-follow_up = chat.generate("Now list the three highest-risk modules.")
-
-print(first_reply)
-print(follow_up)
-print(chat.session_id)
+print(result.text)
+print(result.exit_code, result.duration_ms)
 ```
 
-`start_session()` returns a stateful chat object. On the first `generate(...)`
-call, `agentshim` starts a fresh provider conversation. On later calls, it
-automatically resumes the same underlying provider session using the session id
-captured from the first run.
+`model` is an opaque provider-specific string, passed to the CLI unchanged;
+`None` leaves the CLI's own default.
 
-That corresponds roughly to these native CLI flows:
+Binary lookup and the CLI health check run once, in the constructor, so a
+broken install fails immediately rather than halfway through a turn.
 
-- Claude Code: first call is like `claude -p ...`, later calls add `claude --resume <session_id> ...`
-- Codex: first call is like `codex exec ...`, later calls add `codex exec resume <thread_id> ...`
-- Gemini: first call is like `gemini ...`, later calls add `gemini --resume <session_id> ...`
-- Opencode: first call is like `opencode run ...`, later calls add `opencode run --session <session_id> ...`
+## A conversation
 
-## One-Shot Requests
-
-If you only want a one-shot request, use `generate(...)` directly instead of
-opening a session.
+A session resumes the provider's own conversation on every turn after the
+first.
 
 ```python
-from agentshim import CodexCodingAgent
+session = agent.start_session(cwd=".", timeout=600)
 
-agent = CodexCodingAgent(model="gpt-5")
-reply = agent.generate("Write a short summary of this codebase.", cwd=".")
-print(reply)
+session.turn("What does this project do?")
+second = session.turn("Which files should I read first?")
+
+assert second.resumed
+print(session.session_id)
+```
+
+`session.session_id` is readable and writable. `adopt(session_id)` continues a
+conversation you checkpointed earlier and returns `False` if the provider
+cannot resume or a turn is in flight; `forget()` starts fresh next turn and
+follows the same rule, returning `False` rather than racing a live turn.
+
+## Per-turn options
+
+Anything that varies per turn goes on a `TurnRequest`.
+
+```python
+from pathlib import Path
+from agentshim import OutputSchema, StdioMcpServer, TurnRequest
+
+schema = {
+    "type": "object",
+    "properties": {"summary": {"type": "string"}},
+    "required": ["summary"],
+    "additionalProperties": False,
+}
+
+result = session.turn(
+    TurnRequest(
+        prompt="Summarize the failing test.",
+        cwd="/workspace",
+        timeout=300,
+        reasoning_effort="high",
+        output_schema=OutputSchema(schema=schema, host_dir=Path("/tmp/schemas")),
+        mcp_servers=[StdioMcpServer(name="issues", command="python", args=["-m", "board.mcp"])],
+        env={"CI": "1"},
+        extra_args=("--append-system-prompt", "Be terse."),
+    )
+)
+
+print(result.structured_output)
+```
+
+`timeout=None` means no limit. A request field of `None` falls back to the
+session default. Only Claude Code and Codex accept an output schema, and only
+they accept a reasoning effort; asking any other provider raises
+`ProviderCapabilityError` before the process starts. See
+[Providers](providers.md).
+
+## Cancelling
+
+`cancel()` is thread-safe and can be called from anywhere while a turn is
+running. It terminates the process group, then kills it after the grace
+period.
+
+```python
+import threading
+
+threading.Timer(30, session.cancel).start()
+session.turn("A long-running task.")
+```
+
+## Errors
+
+Everything that escapes `turn()` is an `AgentShimError`:
+
+```python
+from agentshim import CliExitError, CliTimeoutError, SessionResumeError
+
+try:
+    session.turn("...")
+except SessionResumeError:
+    session.forget()          # the conversation is gone; start over
+except CliTimeoutError:
+    ...                       # the process group has already been killed
+except CliExitError as exc:
+    print(exc.returncode, exc.stderr)
 ```

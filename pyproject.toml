@@ -1,13 +1,10 @@
 [project]
 name = "agentshim"
-version = "0.5.1"
+version = "0.6.0"
 description = "Provider-agnostic coding-agent CLI shims"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "litellm>=1.0.0",
-    "loguru>=0.7.2",
-]
+dependencies = []
 
 [project.optional-dependencies]
 test = [
@@ -20,9 +17,10 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.0",
     "pyright>=1.1.408",
     "pytest>=8.0.0",
-    "ruff>=0.11.0",
+    "ruff==0.15.12",
 ]
 docs = [
     "mkdocs>=1.6.1",
@@ -33,19 +31,58 @@ docs = [
 [tool.hatch.build.targets.wheel]
 packages = ["agentshim"]
 
+[tool.hatch.build.targets.sdist]
+include = ["agentshim", "README.md", "CHANGELOG.md", "pyproject.toml"]
+
 [tool.ruff]
-line-length = 120
+line-length = 100
+target-version = "py310"
+src = ["agentshim", "tests", "scripts"]
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "PIE", "C4", "ERA", "B", "RUF010", "RUF013", "RUF100", "PT", "SIM", "RSE", "FURB", "A", "PERF401", "RET505", "TCH", "S602"]
-ignore = ["SIM117", "SIM105", "SIM108", "PT009"]
+select = [
+    "E", "F", "I", "UP", "B", "W",
+    "SIM", "RUF", "C4", "PIE", "ISC", "RSE", "INT", "FLY", "PERF", "FURB", "RET",
+    "A", "DTZ", "LOG", "G", "N", "PTH", "YTT", "EXE", "ASYNC", "ERA", "T10", "T20", "TID", "ICN", "INP",
+    "FBT", "FIX", "TD", "PGH",
+    "ANN", "BLE", "SLF", "C901", "PL", "S", "PT", "ARG", "TRY", "TC", "D",
+]
+ignore = [
+    "E501",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004", "D", "INP001", "TC001", "TC002", "TC003"]
+"scripts/**" = ["T201"]
+
+[tool.importlinter]
+root_packages = ["agentshim"]
+
+[[tool.importlinter.contracts]]
+name = "Library layers depend inward"
+type = "layers"
+layers = [
+    "agentshim.testing",
+    "agentshim.agent",
+    "agentshim.providers",
+    # ":" makes these non-independent siblings of one innermost layer:
+    # execution raises the core error types, and neither may import outward.
+    "agentshim.core : agentshim.execution",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["e2e: runs a real provider CLI; needs AGENTSHIM_E2E=1"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

@@ -15,6 +15,7 @@ theme:
 nav:
   - Overview: index.md
   - Getting Started: getting-started.md
+  - Architecture: architecture.md
   - Events: events.md
   - Executors: executors.md
   - MCP Servers: mcp.md

@@ -19,8 +19,9 @@ from agentshim import (
 from agentshim.providers.copilot import CopilotProvider
 
 # Populated by the profile, but empty on purpose: Copilot has no output
-# schema and keeps no macOS-only state.
-EMPTY_BY_DESIGN = {"schema_dialect", "darwin_state_dirs"}
+# schema, keeps no macOS-only state, and its ``--additional-mcp-config`` flag
+# never writes a workspace config file.
+EMPTY_BY_DESIGN = {"schema_dialect", "darwin_state_dirs", "mcp_config_file"}
 
 
 def _stdio() -> StdioMcpServer:
@@ -71,6 +72,10 @@ class TestProfile:
         assert set(profile.auth_env_vars) == {"COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"}
         assert profile.skill_dirs == (".github/skills",)
         assert any("@github/copilot" in command for command in profile.container_install)
+        assert profile.state_root_env == "COPILOT_HOME"
+        assert profile.auth_files == (".copilot/config.json", ".copilot/settings.json")
+        assert profile.mcp_config_file is None
+        assert profile.container_env == {}
 
 
 class TestInstallMcp:

@@ -71,6 +71,13 @@ PROFILE = ProviderProfile(
     auth_env_vars=("OPENAI_API_KEY", "OPENAI_BASE_URL"),
     skill_dirs=(".agents/skills",),
     container_install=(_NODE_INSTALL, _CODEX_INSTALL),
+    # Documented Codex CLI variable that relocates ~/.codex (``codex --help``:
+    # "Layer $CODEX_HOME/<name>.config.toml on top of the base user config";
+    # "auth still uses CODEX_HOME").
+    state_root_env="CODEX_HOME",
+    auth_files=(".codex/auth.json", ".codex/config.toml"),
+    # CLI_FLAGS: Codex takes MCP servers as --config overrides, never a file.
+    mcp_config_file=None,
 )
 
 

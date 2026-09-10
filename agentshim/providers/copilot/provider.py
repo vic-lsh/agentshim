@@ -47,6 +47,19 @@ PROFILE = ProviderProfile(
     skill_dirs=(".github/skills",),
     # The npm package ships the CLI; the image supplies node and npm.
     container_install=("npm install -g @github/copilot",),
+    # ``COPILOT_HOME`` relocates ~/.copilot; documented above and by
+    # ``copilot help environment``.
+    state_root_env="COPILOT_HOME",
+    # Copilot documents no specific credential filenames. ``.copilot/`` on a
+    # logged-in install holds ``config.json`` (opaque, not plain JSON; most
+    # likely where the login state lives) and ``settings.json`` (user
+    # config, e.g. the chosen model); ``.config/github-copilot/`` on the same
+    # install held only ``versions.json``, which is not credential-bearing,
+    # so it is left out.
+    auth_files=(".copilot/config.json", ".copilot/settings.json"),
+    # CLI_FLAGS: Copilot takes MCP servers as one --additional-mcp-config
+    # flag, never a file.
+    mcp_config_file=None,
 )
 
 

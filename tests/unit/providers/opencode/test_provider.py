@@ -37,7 +37,8 @@ class TestProfile:
 
     def test_every_profile_field_is_populated(self) -> None:
         profile = OpencodeProvider().profile
-        optional = {"schema_dialect", "darwin_state_dirs", "auth_env_vars"}
+        # opencode documents no variable that relocates its XDG state dirs.
+        optional = {"schema_dialect", "darwin_state_dirs", "auth_env_vars", "state_root_env"}
         for field in fields(ProviderProfile):
             value = getattr(profile, field.name)
             if field.name in optional:
@@ -64,6 +65,16 @@ class TestProfile:
         assert profile.darwin_state_dirs == ()
         assert profile.auth_env_vars == ()
         assert profile.skill_dirs == (".opencode/skills",)
+        assert profile.state_root_env is None
+        assert profile.auth_files == (
+            ".local/share/opencode/auth.json",
+            ".config/opencode/opencode.json",
+            ".config/opencode/opencode.jsonc",
+            ".config/opencode/config.json",
+            ".config/opencode/config.jsonc",
+            ".config/opencode/.env",
+        )
+        assert profile.mcp_config_file == "opencode.json"
 
     def test_the_container_install_runs_the_official_installer(self) -> None:
         commands = OpencodeProvider().profile.container_install

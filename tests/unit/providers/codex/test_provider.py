@@ -40,12 +40,15 @@ class TestProfile:
 
     def test_every_profile_field_is_populated(self) -> None:
         profile = CodexProvider().profile
+        # Codex has no config-file MCP mechanism, so it declares no path.
+        optional = {"schema_dialect", "mcp_config_file"}
         for field in fields(ProviderProfile):
             value = getattr(profile, field.name)
+            if field.name in optional:
+                continue
             assert value is not None, field.name
-            if field.name != "schema_dialect":
-                assert value != (), field.name
-                assert value != "", field.name
+            assert value != (), field.name
+            assert value != "", field.name
 
     def test_declared_capabilities(self) -> None:
         profile = CodexProvider().profile
@@ -66,6 +69,10 @@ class TestProfile:
         assert all(path.startswith("Library/") for path in profile.darwin_state_dirs)
         assert profile.auth_env_vars == ("OPENAI_API_KEY", "OPENAI_BASE_URL")
         assert profile.skill_dirs == (".agents/skills",)
+        assert profile.state_root_env == "CODEX_HOME"
+        assert profile.auth_files == (".codex/auth.json", ".codex/config.toml")
+        assert profile.mcp_config_file is None
+        assert profile.container_env == {}
 
     def test_the_container_recipe_installs_node_then_the_pinned_cli(self) -> None:
         commands = CodexProvider().profile.container_install

@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from agentshim.core.mcp import McpServer
     from agentshim.core.provider import ArgvContext, McpInstallation
 
-MCP_CONFIG_PATH = (".gemini", "settings.json")
+MCP_CONFIG_FILENAME = ".gemini/settings.json"
 MCP_SERVER_KEY = "mcpServers"
 
 _NO_WORKSPACE = "gemini installs MCP servers into <cwd>/.gemini/settings.json; the turn needs a cwd"
@@ -71,6 +71,16 @@ PROFILE = ProviderProfile(
         "rm -f node.tgz; }",
         "npm install -g @google/gemini-cli",
     ),
+    # ``gemini --help`` documents no variable that relocates ~/.gemini, so
+    # this stays unset rather than guessed.
+    state_root_env=None,
+    auth_files=(
+        ".gemini/oauth_creds.json",
+        ".gemini/google_accounts.json",
+        ".gemini/settings.json",
+        ".gemini/.env",
+    ),
+    mcp_config_file=MCP_CONFIG_FILENAME,
 )
 
 
@@ -106,7 +116,7 @@ class GeminiProvider:
         if workspace is None:
             raise ProviderCapabilityError(_NO_WORKSPACE)
         return install_config_file(
-            workspace.joinpath(*MCP_CONFIG_PATH),
+            workspace / MCP_CONFIG_FILENAME,
             server_key=MCP_SERVER_KEY,
             servers={server.name: mcp_entry(server) for server in servers},
         )

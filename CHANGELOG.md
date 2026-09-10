@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.6.1 (unreleased)
+
+Additive only: every new field defaults, so a 0.6.0 consumer's existing
+`ProviderProfile` construction and every shipped provider keep working
+unchanged.
+
+`ProviderProfile` gains four fields:
+
+- `container_env: Mapping[str, str]` (default empty): environment a CLI
+  needs to run as root in a container, beyond auth. Claude Code sets
+  `IS_SANDBOX=1`, which it requires before accepting
+  `--dangerously-skip-permissions` as root; the other four providers need
+  nothing extra.
+- `state_root_env: str | None` (default `None`): the CLI's own documented
+  variable for relocating its primary state directory (`state_dirs[0]`).
+  `CLAUDE_CONFIG_DIR` for Claude, `CODEX_HOME` for Codex, `COPILOT_HOME` for
+  Copilot; `None` for Gemini and opencode, which document no such variable.
+- `auth_files: tuple[str, ...]` (default empty): home-relative paths to the
+  files that hold credentials and user configuration, the minimal set to
+  copy into another environment so the CLI is already logged in. Every entry
+  lies inside a `state_dirs` entry.
+- `mcp_config_file: str | None` (default `None`): for a `CONFIG_FILE`
+  provider, the workspace-relative path its MCP config is written to for a
+  turn (`.mcp.json`, `.gemini/settings.json`, `opencode.json`). The provider
+  module defines it as the same constant `install_mcp` writes to, so the two
+  cannot drift. `None` for `CLI_FLAGS`/`NONE` providers.
+
+`tests/unit/providers/test_conventions.py` pins these across every provider:
+`auth_files` entries lie inside `state_dirs`, `mcp_config_file` is set
+exactly when `mcp` is `CONFIG_FILE` and matches where `install_mcp` actually
+writes, `state_root_env` is uppercase when set, and `container_env` keys are
+uppercase.
+
 ## 0.6.0
 
 A restructure, not an upgrade. 0.6 replaces the whole public API of 0.5 and

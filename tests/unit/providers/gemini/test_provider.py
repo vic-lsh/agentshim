@@ -39,7 +39,8 @@ class TestProfile:
 
     def test_every_profile_field_is_populated(self) -> None:
         profile = GeminiProvider().profile
-        optional = {"schema_dialect", "darwin_state_dirs"}
+        # Gemini documents no variable that relocates ~/.gemini.
+        optional = {"schema_dialect", "darwin_state_dirs", "state_root_env"}
         for field in fields(ProviderProfile):
             value = getattr(profile, field.name)
             if field.name in optional:
@@ -66,6 +67,14 @@ class TestProfile:
         assert profile.darwin_state_dirs == ()
         assert profile.auth_env_vars == ("GEMINI_API_KEY", "GOOGLE_API_KEY")
         assert profile.skill_dirs == (".gemini/skills",)
+        assert profile.state_root_env is None
+        assert profile.auth_files == (
+            ".gemini/oauth_creds.json",
+            ".gemini/google_accounts.json",
+            ".gemini/settings.json",
+            ".gemini/.env",
+        )
+        assert profile.mcp_config_file == ".gemini/settings.json"
 
     def test_the_container_install_brings_node_and_the_cli(self) -> None:
         commands = GeminiProvider().profile.container_install

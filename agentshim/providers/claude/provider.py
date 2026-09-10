@@ -50,6 +50,18 @@ PROFILE = ProviderProfile(
         # The installer drops the binary in /root/.local/bin.
         "ln -sf /root/.local/bin/claude /usr/local/bin/claude",
     ),
+    # Claude Code refuses --dangerously-skip-permissions as root unless this
+    # is set.
+    container_env={"IS_SANDBOX": "1"},
+    # Documented Claude Code variable that relocates ~/.claude.
+    state_root_env="CLAUDE_CONFIG_DIR",
+    auth_files=(
+        ".claude/.credentials.json",
+        ".claude/settings.json",
+        ".claude/settings.local.json",
+        ".claude.json",
+    ),
+    mcp_config_file=MCP_CONFIG_FILENAME,
 )
 
 

@@ -498,6 +498,30 @@ class TestMcpLifecycle:
         _agent(executor).start_session(cwd=str(tmp_path)).turn("hi")
         assert list(tmp_path.iterdir()) == []
 
+    def test_mcp_workspace_overrides_cwd_for_the_config_file(self, tmp_path: Path) -> None:
+        # A container-executed turn has no host cwd: the CLI runs at the
+        # container path while the config file belongs on the bind-mounted
+        # host workspace.
+        seen: list[bool] = []
+
+        class Watching(FakeExecutor):
+            def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
+                seen.append((tmp_path / ".mcp.json").exists())
+                assert request.cwd is None
+                return super().run(request, sink)
+
+        executor = Watching(scripted_turn("claude", text="ok"))
+        _agent(executor).start_session().turn(
+            TurnRequest(
+                prompt="hi",
+                mcp_servers=[StdioMcpServer(name="board", command="python")],
+                mcp_workspace=tmp_path,
+            )
+        )
+
+        assert seen == [True]
+        assert not (tmp_path / ".mcp.json").exists()
+
 
 class TestTimeoutAndCancel:
     def test_a_timeout_propagates_as_cli_timeout_error(self) -> None:

@@ -93,10 +93,10 @@ class FakeExecutor:
     def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
         """Replay the next scripted run, driving *sink* like a real one would."""
         self.requests.append(request)
-        run = self._next(request)
         handle = FakeCommandHandle()
         self.handles.append(handle)
         sink.started(handle)
+        run = self._next(request)
         if run.timeout:
             handle.kill()
             timeout = request.timeout if request.timeout is not None else 0.0

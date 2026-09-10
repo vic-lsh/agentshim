@@ -40,6 +40,14 @@ class TurnRequest:
     extra_args: Sequence[str] = ()
     env: Mapping[str, str] | None = None
     mcp_servers: Sequence[McpServer] = ()
+    mcp_workspace: Path | None = None
+    """Host directory that receives config-file MCP installs.
+
+    Defaults to ``cwd``. A container-executed turn has no host ``cwd`` (the
+    CLI runs at the container path), so it names the bind-mounted host
+    workspace here instead; the same split ``OutputSchema`` makes with
+    ``host_dir`` and ``cli_dir``.
+    """
 
 
 @dataclass(frozen=True)

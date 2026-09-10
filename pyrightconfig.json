@@ -1,6 +1,14 @@
 {
   "include": ["agentshim", "tests"],
-  "exclude": [".venv/", "build/", "dist/"],
+  "exclude": [
+    ".venv/",
+    "build/",
+    "dist/",
+    "agentshim/codex",
+    "agentshim/copilot",
+    "agentshim/gemini",
+    "agentshim/opencode"
+  ],
   "typeCheckingMode": "standard",
   "pythonVersion": "3.10",
   "venvPath": ".",

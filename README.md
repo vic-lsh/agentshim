@@ -23,8 +23,8 @@ No required runtime dependencies. Python 3.10+.
 - native structured output with per-provider schema dialect checks
 - `agentshim.testing`: doubles that emit each provider's real stream format
 
-0.6 ships the core, the execution layer, and the Claude Code provider. The
-other four providers are being ported to the same protocol.
+0.6 ships the core, the execution layer, and all five providers: Claude
+Code, Codex, Gemini CLI, opencode, and Copilot CLI.
 
 ## Install
 

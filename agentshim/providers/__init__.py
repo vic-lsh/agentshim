@@ -16,6 +16,10 @@ from .codex import CodexProvider
 from .codex import scripted_lines as _codex_scripted
 from .copilot import CopilotProvider
 from .copilot import scripted_lines as _copilot_scripted
+from .gemini import GeminiProvider
+from .gemini import scripted_lines as _gemini_scripted
+from .opencode import OpencodeProvider
+from .opencode import scripted_lines as _opencode_scripted
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -51,12 +55,16 @@ _FACTORIES: dict[str, Callable[[], Provider]] = {
     "claude": ClaudeProvider,
     "codex": CodexProvider,
     "copilot": CopilotProvider,
+    "gemini": GeminiProvider,
+    "opencode": OpencodeProvider,
 }
 
 _SCRIPTED: dict[str, ScriptedLines] = {
     "claude": _claude_scripted,
     "codex": _codex_scripted,
     "copilot": _copilot_scripted,
+    "gemini": _gemini_scripted,
+    "opencode": _opencode_scripted,
 }
 
 
@@ -87,6 +95,8 @@ __all__ = [
     "ClaudeProvider",
     "CodexProvider",
     "CopilotProvider",
+    "GeminiProvider",
+    "OpencodeProvider",
     "ScriptedLines",
     "get_provider",
     "get_scripted_lines",

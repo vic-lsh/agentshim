@@ -51,6 +51,4 @@ before the process starts.
 | reasoning effort | `--effort` | `--config model_reasoning_effort` | none | none | none |
 | stream | `stream-json` | `--json` | `stream-json` | `run --format json` | `--output-format json` |
 
-0.6 ships claude and codex. The other three are being ported to the same
-protocol.
-0.6 ships claude, codex and copilot. Gemini and opencode are being ported to the same protocol.
+All five providers ship on the same protocol.

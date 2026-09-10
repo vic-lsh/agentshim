@@ -3,9 +3,7 @@
   "exclude": [
     ".venv/",
     "build/",
-    "dist/",
-    "agentshim/gemini",
-    "agentshim/opencode"
+    "dist/"
   ],
   "typeCheckingMode": "standard",
   "pythonVersion": "3.10",

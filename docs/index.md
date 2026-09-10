@@ -33,10 +33,8 @@ uv add agentshim
 ```
 
 agentshim does not bundle the agent CLIs. Install and authenticate the
-provider tool you want (`claude`, `codex`, and later `gemini`, `opencode`,
+provider tool you want (`claude`, `codex`, `gemini`, `opencode`, or
 `copilot`) yourself.
-provider tool you want (`claude`, `codex` and `copilot`, and later `gemini` and
-`opencode`) yourself.
 
 ## First turn
 
@@ -51,6 +49,5 @@ print(result.usage.tokens.input_tokens, result.cost_usd)
 
 ## Status
 
-0.6 ships the core, the execution layer, and the Claude Code provider. The
-other four providers are being ported to the same protocol; see
-[Architecture](architecture.md).
+0.6 ships the core, the execution layer, and all five providers on one
+protocol; see [Architecture](architecture.md).

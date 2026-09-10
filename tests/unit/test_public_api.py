@@ -31,8 +31,9 @@ def test_version_is_reported() -> None:
 def test_core_and_execution_do_not_import_providers_at_module_level() -> None:
     """The layering rule, checked instead of documented.
 
-    ``core.agent`` resolves a provider *name* through a function-local
-    import; that is deliberate and does not create a module-level edge.
+    ``import-linter`` enforces the whole ordering as a build gate; this
+    catches the specific edge that used to exist in ``core.agent`` without
+    needing the tool installed.
     """
     root = Path(agentshim.__file__ or "").parent
     offenders: list[str] = []

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from .agent import AgentSession, CliAgent
 from .env import interactive_env
 from .errors import (
     AgentShimError,
@@ -55,11 +54,9 @@ from .usage import ProviderUsage, TokenUsage
 __all__ = [
     "AgentEvent",
     "AgentEventHandler",
-    "AgentSession",
     "AgentShimError",
     "ArgvContext",
     "AssistantText",
-    "CliAgent",
     "CliCheckError",
     "CliExitError",
     "CliNotFoundError",

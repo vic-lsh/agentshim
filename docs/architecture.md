@@ -12,8 +12,8 @@ how to render events.
 ```
 agentshim/
   __init__.py          public API; everything importable from here is supported
+  agent.py             CliAgent, AgentSession: composition over providers/
   core/                provider-agnostic
-    agent.py           CliAgent, AgentSession
     turn.py            TurnRequest, TurnResult, OutputSchema
     events.py          event dataclasses, AgentEvent union, handlers
     usage.py           TokenUsage, ProviderUsage
@@ -44,8 +44,16 @@ agentshim/
 
 Rules:
 
-- `core/` and `execution/` never import from `providers/`. `providers/`
-  imports only from `core/` and `execution/`.
+- Imports go one way, innermost last: `testing/` -> `agent.py` ->
+  `providers/` -> (`core/`, `execution/`). `core/` and `execution/` never
+  import from `providers/` or from `agent.py`; `providers/` imports only from
+  `core/` and `execution/`. `execution/` raises the `core/` error types, which
+  is the one edge inside the innermost layer.
+- `agent.py` is the composition layer, and the only reason it is not in
+  `core/`: turning a provider *name* into a provider means importing
+  `providers/`, which `core/` may not do.
+- The layering is a build gate, not a convention. `[tool.importlinter]` in
+  `pyproject.toml` declares it and `scripts/check_imports.sh` runs it.
 - A provider folder holds only argv construction, stream parsing, and
   provider-specific options. Shared behaviour (tool pairing, JSON line
   handling, MCP file merge, schema materialization) lives in `core/`.
@@ -365,12 +373,15 @@ callers relied on that being fixed up. Splitting the two lets a caller decide:
 `dialect_problems` reports, `normalize` rewrites, and the session only ever
 calls the first.
 
-**`core/agent.py` resolves a provider *name* through a function-local
-import.** `CliAgent("claude")` has to work, and `core/` must not depend on
-`providers/` at module level. The import inside `_resolve_provider` keeps the
-module-level dependency graph acyclic and core provider-agnostic;
-`test_public_api.py` walks the AST of every `core/` and `execution/` module to
-enforce it.
+**`CliAgent` and `AgentSession` live in `agentshim/agent.py`, above
+`providers/`.** `CliAgent("claude")` has to work, so something must turn a
+provider name into a provider, and `core/` must not depend on `providers/`.
+Hiding that dependency in a function-local import inside `core/` made the
+module-level graph look acyclic while the real one was not. Putting the
+composition in its own layer above `providers/` makes the dependency an
+ordinary top-level import and leaves `core/` genuinely provider-agnostic.
+`import-linter` enforces the ordering, and `test_public_api.py` still walks
+the AST of every `core/` and `execution/` module as a second check.
 
 **`event_handler` and `event_handlers` are combined, not exclusive.** 0.5
 raised when both were passed. Combining is the obvious reading and removes a

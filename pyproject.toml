@@ -17,6 +17,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.0",
     "pyright>=1.1.408",
     "pytest>=8.0.0",
     "ruff==0.15.12",
@@ -77,6 +78,21 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "PLR2004", "D", "INP001", "TC001", "TC002", "TC003"]
 "scripts/**" = ["T201"]
+
+[tool.importlinter]
+root_packages = ["agentshim"]
+
+[[tool.importlinter.contracts]]
+name = "Library layers depend inward"
+type = "layers"
+layers = [
+    "agentshim.testing",
+    "agentshim.agent",
+    "agentshim.providers",
+    # ":" makes these non-independent siblings of one innermost layer:
+    # execution raises the core error types, and neither may import outward.
+    "agentshim.core : agentshim.execution",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

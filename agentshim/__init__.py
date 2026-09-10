@@ -6,14 +6,13 @@ live in ``agentshim.testing``.
 
 from __future__ import annotations
 
+from .agent import AgentSession, CliAgent
 from .core import (
     AgentEvent,
     AgentEventHandler,
-    AgentSession,
     AgentShimError,
     ArgvContext,
     AssistantText,
-    CliAgent,
     CliCheckError,
     CliExitError,
     CliNotFoundError,

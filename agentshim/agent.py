@@ -1,4 +1,9 @@
-"""The agent and its resumable session."""
+"""The agent and its resumable session.
+
+Composition layer: this is where a provider name becomes a provider and a
+turn becomes a subprocess. It sits above ``providers`` and ``execution`` so
+neither of them has to know that agents exist.
+"""
 
 from __future__ import annotations
 
@@ -8,39 +13,34 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from agentshim.core.env import interactive_env
+from agentshim.core.errors import CliExitError, ProviderCapabilityError, SchemaDialectError
+from agentshim.core.events import RunFinished, RunStarted, compose_event_handlers
+from agentshim.core.profile import McpMechanism, OutputSchemaStyle, SchemaDialect
+from agentshim.core.provider import ArgvContext
+from agentshim.core.schema import compact_json, dialect_problems, materialize
+from agentshim.core.turn import TurnRequest, TurnResult, coerce_request
 from agentshim.execution.executor import CommandRequest
 from agentshim.execution.host import HostCommandExecutor
-
-from .env import interactive_env
-from .errors import CliExitError, ProviderCapabilityError, SchemaDialectError
-from .events import RunFinished, RunStarted, compose_event_handlers
-from .profile import McpMechanism, OutputSchemaStyle, SchemaDialect
-from .provider import ArgvContext
-from .schema import compact_json, dialect_problems, materialize
-from .turn import TurnRequest, TurnResult, coerce_request
+from agentshim.providers import get_provider
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
+    from agentshim.core.events import AgentEvent, AgentEventHandler
+    from agentshim.core.profile import ProviderProfile
+    from agentshim.core.provider import Provider, StreamParser
+    from agentshim.core.turn import OutputSchema
     from agentshim.execution.executor import CommandExecutor, CommandHandle
-
-    from .events import AgentEvent, AgentEventHandler
-    from .profile import ProviderProfile
-    from .provider import Provider, StreamParser
-    from .turn import OutputSchema
 
 
 def _resolve_provider(provider: str | Provider) -> Provider:
     """Resolve a provider name to a provider instance.
 
-    The import is function-local on purpose: ``core`` must not depend on
-    ``providers`` at module level, but the documented ``CliAgent("claude")``
-    spelling has to keep working.
+    This module sits above ``providers`` precisely so the documented
+    ``CliAgent("claude")`` spelling can be a plain module-level import.
     """
     if isinstance(provider, str):
-        # core must not import providers at module level; see docs/architecture.md
-        from agentshim.providers import get_provider  # noqa: PLC0415
-
         return get_provider(provider)
     return provider
 

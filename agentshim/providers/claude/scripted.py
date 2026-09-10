@@ -81,6 +81,27 @@ def scripted_lines(
     return lines
 
 
+def resume_failure_lines(*, session_id: str | None = None) -> tuple[list[str], list[str], int]:
+    """Build the stdout, stderr and exit code of a resumed turn Claude cannot continue.
+
+    ``ClaudeProvider.classify_exit`` treats any nonzero exit of a resumed
+    turn as ``SessionResumeError``: ``claude --resume`` gives no
+    distinguishable exit code for a missing transcript, so a bare failure on
+    stderr is enough to trigger it. ``session_id`` is folded into the message
+    for realism only; the id ``SessionResumeError`` actually reports comes
+    from the resumed turn's own argv, not from anything scripted here.
+
+    Args:
+        session_id: Conversation id to name in the scripted stderr message.
+
+    Returns:
+        ``(stdout, stderr, returncode)`` for a ``FakeRun``.
+    """
+    detail = f" {session_id}" if session_id else ""
+    stderr = [f"Error: no conversation found to resume{detail}\n"]
+    return [], stderr, 1
+
+
 def _usage_payload(usage: TokenUsage | None) -> dict[str, int]:
     if usage is None:
         return {

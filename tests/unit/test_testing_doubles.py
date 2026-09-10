@@ -15,7 +15,9 @@ from agentshim import (
     CommandRequest,
     NullSink,
     OutputSchema,
+    SessionResumeError,
     SessionStarted,
+    StdioMcpServer,
     TokenUsage,
     ToolCall,
     ToolResult,
@@ -27,6 +29,8 @@ from agentshim.testing import (
     FakeExecutor,
     FakeRun,
     RecordingEventHandler,
+    installed_mcp_servers,
+    scripted_resume_failure,
     scripted_turn,
 )
 
@@ -206,3 +210,69 @@ class TestScriptedTurn:
     def test_an_unknown_provider_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="no scripted stream"):
             scripted_turn("nope", text="x")
+
+
+class TestScriptedResumeFailure:
+    def test_it_raises_session_resume_error_on_a_resumed_turn(self) -> None:
+        executor = FakeExecutor(scripted_resume_failure("claude", session_id="old-session"))
+        session = _agent(executor).start_session()
+        assert session.adopt("old-session")
+
+        with pytest.raises(SessionResumeError):
+            session.turn("go")
+
+    def test_the_scripted_message_names_the_session(self) -> None:
+        run = scripted_resume_failure("codex", session_id="thread-xyz")
+        assert any("thread-xyz" in line for line in run.stderr)
+
+    def test_a_nonzero_exit_code_is_scripted(self) -> None:
+        run = scripted_resume_failure("claude")
+        assert run.returncode != 0
+
+    def test_an_unknown_provider_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="no resume-failure stream"):
+            scripted_resume_failure("nope")
+
+
+class TestInstalledMcpServers:
+    """Documents and pins the ``FakeExecutor`` ``run``-callback usage pattern.
+
+    A config-file provider's config only exists on disk for the lifetime of
+    the turn: the library restores (and, when nothing else asked for one,
+    removes) it in the session's ``finally``, which runs before ``run()``
+    returns. So the helper has to be called from inside the ``run`` callback,
+    not after.
+    """
+
+    def test_a_config_file_provider_is_only_readable_during_the_turn(self, tmp_path: Path) -> None:
+        stdio = StdioMcpServer(name="tool", command="npx", args=["-y", "thing"], env={"K": "v"})
+        during: dict[str, object] = {}
+
+        def run(request: CommandRequest) -> FakeRun:
+            during.update(installed_mcp_servers("claude", request, tmp_path))
+            return scripted_turn("claude", text="ok")
+
+        executor = FakeExecutor(run)
+        CliAgent("claude", executor=executor, env=_ENV).run(
+            TurnRequest(prompt="go", cwd=str(tmp_path), mcp_servers=[stdio])
+        )
+
+        assert during["tool"] == {"command": "npx", "args": ["-y", "thing"], "env": {"K": "v"}}
+        # The turn is over now, and claude's install is restored: nothing
+        # left to read.
+        after = installed_mcp_servers("claude", executor.requests[-1], tmp_path)
+        assert after == {}
+
+    def test_codex_flags_can_still_be_read_after_the_turn(self, tmp_path: Path) -> None:
+        # A CLI-flags provider has no config file to restore: the servers
+        # live in the one argv the turn ran, which ``FakeExecutor`` keeps on
+        # ``requests`` for the life of the test either way.
+        stdio = StdioMcpServer(name="tool", command="npx", args=["-y", "thing"])
+        executor = FakeExecutor(scripted_turn("codex", text="ok"))
+
+        CliAgent("codex", executor=executor, env=_ENV).run(
+            TurnRequest(prompt="go", cwd=str(tmp_path), mcp_servers=[stdio])
+        )
+
+        servers = installed_mcp_servers("codex", executor.requests[-1], tmp_path)
+        assert servers["tool"]["command"] == "npx"

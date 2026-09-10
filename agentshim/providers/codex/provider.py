@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import re
+from typing import TYPE_CHECKING, Any
 
 from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
 from agentshim.core.mcp import FlagsInstallation, HttpMcpServer, NoopInstallation
@@ -206,3 +207,93 @@ def _toml_str(value: str) -> str:
 def _toml_array(values: Sequence[str]) -> str:
     """Render a sequence of strings as a TOML inline array."""
     return "[" + ",".join(_toml_str(value) for value in values) + "]"
+
+
+_CONFIG_OVERRIDE_RE = re.compile(r"^mcp_servers\.([^.=]+)\.(.+)$")
+_TOML_STRING_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
+
+
+def parse_mcp_servers(argv: Sequence[str]) -> dict[str, dict[str, Any]]:
+    """Recover the MCP servers rendered into *argv* by ``_server_flags``.
+
+    The inverse of that renderer, kept next to it so the two cannot drift:
+    walks the ``--config mcp_servers.<key>.<field>=<value>`` overrides this
+    provider emits and rebuilds one canonical entry per server. A stdio
+    server comes back as ``command``, ``args`` and ``env``; an HTTP one as
+    ``url`` and ``transport`` (always ``"http"``, since a ``--config``
+    override carries only the address and this provider cannot express any
+    other transport).
+
+    Args:
+        argv: The argv a turn actually ran, as recorded on a ``CommandRequest``.
+
+    Returns:
+        One canonical entry per server, keyed by the dotted-path name
+        ``_server_flags`` gave it (``-`` already mangled to ``_``).
+    """
+    servers: dict[str, dict[str, Any]] = {}
+    for key, field, raw_value in _mcp_config_overrides(argv):
+        _apply_mcp_override(servers.setdefault(key, {}), field, raw_value)
+    for entry in servers.values():
+        if "url" not in entry:
+            entry.setdefault("args", [])
+            entry.setdefault("env", {})
+    return servers
+
+
+def _mcp_config_overrides(argv: Sequence[str]) -> list[tuple[str, str, str]]:
+    """Pull every ``mcp_servers.<key>.<field>=<value>`` override out of *argv*."""
+    args = list(argv)
+    overrides: list[tuple[str, str, str]] = []
+    for index, arg in enumerate(args):
+        if arg != "--config" or index + 1 >= len(args):
+            continue
+        path, sep, raw_value = args[index + 1].partition("=")
+        if not sep:
+            continue
+        match = _CONFIG_OVERRIDE_RE.match(path)
+        if match is not None:
+            key, field = match.groups()
+            overrides.append((key, field, raw_value))
+    return overrides
+
+
+def _apply_mcp_override(entry: dict[str, Any], field: str, raw_value: str) -> None:
+    """Fold one dotted-path override into the entry being rebuilt for it."""
+    if field == "command":
+        entry["command"] = _parse_toml_str(raw_value)
+    elif field == "args":
+        entry["args"] = _parse_toml_array(raw_value)
+    elif field == "url":
+        entry["url"] = _parse_toml_str(raw_value)
+        entry["transport"] = "http"
+    elif field.startswith("env."):
+        entry.setdefault("env", {})[field.removeprefix("env.")] = _parse_toml_str(raw_value)
+
+
+def _parse_toml_str(literal: str) -> str:
+    """Reverse ``_toml_str``: unescape one TOML basic string literal."""
+    match = _TOML_STRING_RE.fullmatch(literal)
+    if match is None:
+        return literal
+    return _unescape_toml(match.group(1))
+
+
+def _parse_toml_array(literal: str) -> list[str]:
+    """Reverse ``_toml_array``: unescape every string in a TOML inline array."""
+    return [_unescape_toml(inner) for inner in _TOML_STRING_RE.findall(literal)]
+
+
+def _unescape_toml(escaped: str) -> str:
+    """Undo the backslash-escaping ``_toml_str`` applies to a string body."""
+    result: list[str] = []
+    index = 0
+    while index < len(escaped):
+        char = escaped[index]
+        if char == "\\" and index + 1 < len(escaped):
+            result.append(escaped[index + 1])
+            index += 2
+        else:
+            result.append(char)
+            index += 1
+    return "".join(result)

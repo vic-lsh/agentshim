@@ -16,23 +16,35 @@ import pytest
 from agentshim import (
     ArgvContext,
     CliAgent,
+    CliExitError,
+    HttpMcpServer,
     McpMechanism,
     OutputSchemaStyle,
     RawOutput,
     SchemaDialect,
+    SessionResumeError,
     StdioMcpServer,
     TokenUsage,
+    TurnRequest,
     UsageReport,
     get_provider,
     provider_names,
 )
 from agentshim.providers import get_scripted_lines
-from agentshim.testing import FakeExecutor, RecordingEventHandler, scripted_turn
+from agentshim.testing import (
+    FakeExecutor,
+    RecordingEventHandler,
+    installed_mcp_servers,
+    scripted_resume_failure,
+    scripted_turn,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from agentshim.core.events import AgentEvent
+    from agentshim.execution.executor import CommandRequest
+    from agentshim.testing import FakeRun
 
 PROVIDERS = provider_names()
 _ENV = {"PATH": "/usr/bin"}
@@ -47,6 +59,13 @@ RESUME_FLAGS = {
     "gemini": "--resume",
     "opencode": "--session",
 }
+
+#: Providers whose ``classify_exit`` can recognise a lost resumed
+#: conversation at all. Copilot gives no signal that tells a dead session
+#: apart from any other failure (docs/architecture.md, "Resume diagnosis is
+#: provider-dependent"), so a resumed turn there raises a plain
+#: ``CliExitError``, never ``SessionResumeError``.
+RAISES_SESSION_RESUME_ERROR = frozenset({"claude", "codex", "gemini", "opencode"})
 
 #: Fields a profile may legitimately leave empty.
 _MAY_BE_EMPTY = frozenset({"darwin_state_dirs", "auth_env_vars"})
@@ -250,3 +269,51 @@ class TestScriptedLinesContract:
         for line in lines:
             parser.feed_stdout(line)
         assert parser.finish().structured_output == payload
+
+
+@pytest.mark.parametrize("name", PROVIDERS)
+class TestScriptedResumeFailure:
+    def test_a_resumed_turn_is_classified_the_way_the_provider_documents(self, name: str) -> None:
+        executor = FakeExecutor(scripted_resume_failure(name, session_id=_SESSION_ID))
+        session = CliAgent(name, executor=executor, env=dict(_ENV)).start_session()
+        assert session.adopt(_SESSION_ID)
+
+        with pytest.raises(CliExitError) as excinfo:
+            session.turn(_PROMPT)
+
+        if name in RAISES_SESSION_RESUME_ERROR:
+            assert isinstance(excinfo.value, SessionResumeError)
+        else:
+            assert not isinstance(excinfo.value, SessionResumeError)
+
+    def test_a_fresh_turn_never_raises_session_resume_error(self, name: str) -> None:
+        # The same scripted failure, served to a turn that never resumed
+        # anything, must never be misread as a lost conversation.
+        executor = FakeExecutor(scripted_resume_failure(name))
+
+        with pytest.raises(CliExitError) as excinfo:
+            CliAgent(name, executor=executor, env=dict(_ENV)).run(_PROMPT)
+
+        assert not isinstance(excinfo.value, SessionResumeError)
+
+
+@pytest.mark.parametrize("name", PROVIDERS)
+class TestInstalledMcpServers:
+    def test_the_installed_servers_round_trip(self, name: str, tmp_path: Path) -> None:
+        stdio = StdioMcpServer(
+            name="stdio_server", command="npx", args=["-y", "thing"], env={"KEY": "value"}
+        )
+        http = HttpMcpServer(name="http_server", url="https://example.com/mcp")
+        captured: dict[str, dict[str, Any]] = {}
+
+        def run(request: CommandRequest) -> FakeRun:
+            captured.update(installed_mcp_servers(name, request, tmp_path))
+            return scripted_turn(name, text="ok")
+
+        executor = FakeExecutor(run)
+        CliAgent(name, executor=executor, env=dict(_ENV)).run(
+            TurnRequest(prompt="go", cwd=str(tmp_path), mcp_servers=[stdio, http])
+        )
+
+        assert captured["stdio_server"]["command"] == "npx"
+        assert captured["http_server"]["url"] == "https://example.com/mcp"

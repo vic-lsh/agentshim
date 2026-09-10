@@ -156,4 +156,4 @@ class TestScriptedTurn:
 
     def test_an_unknown_provider_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="no scripted stream"):
-            scripted_turn("codex", text="x")
+            scripted_turn("nope", text="x")

@@ -34,7 +34,7 @@ agentshim/
     __init__.py        get_provider(name), provider_names()
     claude/            provider.py, parser.py, events.py, sandbox.py,
                        scripted.py, hooks/
-    codex/             provider.py, parser.py, events.py
+    codex/             provider.py, parser.py, events.py, scripted.py
     gemini/            provider.py, parser.py, events.py
     opencode/          provider.py, parser.py, events.py
     copilot/           provider.py, parser.py, events.py
@@ -300,12 +300,13 @@ through `run`, so the transform applies to the health check too.
 | resume | `--resume <id>` | `exec resume <id>` | `--resume <id>` | `run --session <id>` | `--resume <id>` |
 | MCP | `.mcp.json` (config file) | `--config mcp_servers.*` flags | `.gemini/settings.json` | `opencode.json` | `--additional-mcp-config` |
 | output schema | `--json-schema <inline>`, OPEN | `--output-schema <path>`, STRICT | none | none | none |
-| reasoning effort | `--effort` | `-c model_reasoning_effort` | none | none | none |
+| reasoning effort | `--effort` | `--config model_reasoning_effort` | none | none | none |
 | stream | `stream-json` | `--json` | `--output-format stream-json` | `run --format json` | `--output-format json` |
 
 Codex always passes `--skip-git-repo-check` and, when the env has a `PATH`,
 `--config shell_environment_policy.set.PATH=...` so tools the agent runs see
-the launcher's PATH.
+the launcher's PATH. `codex exec resume <id>` also needs the literal `-`
+positional right after the thread id: without it the CLI ignores stdin.
 
 Claude's optional settings-file sandbox (`providers/claude/sandbox.py`) is a
 provider option, not a portable constructor argument. Its read-confinement
@@ -422,6 +423,6 @@ two named application tools a larger budget. That is caller policy; a caller
 who wants it writes their own handler.
 
 **The unported provider packages are excluded from the wheel.**
-`agentshim/codex`, `gemini`, `opencode` and `copilot` are still 0.5 code that
-does not import. They stay in the repo for the port and are excluded from
-pyright and from the built wheel until then.
+`agentshim/gemini`, `opencode` and `copilot` are still 0.5 code that does not
+import. They stay in the repo for the port and are excluded from pyright and
+from the built wheel until then.

@@ -48,7 +48,8 @@ before the process starts.
 | resume | `--resume <id>` | `exec resume <id>` | `--resume <id>` | `run --session <id>` | `--resume <id>` |
 | MCP | `.mcp.json` | `--config mcp_servers.*` | `.gemini/settings.json` | `opencode.json` | `--additional-mcp-config` |
 | output schema | `--json-schema`, OPEN | `--output-schema`, STRICT | none | none | none |
-| reasoning effort | `--effort` | `-c model_reasoning_effort` | none | none | none |
+| reasoning effort | `--effort` | `--config model_reasoning_effort` | none | none | none |
 | stream | `stream-json` | `--json` | `stream-json` | `run --format json` | `--output-format json` |
 
-0.6 ships claude. The other four are being ported to the same protocol.
+0.6 ships claude and codex. The other three are being ported to the same
+protocol.

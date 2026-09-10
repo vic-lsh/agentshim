@@ -100,6 +100,7 @@ class TurnRequest:
     extra_args: Sequence[str] = ()              # appended verbatim to argv
     env: Mapping[str, str] | None = None        # overlay on the agent env for this turn
     mcp_servers: Sequence[McpServer] = ()       # installed before the turn, restored after
+    mcp_workspace: Path | None = None           # host dir for config-file MCP installs; defaults to cwd
 
 @dataclass(frozen=True)
 class TurnResult:

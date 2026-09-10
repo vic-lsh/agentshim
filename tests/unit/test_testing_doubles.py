@@ -80,6 +80,21 @@ class TestFakeExecutor:
         handle.kill()
         assert (handle.terminated, handle.killed) == (True, True)
 
+    def test_the_handle_is_published_before_the_run_callable_is_consulted(self) -> None:
+        # A blocking scripted run must be cancellable through the handle the
+        # sink already holds, matching the real executor's ordering.
+        executor: FakeExecutor | None = None
+
+        def choose(request: CommandRequest) -> FakeRun:
+            del request
+            assert executor is not None
+            assert executor.handles, "handle must exist before the run is chosen"
+            return FakeRun()
+
+        executor = FakeExecutor(choose)
+        executor.run(CommandRequest(["x"], None, None, {}, None), NullSink())
+        assert len(executor.handles) == 1
+
     def test_a_timeout_run_raises_and_kills(self) -> None:
         executor = FakeExecutor(FakeRun(timeout=True))
         with pytest.raises(CliTimeoutError):

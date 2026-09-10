@@ -205,7 +205,9 @@ class AgentSession:
         self._check_capabilities(req)
         schema_inline, schema_path = self._resolve_schema(req.output_schema)
 
-        workspace = Path(cwd) if cwd is not None else None
+        workspace = req.mcp_workspace
+        if workspace is None and cwd is not None:
+            workspace = Path(cwd)
         installation = provider.install_mcp(workspace, req.mcp_servers)
         resumed = self.session_id is not None
         handler = agent.event_handler

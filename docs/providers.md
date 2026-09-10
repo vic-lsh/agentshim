@@ -51,4 +51,4 @@ before the process starts.
 | reasoning effort | `--effort` | `-c model_reasoning_effort` | none | none | none |
 | stream | `stream-json` | `--json` | `stream-json` | `run --format json` | `--output-format json` |
 
-0.6 ships claude. The other four are being ported to the same protocol.
+0.6 ships claude and copilot. The other three are being ported to the same protocol.

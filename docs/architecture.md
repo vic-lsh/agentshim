@@ -422,6 +422,6 @@ two named application tools a larger budget. That is caller policy; a caller
 who wants it writes their own handler.
 
 **The unported provider packages are excluded from the wheel.**
-`agentshim/codex`, `gemini`, `opencode` and `copilot` are still 0.5 code that
+`agentshim/codex`, `gemini` and `opencode` are still 0.5 code that
 does not import. They stay in the repo for the port and are excluded from
 pyright and from the built wheel until then.

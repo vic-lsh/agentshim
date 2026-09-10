@@ -50,4 +50,4 @@ def test_core_and_execution_do_not_import_providers_at_module_level() -> None:
 
 
 def test_provider_names_lists_claude() -> None:
-    assert agentshim.provider_names() == ["claude"]
+    assert agentshim.provider_names() == ["claude", "copilot"]

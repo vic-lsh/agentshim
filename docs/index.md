@@ -33,8 +33,8 @@ uv add agentshim
 ```
 
 agentshim does not bundle the agent CLIs. Install and authenticate the
-provider tool you want (`claude`, and later `codex`, `gemini`, `opencode`,
-`copilot`) yourself.
+provider tool you want (`claude` and `copilot`, and later `codex`, `gemini`,
+`opencode`) yourself.
 
 ## First turn
 

@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from .claude import ClaudeProvider
 from .claude import scripted_lines as _claude_scripted
+from .copilot import CopilotProvider
+from .copilot import scripted_lines as _copilot_scripted
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -38,10 +40,12 @@ class ScriptedLines(Protocol):
 # events.py, scripted.py) and add one entry to each dict below.
 _FACTORIES: dict[str, Callable[[], Provider]] = {
     "claude": ClaudeProvider,
+    "copilot": CopilotProvider,
 }
 
 _SCRIPTED: dict[str, ScriptedLines] = {
     "claude": _claude_scripted,
+    "copilot": _copilot_scripted,
 }
 
 
@@ -66,4 +70,11 @@ def get_scripted_lines(name: str) -> ScriptedLines:
     return scripted
 
 
-__all__ = ["ClaudeProvider", "ScriptedLines", "get_provider", "get_scripted_lines", "provider_names"]
+__all__ = [
+    "ClaudeProvider",
+    "CopilotProvider",
+    "ScriptedLines",
+    "get_provider",
+    "get_scripted_lines",
+    "provider_names",
+]

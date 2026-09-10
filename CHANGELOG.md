@@ -200,6 +200,10 @@ needs a `cwd`, and raises `ProviderCapabilityError` without one.
   command with a pipe for stdin, so it can never inherit a TTY.
 - `AgentSession.adopt()`, `forget()`, and a thread-safe `cancel()` that
   terminates the process group and kills it after a grace period.
+- `TurnRequest.mcp_workspace`: the host directory that receives config-file
+  MCP installs when the turn has no host `cwd`, which is the container case
+  (the CLI runs at the container path while the config file belongs on the
+  bind-mounted host workspace). Defaults to `cwd`.
 - `scripts/check_imports.sh` and the `[tool.importlinter]` contract.
 - `__version__` on the package.
 

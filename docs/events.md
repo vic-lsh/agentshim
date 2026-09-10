@@ -43,6 +43,7 @@ drops everything, and `CompositeEventHandler` fans out explicitly.
 import sys
 from agentshim import CliAgent, ConsoleEventHandler
 
+# Watcher is the handler defined above.
 agent = CliAgent("claude", event_handlers=[ConsoleEventHandler(sys.stderr), Watcher()])
 ```
 
@@ -53,10 +54,22 @@ executor reads the CLI's pipes on helper threads but drains them on the
 calling thread, so a handler needs no locking of its own and an exception it
 raises propagates out of `turn()` after the process is killed.
 
+## Tool results
+
+A tool that failed is reported the same way on every provider: the message on
+`ToolResult.stderr` with a nonzero `exit_code`, and `stdout` empty. A
+renderer can therefore branch on `exit_code` alone and never mistake a
+failure for success. A provider that reports a real exit code passes it
+through; one that only reports a boolean failure uses `1`.
+
 ## Usage
 
 Every provider emits at least one `UsageReport` per turn when its CLI reports
 usage, and the last one matches `TurnResult.usage`. `ProviderUsage.tokens`
-obeys `cached_input_tokens <= input_tokens` on every provider: Claude reports
-cache tokens disjoint from input tokens, and its parser folds them in.
+obeys `cached_input_tokens <= input_tokens` on every provider: Claude and
+Copilot report cache tokens disjoint from input tokens and their parsers fold
+them in, opencode adds its cache hits back into `input`, and Gemini clamps.
 `ProviderUsage.raw` keeps the CLI's own mapping for diagnostics.
+
+Copilot CLI prints no token counts at all, so its counts are zero; see
+[Providers](providers.md).

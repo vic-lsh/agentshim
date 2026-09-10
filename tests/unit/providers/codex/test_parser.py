@@ -390,7 +390,7 @@ class TestMalformedLines:
 
 class TestStderr:
     def test_stderr_lines_are_emitted_as_stderr_events(self) -> None:
-        """0.5 pushed these through the text channel as ``[codex stderr]`` prose."""
+        """These belong on the stderr channel, not folded into the turn text."""
         parser, events = _parser()
         parser.feed_stderr("panic: index out of bounds\n")
         assert events == [Stderr("panic: index out of bounds")]

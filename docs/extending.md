@@ -5,8 +5,11 @@ provider-specific options. Everything shared (tool pairing, JSON line
 handling, MCP file merge, schema materialization) already lives in `core/`.
 
 Create `agentshim/providers/<name>/` with `provider.py`, `parser.py`,
-`events.py` and `scripted.py`, then add one entry to each dict in
-`agentshim/providers/__init__.py`.
+`events.py`, `scripted.py` and an `__init__.py` exporting `<Name>Provider`,
+`PROFILE` and `scripted_lines`, then add one entry to each dict in
+`agentshim/providers/__init__.py`. Import `core/` and `execution/`
+absolutely (`from agentshim.core.events import ...`) and your own siblings
+relatively (`from .parser import ...`), as the five shipped packages do.
 
 ## The protocol
 
@@ -41,22 +44,37 @@ class StreamParser(Protocol):
 Use `parse_json_object(line)`, which returns `None` for blank lines, invalid
 JSON, and valid JSON that is not an object; emit `RawOutput` for those rather
 than raising. Use `ToolTracker` to pair result frames back to their calls.
-Normalize usage so `cached_input_tokens <= input_tokens` holds.
+Normalize usage so `cached_input_tokens <= input_tokens` holds. Report a
+failed tool on `ToolResult.stderr` with a nonzero `exit_code`, never on
+`stdout`.
 
 ## Test doubles
 
 Expose `scripted_lines(...)` in `scripted.py`, returning the provider's real
 stdout for one turn, and register it so `scripted_turn("<name>", ...)` finds
 it. Consumers test against that, so it has to round-trip through your own
-parser.
+parser. If the provider has no native output schema, raise `ValueError` when
+`structured_output` is passed rather than ignoring it.
+
+## Tests
+
+Put them in `tests/unit/providers/<name>/` as `test_argv.py`,
+`test_parser.py`, `test_provider.py` and `test_scripted.py`, grouping cases
+in `Test*` classes. `tests/unit/providers/test_conventions.py` is
+parametrized over `provider_names()` and will pick the new provider up
+automatically: it pins the profile fields, the prompt staying out of argv,
+the resume flag, the scripted round trip, the usage invariant, and
+`RawOutput` for non-object JSON. Add the new name to its `RESUME_FLAGS` map.
 
 ## Installing it
 
 ```python
 from agentshim import CliAgent
+from myapp.providers import MyProvider
 
-agent = CliAgent(MyProvider(), model="...")
+agent = CliAgent(MyProvider(), model="my-model-id")
 ```
 
 Providers reached by name go in the dicts in `providers/__init__.py`; there is
-no mutable registry and no import side effect.
+no mutable registry and no import side effect. A provider that lives outside
+agentshim never needs to be registered: pass the instance.

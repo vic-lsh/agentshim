@@ -24,7 +24,9 @@ No required runtime dependencies. Python 3.10+.
 - `agentshim.testing`: doubles that emit each provider's real stream format
 
 0.6 ships the core, the execution layer, and all five providers: Claude
-Code, Codex, Gemini CLI, opencode, and Copilot CLI.
+Code, Codex, Gemini CLI, opencode, and Copilot CLI. It is not
+source-compatible with 0.5; see [`CHANGELOG.md`](CHANGELOG.md) for what
+changed and how to migrate.
 
 ## Install
 
@@ -32,8 +34,8 @@ Code, Codex, Gemini CLI, opencode, and Copilot CLI.
 uv add agentshim
 ```
 
-agentshim does not bundle the agent CLIs. Install and authenticate the
-provider tool you want (`claude`) yourself.
+agentshim does not bundle the agent CLIs. Install and authenticate the one
+you want (`claude`, `codex`, `gemini`, `opencode`, or `copilot`) yourself.
 
 ## One turn
 
@@ -46,6 +48,9 @@ result = agent.run("Write a short summary of this codebase.", cwd=".")
 print(result.text)
 print(result.usage.tokens.input_tokens, result.cost_usd, result.duration_ms)
 ```
+
+`model` is an opaque provider-specific string, passed through to the CLI
+unchanged; `None` leaves the CLI's own default.
 
 Binary lookup and the CLI health check run once, in the constructor, so a
 broken install fails immediately rather than halfway through a turn.
@@ -72,6 +77,13 @@ terminates the process group, then kills it after a grace period.
 ```python
 from pathlib import Path
 from agentshim import OutputSchema, StdioMcpServer, TurnRequest
+
+schema = {
+    "type": "object",
+    "properties": {"summary": {"type": "string"}},
+    "required": ["summary"],
+    "additionalProperties": False,
+}
 
 result = session.turn(
     TurnRequest(
@@ -137,7 +149,7 @@ agent = CliAgent("claude", executor=TransformingExecutor(HostCommandExecutor(), 
 never encode a provider's JSON shape.
 
 ```python
-from agentshim import CliAgent
+from agentshim import AssistantText, CliAgent
 from agentshim.testing import FakeExecutor, RecordingEventHandler, scripted_turn
 
 events = RecordingEventHandler()
@@ -150,6 +162,7 @@ agent = CliAgent(
 result = agent.run("ping")
 assert result.text == "pong"
 assert result.session_id == "s1"
+assert any(isinstance(event, AssistantText) for event in events.events)
 ```
 
 Assert on `TurnResult` and the typed events, never on internal attributes.
@@ -185,15 +198,29 @@ uv run pytest
 ./scripts/format_code.sh --check
 ./scripts/check_errors.sh
 ./scripts/type_check.sh
+./scripts/check_imports.sh
 ```
 
-End-to-end tests under `tests/e2e/` run the real CLIs and are skipped unless
-`AGENTSHIM_E2E=1` and the binary is on PATH.
+End-to-end tests under `tests/e2e/` run the real CLIs. They are skipped
+unless `AGENTSHIM_E2E=1` and the binary is on PATH, so CI never runs them.
+
+```bash
+AGENTSHIM_E2E=1 uv run pytest tests/e2e -q
+```
+
+Gemini needs a model the account is entitled to, and opencode takes one when
+the model in your own opencode config is not the one to test:
+
+```bash
+AGENTSHIM_E2E=1 AGENTSHIM_E2E_GEMINI_MODEL=gemini-2.5-flash \
+  uv run pytest tests/e2e/test_gemini_e2e.py -q
+```
+
+See [`docs/development.md`](docs/development.md) for the full gate list.
 
 ```bash
 uv build          # package
 uv publish        # release
 
-uv sync --group docs
-uv run mkdocs build --strict
+uv run --group docs mkdocs build --strict
 ```

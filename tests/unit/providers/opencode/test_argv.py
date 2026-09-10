@@ -39,7 +39,7 @@ class TestBaseArgv:
         assert "--model" not in OpencodeProvider().build_argv(_ctx())
 
     def test_the_prompt_never_reaches_argv(self) -> None:
-        """0.5 put a quoted prompt in argv; it belongs on stdin only."""
+        """A quoted prompt in argv is a regression; it belongs on stdin only."""
         argv = OpencodeProvider().build_argv(_ctx(model="m", extra_args=("--share",)))
         assert all("deploy the app" not in arg for arg in argv)
         assert all('"' not in arg for arg in argv)

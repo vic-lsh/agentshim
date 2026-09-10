@@ -15,6 +15,9 @@ print(result.text)
 print(result.exit_code, result.duration_ms)
 ```
 
+`model` is an opaque provider-specific string, passed to the CLI unchanged;
+`None` leaves the CLI's own default.
+
 Binary lookup and the CLI health check run once, in the constructor, so a
 broken install fails immediately rather than halfway through a turn.
 
@@ -45,6 +48,13 @@ Anything that varies per turn goes on a `TurnRequest`.
 from pathlib import Path
 from agentshim import OutputSchema, StdioMcpServer, TurnRequest
 
+schema = {
+    "type": "object",
+    "properties": {"summary": {"type": "string"}},
+    "required": ["summary"],
+    "additionalProperties": False,
+}
+
 result = session.turn(
     TurnRequest(
         prompt="Summarize the failing test.",
@@ -62,7 +72,10 @@ print(result.structured_output)
 ```
 
 `timeout=None` means no limit. A request field of `None` falls back to the
-session default.
+session default. Only Claude Code and Codex accept an output schema, and only
+they accept a reasoning effort; asking any other provider raises
+`ProviderCapabilityError` before the process starts. See
+[Providers](providers.md).
 
 ## Cancelling
 

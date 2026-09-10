@@ -60,7 +60,7 @@ class CopilotProvider:
 
         The prompt is not in it: ``copilot`` reads the prompt from stdin when
         stdin is not a terminal, which is what the session gives it, so the
-        ``-p`` flag 0.5 used is gone. ``--stream off`` keeps the CLI to whole
+        ``-p`` flag is not used. ``--stream off`` keeps the CLI to whole
         ``assistant.message`` frames, and the three ``--allow-all-*`` flags
         are what makes a non-interactive run answer its own permission
         prompts.

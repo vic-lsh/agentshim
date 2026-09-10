@@ -50,7 +50,7 @@ def main() -> int:
     breaking the run.
     """
     if len(sys.argv) < _MIN_ARGV:
-        # Misconfigured hook — don't block the tool, just let it through.
+        # Misconfigured hook: don't block the tool, just let it through.
         return 0
 
     roots = [os.path.realpath(p) for p in sys.argv[1:]]

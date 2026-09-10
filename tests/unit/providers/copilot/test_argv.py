@@ -46,7 +46,7 @@ class TestBaseArgv:
         assert "--model" not in CopilotProvider().build_argv(_ctx())
 
     def test_the_prompt_never_reaches_argv(self) -> None:
-        """The prompt goes on stdin, so the ``-p`` flag 0.5 used is gone."""
+        """The prompt goes on stdin, so no ``-p`` flag carries it."""
         argv = CopilotProvider().build_argv(_ctx(model="m", extra_args=("--foo",)))
         assert "-p" not in argv
         assert "--prompt" not in argv

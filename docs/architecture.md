@@ -30,14 +30,14 @@ agentshim/
     executor.py        CommandRequest, CommandResult, CommandHandle, sinks, CommandExecutor
     host.py            HostCommandExecutor
     transform.py       TransformingExecutor
-  providers/           one folder per CLI
-    __init__.py        get_provider(name), provider_names()
-    claude/            provider.py, parser.py, events.py, sandbox.py,
-                       scripted.py, hooks/
+  providers/           one folder per CLI, all with the same layout
+    __init__.py        get_provider(name), provider_names(), get_scripted_lines(name)
+    claude/            provider.py, parser.py, events.py, scripted.py,
+                       sandbox.py, hooks/
     codex/             provider.py, parser.py, events.py, scripted.py
-    gemini/            provider.py, parser.py, events.py
-    opencode/          provider.py, parser.py, events.py
-    copilot/           provider.py, parser.py, events.py
+    copilot/           provider.py, parser.py, events.py, scripted.py
+    gemini/            provider.py, parser.py, events.py, scripted.py
+    opencode/          provider.py, parser.py, events.py, scripted.py
   testing/             test doubles shipped for consumers
     __init__.py        FakeExecutor, FakeRun, RecordingEventHandler, scripted_turn
 ```
@@ -57,6 +57,19 @@ Rules:
 - A provider folder holds only argv construction, stream parsing, and
   provider-specific options. Shared behaviour (tool pairing, JSON line
   handling, MCP file merge, schema materialization) lives in `core/`.
+- Every provider package has the same shape: `provider.py`, `parser.py`,
+  `events.py`, `scripted.py`, and an `__init__.py` exporting
+  `<Name>Provider`, `PROFILE`, `<Name>StreamParser`, `fold_usage`,
+  `scripted_lines`, and `mcp_entry` where the provider has one. Anything
+  beyond that is provider-specific (Claude's `sandbox.py` and `hooks/`).
+- Imports inside `agentshim/` are absolute across packages
+  (`from agentshim.core.events import ...`) and relative between siblings of
+  the same package (`from .parser import ...`).
+- `tests/unit/providers/<name>/` holds `test_argv.py`, `test_parser.py`,
+  `test_provider.py` and `test_scripted.py`, cases grouped in `Test*`
+  classes. `tests/unit/providers/test_conventions.py` is parametrized over
+  `provider_names()` and pins the rules a per-provider suite cannot see one
+  package dropping.
 - No module-level mutable registries. `providers/__init__.py` maps names to
   provider factories with a plain dict.
 - No required runtime dependencies. Logging goes through a
@@ -140,15 +153,22 @@ the session sees it.
 
 Usage reporting: every provider emits at least one `UsageReport` per turn
 when its CLI reports usage. `ProviderUsage.tokens` obeys
-`cached_input_tokens <= input_tokens` on every provider (Claude reports cache
-tokens disjoint from input tokens; the Claude parser folds them in).
+`cached_input_tokens <= input_tokens` on every provider (Claude and Copilot
+report cache tokens disjoint from input tokens and their parsers fold them
+in). Copilot CLI 1.0.83 reports no token counts at all, so its counts are
+zero; the invariant still holds.
+
+Tool results: a tool that failed is reported on `ToolResult.stderr` with a
+nonzero `exit_code` and an empty `stdout`, on every provider.
 
 ### Usage
 
-`TokenUsage` and `ProviderUsage` keep the 0.5 field set (`input_tokens`,
-`output_tokens`, `cached_input_tokens`, `cache_write_input_tokens`,
-`reasoning_output_tokens`, `turns`). `ProviderUsage.raw` holds the last raw
-provider usage mapping for diagnostics.
+`TokenUsage` carries `input_tokens`, `output_tokens`, `cached_input_tokens`,
+`cache_write_input_tokens`, `reasoning_output_tokens` and `turns`, and adds
+field-wise so per-turn usages fold into a session total.
+`ProviderUsage.raw` holds the last raw provider usage mapping for
+diagnostics. Each provider package normalizes its CLI's counts in a
+`fold_usage` function.
 
 ### Errors
 
@@ -333,15 +353,16 @@ during the turn, only the entries agentshim added are removed.
 class FakeRun: stdout: Sequence[str] = (), stderr: Sequence[str] = (), returncode: int = 0, timeout: bool = False
 
 class FakeExecutor:                      # CommandExecutor
-    def __init__(self, runs: Sequence[FakeRun] | Callable[[CommandRequest], FakeRun], *, binaries: Mapping[str, str] | None = None)
+    def __init__(self, runs: FakeRun | Sequence[FakeRun] | Callable[[CommandRequest], FakeRun], *, binaries: Mapping[str, str] | None = None)
     requests: list[CommandRequest]
     handles: list[FakeCommandHandle]     # each records terminate()/kill()
+    checked: list[str]                   # paths check_binary() was called on
 
 class RecordingEventHandler:             # events: list[AgentEvent]
 
 def scripted_turn(provider: str, *, text: str = "", session_id: str | None = None,
                   usage: TokenUsage | None = None, tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
-                  structured_output: Any | None = None, returncode: int = 0) -> FakeRun
+                  structured_output: object | None = None, returncode: int = 0) -> FakeRun
 ```
 
 `scripted_turn` emits the provider's real stream format, so a consumer can
@@ -349,18 +370,24 @@ test its integration without knowing any provider's JSON shape. It finds that
 format through `providers.get_scripted_lines(name)`, which maps a provider
 name to the `scripted_lines(...)` function in `providers/<name>/scripted.py`.
 Consumer tests should build agents with `FakeExecutor` and assert on
-`TurnResult` and the typed events, never on internal attributes.
+`TurnResult` and the typed events, never on internal attributes. A provider
+with no native output schema raises `ValueError` when `structured_output` is
+passed, rather than quietly producing a turn without one.
 
 `FakeCommandHandle` records `terminate()`/`kill()`;
 `RecordingEventHandler.of_type(kind)` filters what it recorded.
 
 End-to-end tests under `tests/e2e/` run the real CLIs and are skipped unless
-`AGENTSHIM_E2E=1` and the binary is on PATH.
+`AGENTSHIM_E2E=1` and the binary is on PATH, so CI never runs them.
+`AGENTSHIM_E2E_GEMINI_MODEL` and `AGENTSHIM_E2E_OPENCODE_MODEL` name the
+model those two suites use. See [development](development.md).
 
 ## Decisions
 
-Where 0.5 behaviour, the layout above, and the type signatures did not agree,
-these are the resolutions. Each one is pinned by a test.
+Design choices that are not obvious from the types alone. Each one is pinned
+by a test. For what changed from the previous release and how to migrate,
+see the
+[changelog](https://github.com/vic-lsh/agentshim/blob/main/CHANGELOG.md).
 
 **`ParsedTurn` lives in `core/provider.py`.** The `StreamParser` protocol
 referred to it without defining it. It is a frozen dataclass carrying `text`,
@@ -369,10 +396,10 @@ referred to it without defining it. It is a frozen dataclass carrying `text`,
 **`core/schema.py` also exports `normalize(schema, dialect)`.** The dialect
 check is pure and never mutates its input, which is what makes it safe to run
 on a caller's schema. But generators such as Pydantic omit defaulted
-properties from `required` and leave `additionalProperties` unset, and 0.5
-callers relied on that being fixed up. Splitting the two lets a caller decide:
-`dialect_problems` reports, `normalize` rewrites, and the session only ever
-calls the first.
+properties from `required` and leave `additionalProperties` unset, and a
+caller feeding one of those to a `STRICT` provider needs it fixed up.
+Splitting the two lets the caller decide: `dialect_problems` reports,
+`normalize` rewrites, and the session only ever calls the first.
 
 **`CliAgent` and `AgentSession` live in `agentshim/agent.py`, above
 `providers/`.** `CliAgent("claude")` has to work, so something must turn a
@@ -384,9 +411,9 @@ ordinary top-level import and leaves `core/` genuinely provider-agnostic.
 `import-linter` enforces the ordering, and `test_public_api.py` still walks
 the AST of every `core/` and `execution/` module as a second check.
 
-**`event_handler` and `event_handlers` are combined, not exclusive.** 0.5
-raised when both were passed. Combining is the obvious reading and removes a
-failure mode from a constructor that already does I/O.
+**`event_handler` and `event_handlers` are combined, not exclusive.**
+Raising when both are passed would add a failure mode to a constructor that
+already does I/O, for a call that has one obvious reading.
 
 **A provider's non-portable options are attributes of the concrete provider
 class.** Claude's sandbox needs `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1`
@@ -404,8 +431,9 @@ leaves `structured_output` as `None` when that fails. Prose is never forced
 into a structured payload.
 
 **Final text: the terminal `result` frame wins; otherwise the assistant text
-blocks are joined with a newline.** This is 0.5's accumulation behaviour,
-which consumers' golden outputs depend on.
+blocks are joined with a newline.** A provider that summarizes its own turn
+is more accurate than reassembling the stream, and joining is only the
+fallback for providers that print no terminal frame.
 
 **`HostCommandExecutor.check_binary` goes through `run`.** The spec required
 this of `TransformingExecutor`; doing it in the host executor too means the
@@ -415,9 +443,16 @@ inherit a TTY and become a stopped process that deadlocks the parent.
 **`CommandResult.returncode` is `int`, never `None`.** The executor always
 waits, and a killed process still has a code.
 
-**A tool result flagged `is_error` is reported on `ToolResult.stderr` with
-`exit_code=1`.** The event has separate streams; putting a failure on
-`stdout` would make a renderer show it as success.
+**A failed tool result goes on `ToolResult.stderr` with a nonzero
+`exit_code`, on every provider.** The event has separate streams; putting a
+failure on `stdout` would make a renderer show it as success. What counts as
+failure is per-CLI (Claude's `is_error`, Codex's nonzero `exit_code` or
+`status: failed`, Gemini's and opencode's error status, Copilot's
+`success: false`), but the reporting is not: `stdout` is empty, the message
+is on `stderr`, and `exit_code` is the CLI's own code where it reports one
+and `1` where it only reports a boolean.
+`tests/unit/providers/test_conventions.py` pins this and the other rules
+across all five providers.
 
 **Claude's `classify_exit` maps *any* nonzero exit on a resumed turn to
 `SessionResumeError`.** `claude --resume` does not give a distinguishable
@@ -429,7 +464,7 @@ session id is recovered from argv.
 flag rather than by the presence of a process handle: the handle only appears
 once the executor has started the process, which is too late.
 
-**Truncation in `ConsoleEventHandler` has no per-tool exceptions.** 0.5 gave
-two named application tools a larger budget. That is caller policy; a caller
-who wants it writes their own handler.
+**Truncation in `ConsoleEventHandler` has no per-tool exceptions.** Giving
+named tools a larger budget is caller policy; a caller who wants it writes
+their own handler.
 

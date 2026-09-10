@@ -141,7 +141,7 @@ class TestTools:
         assert result.duration_s == 1.5
 
     def test_the_part_time_block_supplies_the_duration(self) -> None:
-        """0.5 dropped completed tools entirely by checking for status "success"."""
+        """Checking for status "success" would drop every completed tool."""
         parser, events = _parser()
         parser.feed_stdout(
             _line(

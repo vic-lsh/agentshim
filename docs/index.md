@@ -47,7 +47,17 @@ print(result.text)
 print(result.usage.tokens.input_tokens, result.cost_usd)
 ```
 
+`model` is an opaque provider-specific string; `None` leaves the CLI's own
+default. See [Getting Started](getting-started.md) for sessions, per-turn
+options, and errors.
+
 ## Status
 
 0.6 ships the core, the execution layer, and all five providers on one
-protocol; see [Architecture](architecture.md).
+protocol: Claude Code, Codex, Gemini CLI, opencode, and Copilot CLI. See
+[Architecture](architecture.md) for the layering and the type contracts, and
+[Providers](providers.md) for what each CLI supports.
+
+0.6 is not source-compatible with 0.5 and there is no compatibility layer.
+The [changelog](https://github.com/vic-lsh/agentshim/blob/main/CHANGELOG.md)
+lists every removed and renamed name.

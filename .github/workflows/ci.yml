@@ -22,6 +22,7 @@ jobs:
       - run: uv sync --locked --dev
       - run: bash scripts/format_code.sh --check
       - run: bash scripts/check_errors.sh
+      - run: bash scripts/check_imports.sh
 
   typecheck:
     runs-on: ubuntu-latest

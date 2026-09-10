@@ -437,3 +437,6 @@ who wants it writes their own handler.
 `agentshim/gemini`, `opencode` and `copilot` are still 0.5 code that does not
 import. They stay in the repo for the port and are excluded from pyright and
 from the built wheel until then.
+`agentshim/gemini` and `agentshim/opencode` are still 0.5 code that
+does not import. They stay in the repo for the port and are excluded from
+pyright and from the built wheel until then.

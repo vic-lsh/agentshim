@@ -4,7 +4,6 @@
     ".venv/",
     "build/",
     "dist/",
-    "agentshim/copilot",
     "agentshim/gemini",
     "agentshim/opencode"
   ],

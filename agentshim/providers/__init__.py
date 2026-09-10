@@ -14,6 +14,8 @@ from .claude import ClaudeProvider
 from .claude import scripted_lines as _claude_scripted
 from .codex import CodexProvider
 from .codex import scripted_lines as _codex_scripted
+from .copilot import CopilotProvider
+from .copilot import scripted_lines as _copilot_scripted
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -48,11 +50,13 @@ class ScriptedLines(Protocol):
 _FACTORIES: dict[str, Callable[[], Provider]] = {
     "claude": ClaudeProvider,
     "codex": CodexProvider,
+    "copilot": CopilotProvider,
 }
 
 _SCRIPTED: dict[str, ScriptedLines] = {
     "claude": _claude_scripted,
     "codex": _codex_scripted,
+    "copilot": _copilot_scripted,
 }
 
 
@@ -82,6 +86,7 @@ def get_scripted_lines(name: str) -> ScriptedLines:
 __all__ = [
     "ClaudeProvider",
     "CodexProvider",
+    "CopilotProvider",
     "ScriptedLines",
     "get_provider",
     "get_scripted_lines",

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
-from ._files import atomic_write
+from ._files import atomic_write, real_path
 from .errors import McpConfigError
 
 if TYPE_CHECKING:
@@ -266,7 +266,12 @@ def install_config_file(
 
     *defaults* are top-level keys the provider needs (``$schema`` and the
     like) that are only added when the file does not already set them.
+
+    A symlinked config is followed to the file it names, so the backup, the
+    merged write and the eventual restore all address one inode. The returned
+    installation therefore reports the resolved path.
     """
+    target = real_path(target)
     original = target.read_bytes() if target.exists() else None
     original_config = _load_json_object(original, target) if original is not None else {}
     config = dict(original_config)

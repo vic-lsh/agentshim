@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -178,6 +179,52 @@ class TestFileEditedDuringTheTurn:
 
         installation.restore()
         assert not target.exists()
+
+
+class TestSymlinkedConfig:
+    """A workspace config is often a symlink into a dotfiles checkout."""
+
+    def test_install_and_restore_follow_the_link(self, tmp_path: Path) -> None:
+        real = tmp_path / "shared" / "mcp.json"
+        real.parent.mkdir()
+        original = b'{"mcpServers":{"existing":{"command":"user"}}}\n'
+        real.write_bytes(original)
+        link = tmp_path / ".mcp.json"
+        link.symlink_to(real)
+
+        installation = _install(link)
+
+        assert link.is_symlink()
+        assert json.loads(real.read_text())["mcpServers"]["vibesys-issues"]["command"] == "python"
+
+        installation.restore()
+
+        assert link.is_symlink()
+        assert real.read_bytes() == original
+
+    def test_the_installation_reports_the_resolved_path(self, tmp_path: Path) -> None:
+        real = tmp_path / "real.json"
+        real.write_text("{}")
+        link = tmp_path / ".mcp.json"
+        link.symlink_to(real)
+
+        installation = _install(link)
+        try:
+            assert installation.target == Path(os.path.realpath(real))
+        finally:
+            installation.restore()
+
+    def test_a_config_we_created_through_a_link_is_removed_from_the_real_path(
+        self, tmp_path: Path
+    ) -> None:
+        real = tmp_path / "real.json"
+        link = tmp_path / ".mcp.json"
+        link.symlink_to(real)
+
+        _install(link).restore()
+
+        assert not real.exists()
+        assert link.is_symlink()
 
 
 class TestRestoreNeverRaises:

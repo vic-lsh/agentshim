@@ -158,6 +158,13 @@ needs a `cwd`, and raises `ProviderCapabilityError` without one.
   `parse_json_object` returns `None` for blank lines, invalid JSON and
   non-objects alike, and the parser emits `RawOutput` so the line stays
   observable instead of crashing the turn or being dropped.
+- **Atomic writes replaced symlinks.** `atomic_write` renamed its temporary
+  file onto the path it was given, so a `.mcp.json` (or `.gemini/settings.json`,
+  or `opencode.json`) that was a symlink into a dotfiles checkout became a
+  regular file, and the file it pointed at went stale. Symlinks are now
+  followed to the file they name. `install_config_file` resolves the same way,
+  so the backup, the merged write and the restore all address one inode, and
+  the installation reports the resolved path.
 - **`$schema` and `$id` were rejected everywhere, and unfixable.** Both
   dialects reported them as unsupported keywords, so a schema straight out of
   a generator failed before the process started, and `normalize()` could not

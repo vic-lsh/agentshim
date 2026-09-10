@@ -39,6 +39,8 @@ agent.start_session(cwd="/workspace").turn(
 - `NONE`: asking for servers raises `ProviderCapabilityError`.
 
 A `CONFIG_FILE` provider needs a `cwd`, since that is where the config lives.
+A config that is a symlink is followed to the file it names, so the link
+survives the turn.
 
 ## Doing it yourself
 

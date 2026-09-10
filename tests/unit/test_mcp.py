@@ -351,7 +351,9 @@ class TestFailureModes:
             message = "disk full"
             raise OSError(message)
 
-        monkeypatch.setattr("agentshim.core._files.os.replace", fail_replace)
+        # ``Path.replace`` only routes through ``os.replace`` from 3.12 on,
+        # so patch the method the writer actually calls.
+        monkeypatch.setattr(Path, "replace", fail_replace)
         with pytest.raises(McpConfigError, match="disk full"):
             _install(target)
 

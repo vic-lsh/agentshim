@@ -14,7 +14,7 @@ each concurrent turn its own workspace.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -26,8 +26,13 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-#: Shared empty default; a frozen spec must not carry a mutable one.
-_NO_ENV: Mapping[str, str] = MappingProxyType({})
+def _no_env() -> Mapping[str, str]:
+    """Empty read-only default: a frozen spec must not carry a mutable one.
+
+    A factory rather than a shared constant because Python 3.10 and 3.11
+    reject an unhashable dataclass default, and ``mappingproxy`` is one.
+    """
+    return MappingProxyType({})
 
 
 @dataclass(frozen=True)
@@ -37,7 +42,7 @@ class StdioMcpServer:
     name: str
     command: str
     args: Sequence[str] = ()
-    env: Mapping[str, str] = _NO_ENV
+    env: Mapping[str, str] = field(default_factory=_no_env)
 
     def __post_init__(self) -> None:
         """Reject a spec the provider could never launch.
@@ -72,7 +77,7 @@ class HttpMcpServer:
 
     name: str
     url: str
-    headers: Mapping[str, str] = _NO_ENV
+    headers: Mapping[str, str] = field(default_factory=_no_env)
     transport: McpTransport = "http"
 
     def __post_init__(self) -> None:

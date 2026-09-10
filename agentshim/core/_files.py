@@ -23,7 +23,7 @@ def atomic_write(target: Path, content: bytes) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         if mode is not None:
-            os.chmod(temporary_path, mode)
-        os.replace(temporary_path, target)
+            temporary_path.chmod(mode)
+        temporary_path.replace(target)
     finally:
         temporary_path.unlink(missing_ok=True)

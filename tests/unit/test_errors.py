@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agentshim import (
     AgentShimError,
     CliCheckError,
@@ -13,7 +12,7 @@ from agentshim import (
     McpConfigError,
     ProviderCapabilityError,
     SchemaDialectError,
-    SessionResumeFailed,
+    SessionResumeError,
 )
 
 
@@ -23,7 +22,7 @@ from agentshim import (
         CliNotFoundError("claude"),
         CliCheckError("/bin/claude", "broken"),
         CliExitError(["claude"], 1),
-        SessionResumeFailed(["claude"], 1, "s1"),
+        SessionResumeError(["claude"], 1, "s1"),
         CliTimeoutError(["claude"], 30.0),
         ProviderCapabilityError("nope"),
         SchemaDialectError(["bad"]),
@@ -35,7 +34,7 @@ def test_every_error_is_an_agentshim_error(error: Exception) -> None:
 
 
 def test_resume_failure_is_an_exit_error() -> None:
-    error = SessionResumeFailed(["claude", "--resume", "s1"], 1, "s1", stderr="gone")
+    error = SessionResumeError(["claude", "--resume", "s1"], 1, "s1", stderr="gone")
     assert isinstance(error, CliExitError)
     assert error.session_id == "s1"
     assert error.returncode == 1

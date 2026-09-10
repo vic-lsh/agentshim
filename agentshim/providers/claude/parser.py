@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from ...core.events import (
+from agentshim.core.events import (
     AssistantText,
     ProviderError,
     RawOutput,
@@ -16,9 +16,10 @@ from ...core.events import (
     ToolResult,
     UsageReport,
 )
-from ...core.provider import ParsedTurn
-from ...core.stream import ToolTracker, parse_json_object
-from ...core.usage import ProviderUsage, TokenUsage
+from agentshim.core.provider import ParsedTurn
+from agentshim.core.stream import ToolTracker, parse_json_object
+from agentshim.core.usage import ProviderUsage, TokenUsage
+
 from .events import (
     AssistantMessage,
     ResultFrame,
@@ -32,7 +33,7 @@ from .events import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
-    from ...core.events import AgentEvent
+    from agentshim.core.events import AgentEvent
 
 PROVIDER_NAME = "claude"
 
@@ -76,18 +77,28 @@ class ClaudeStreamParser:
         *,
         expect_structured: bool = False,
     ) -> None:
+        """Start a parser for one run.
+
+        Set *expect_structured* when the turn asked for a schema: it enables
+        the fallback that reads the payload out of the result text.
+        """
         self._emit = emit
         self._expect_structured = expect_structured
         self._tools = ToolTracker()
         self._text: list[str] = []
         self._session_id: str | None = None
-        self._structured: Any | None = None
+        self._structured: object | None = None
         self._final_text: str | None = None
         self._usage = ProviderUsage(provider=PROVIDER_NAME)
         self._cost_usd: float | None = None
         self._error: str | None = None
 
     def feed_stdout(self, line: str) -> None:
+        """Consume one stdout line, emitting the events its frame implies.
+
+        A line that is not a JSON object is surfaced as ``RawOutput`` rather
+        than dropped, so a CLI that prints prose is still observable.
+        """
         data = parse_json_object(line)
         if data is None:
             stripped = line.rstrip("\n")
@@ -100,11 +111,13 @@ class ClaudeStreamParser:
         self._handle(frame)
 
     def feed_stderr(self, line: str) -> None:
+        """Emit one non-blank stderr line as a ``Stderr`` event."""
         stripped = line.rstrip("\n")
         if stripped:
             self._emit(Stderr(stripped))
 
     def finish(self) -> ParsedTurn:
+        """Collect what the run produced, after its last line was fed."""
         text = self._final_text or "\n".join(self._text)
         return ParsedTurn(
             text=text,
@@ -178,7 +191,7 @@ class ClaudeStreamParser:
             self._error = frame.text or (frame.subtype or "claude reported an error")
             self._emit(ProviderError(self._error))
 
-    def _structured_payload(self, frame: ResultFrame) -> Any | None:
+    def _structured_payload(self, frame: ResultFrame) -> object | None:
         if frame.structured_output is not None:
             return frame.structured_output
         if not self._expect_structured or not frame.text:

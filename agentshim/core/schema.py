@@ -72,6 +72,12 @@ def _visit_for_problems(
     dialect: SchemaDialect,
     problems: list[str],
 ) -> None:
+    """Walk one schema node, appending a problem for every unsupported construct.
+
+    Traversal is by JSON pointer so each problem names the offending node.
+    A ``$ref`` node terminates the walk: its siblings are annotations the
+    strict subset ignores, and the target is checked where it is defined.
+    """
     if isinstance(node, list):
         for index, value in enumerate(cast("list[object]", node)):
             _visit_for_problems(value, f"{location}/{index}", dialect, problems)
@@ -82,31 +88,91 @@ def _visit_for_problems(
 
     reference = mapping.get("$ref")
     if reference is not None:
-        if not isinstance(reference, str) or not reference.startswith("#/"):
-            problems.append(f"{location} uses a non-local $ref")
+        _check_local_ref(reference, location, problems)
         return
 
+    if not _check_properties_shape(mapping, location, problems):
+        return
+    _check_closed_object(mapping, location, dialect, problems)
+    _visit_members(mapping, location, dialect, problems)
+
+
+def _check_local_ref(reference: object, location: str, problems: list[str]) -> None:
+    """Reject a ``$ref`` the CLI would have to fetch or resolve externally."""
+    if not isinstance(reference, str) or not reference.startswith("#/"):
+        problems.append(f"{location} uses a non-local $ref")
+
+
+def _check_properties_shape(mapping: dict[str, Any], location: str, problems: list[str]) -> bool:
+    """Check that ``properties``, if present, is an object.
+
+    Returns ``False`` when it is not, in which case the caller stops: nothing
+    below a malformed ``properties`` can be read as a schema, and descending
+    would only report the same defect once per child.
+    """
     properties = mapping.get("properties")
     if properties is not None and not isinstance(properties, dict):
         problems.append(f"{location}/properties must be an object")
-        return
-    if (properties is not None or mapping.get("type") == "object") and dialect is SchemaDialect.STRICT:
-        additional = mapping.get("additionalProperties")
-        if additional not in (None, False):
-            problems.append(f"{location} allows arbitrary object keys")
+        return False
+    return True
 
+
+def _check_closed_object(
+    mapping: dict[str, Any],
+    location: str,
+    dialect: SchemaDialect,
+    problems: list[str],
+) -> None:
+    """Require an object node to forbid undeclared keys, in the strict dialect.
+
+    A node counts as an object if it declares ``properties`` or says so with
+    ``type``. Looser dialects accept an open object, so nothing is reported.
+    """
+    if dialect is not SchemaDialect.STRICT:
+        return
+    if mapping.get("properties") is None and mapping.get("type") != "object":
+        return
+    additional = mapping.get("additionalProperties")
+    if additional not in (None, False):
+        problems.append(f"{location} allows arbitrary object keys")
+
+
+def _visit_members(
+    mapping: dict[str, Any],
+    location: str,
+    dialect: SchemaDialect,
+    problems: list[str],
+) -> None:
+    """Check every entry of a schema node, keyword or subschema.
+
+    Only keys reached here are matched against ``UNSUPPORTED_KEYWORDS``, which
+    is what keeps a property named ``if`` from being read as the ``if`` keyword.
+    """
     for key, value in mapping.items():
         if key in _SUBSCHEMA_MAPS:
-            if not isinstance(value, dict):
-                problems.append(f"{location}/{key} must be an object")
-                continue
-            for name, subschema in cast("dict[str, Any]", value).items():
-                _visit_for_problems(subschema, f"{location}/{key}/{name}", dialect, problems)
-            continue
-        if key in UNSUPPORTED_KEYWORDS:
+            _visit_subschema_map(value, f"{location}/{key}", dialect, problems)
+        elif key in UNSUPPORTED_KEYWORDS:
             problems.append(f"{location} uses unsupported keyword {key!r}")
-            continue
-        _visit_for_problems(value, f"{location}/{key}", dialect, problems)
+        else:
+            _visit_for_problems(value, f"{location}/{key}", dialect, problems)
+
+
+def _visit_subschema_map(
+    value: object,
+    location: str,
+    dialect: SchemaDialect,
+    problems: list[str],
+) -> None:
+    """Walk a map of named subschemas such as ``properties`` or ``$defs``.
+
+    The names are user-chosen field names, so they are traversed as data and
+    never inspected as schema keywords.
+    """
+    if not isinstance(value, dict):
+        problems.append(f"{location} must be an object")
+        return
+    for name, subschema in cast("dict[str, Any]", value).items():
+        _visit_for_problems(subschema, f"{location}/{name}", dialect, problems)
 
 
 def normalize(schema: Mapping[str, Any], dialect: SchemaDialect) -> dict[str, Any]:
@@ -145,7 +211,8 @@ def _normalized(node: object, dialect: SchemaDialect) -> object:
     for key, value in list(mapping.items()):
         if key in _SUBSCHEMA_MAPS and isinstance(value, dict):
             mapping[key] = {
-                name: _normalized(subschema, dialect) for name, subschema in cast("dict[str, Any]", value).items()
+                name: _normalized(subschema, dialect)
+                for name, subschema in cast("dict[str, Any]", value).items()
             }
             continue
         mapping[key] = _normalized(value, dialect)

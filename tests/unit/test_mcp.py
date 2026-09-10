@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from agentshim import (
     ConfigFileInstallation,
     FlagsInstallation,
@@ -87,7 +86,9 @@ class TestInstallAndRestore:
 
     def test_merge_preserves_and_restores_the_original_bytes(self, tmp_path: Path) -> None:
         target = tmp_path / ".mcp.json"
-        original = b'{"permissions":{"allow":["Bash(*)"]},"mcpServers":{"existing":{"command":"user"}}}\n'
+        original = (
+            b'{"permissions":{"allow":["Bash(*)"]},"mcpServers":{"existing":{"command":"user"}}}\n'
+        )
         target.write_bytes(original)
 
         installation = _install(target)
@@ -154,7 +155,9 @@ class TestFileEditedDuringTheTurn:
         target.write_text(json.dumps(config))
 
         installation.restore()
-        assert json.loads(target.read_text())["mcpServers"]["vibesys-issues"] == {"command": "agent-edited"}
+        assert json.loads(target.read_text())["mcpServers"]["vibesys-issues"] == {
+            "command": "agent-edited"
+        }
 
     def test_a_server_added_during_the_turn_is_kept(self, tmp_path: Path) -> None:
         target = tmp_path / ".mcp.json"
@@ -196,13 +199,16 @@ class TestFailureModes:
         with pytest.raises(McpConfigError, match="must be a JSON object"):
             _install(target)
 
-    def test_a_failed_replace_leaves_the_original_intact(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_failed_replace_leaves_the_original_intact(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         target = tmp_path / ".mcp.json"
         original = b'{"theme":"dark"}\n'
         target.write_bytes(original)
 
-        def fail_replace(source: object, destination: object) -> None:
-            raise OSError("disk full")
+        def fail_replace(_source: object, _destination: object) -> None:
+            message = "disk full"
+            raise OSError(message)
 
         monkeypatch.setattr("agentshim.core._files.os.replace", fail_replace)
         with pytest.raises(OSError, match="disk full"):

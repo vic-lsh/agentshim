@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from ...core.usage import TokenUsage
+    from agentshim.core.usage import TokenUsage
 
 
 def scripted_lines(
@@ -22,7 +22,7 @@ def scripted_lines(
     session_id: str | None = None,
     usage: TokenUsage | None = None,
     tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
-    structured_output: Any | None = None,
+    structured_output: object | None = None,
 ) -> list[str]:
     """Build the stdout of one Claude turn.
 
@@ -37,7 +37,9 @@ def scripted_lines(
     if text:
         blocks.append({"type": "text", "text": text})
     for index, (tool, args, _output) in enumerate(tool_calls):
-        blocks.append({"type": "tool_use", "id": f"toolu_{index}", "name": tool, "input": dict(args)})
+        blocks.append(
+            {"type": "tool_use", "id": f"toolu_{index}", "name": tool, "input": dict(args)}
+        )
     if blocks:
         message: dict[str, Any] = {"role": "assistant", "content": blocks}
         lines.append(_line({"type": "assistant", "message": message}))
@@ -49,7 +51,13 @@ def scripted_lines(
                     "type": "user",
                     "message": {
                         "role": "user",
-                        "content": [{"type": "tool_result", "tool_use_id": f"toolu_{index}", "content": output}],
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": f"toolu_{index}",
+                                "content": output,
+                            }
+                        ],
                     },
                 }
             )

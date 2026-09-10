@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import queue
 import shutil
@@ -11,7 +12,8 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from ..core.errors import CliCheckError, CliNotFoundError, CliTimeoutError
+from agentshim.core.errors import CliCheckError, CliNotFoundError, CliTimeoutError
+
 from .executor import CommandRequest, CommandResult, NullSink
 
 if TYPE_CHECKING:
@@ -24,7 +26,7 @@ _JOIN_TIMEOUT_S = 5.0
 _EOF = None
 
 
-class _TimedOut(Exception):
+class _TimedOutError(Exception):
     """Internal signal that the wall-clock budget is spent."""
 
 
@@ -32,16 +34,20 @@ class ProcessCommandHandle:
     """Handle for a local process started in its own session."""
 
     def __init__(self, process: subprocess.Popen[str]) -> None:
+        """Wrap a started process so a caller can stop it from outside."""
         self.process = process
 
     @property
     def pid(self) -> int:
+        """PID of the process, which is also its process-group id."""
         return self.process.pid
 
     def terminate(self) -> None:
+        """Send SIGTERM to the process group."""
         _signal_group(self.process, signal.SIGTERM)
 
     def kill(self) -> None:
+        """Send SIGKILL to the process group."""
         _signal_group(self.process, signal.SIGKILL)
 
 
@@ -50,10 +56,8 @@ def _signal_group(process: subprocess.Popen[str], sig: int) -> None:
     try:
         os.killpg(os.getpgid(process.pid), sig)
     except (ProcessLookupError, PermissionError, OSError):
-        try:
+        with contextlib.suppress(ProcessLookupError, ValueError, OSError):
             process.send_signal(sig)
-        except (ProcessLookupError, ValueError, OSError):
-            pass
 
 
 class HostCommandExecutor:
@@ -66,17 +70,26 @@ class HostCommandExecutor:
     """
 
     def find_binary(self, name: str, env: Mapping[str, str]) -> str:
+        """Look *name* up on the turn's PATH, falling back to this process's.
+
+        Raises ``CliNotFoundError`` when neither lookup finds the binary.
+        """
         path = shutil.which(name, path=env.get("PATH")) or shutil.which(name)
         if not path:
             raise CliNotFoundError(name)
         return path
 
     def check_binary(self, path: str, env: Mapping[str, str], *, timeout: float) -> None:
-        request = CommandRequest(argv=[path, "--help"], stdin=None, cwd=None, env=env, timeout=timeout)
+        """Run ``<path> --help`` and report any failure as ``CliCheckError``."""
+        request = CommandRequest(
+            argv=[path, "--help"], stdin=None, cwd=None, env=env, timeout=timeout
+        )
         try:
             result = self.run(request, NullSink())
         except CliTimeoutError as exc:
-            raise CliCheckError(path, f"{path} did not respond to '--help' within {timeout}s") from exc
+            raise CliCheckError(
+                path, f"{path} did not respond to '--help' within {timeout}s"
+            ) from exc
         except FileNotFoundError as exc:
             raise CliCheckError(path, f"CLI tool not found at {path!r}") from exc
         except OSError as exc:
@@ -88,8 +101,15 @@ class HostCommandExecutor:
             )
 
     def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
+        """Run the command, streaming into *sink* until both streams close.
+
+        The process is killed on every exit path, including a sink that raised
+        or a timeout, so no CLI outlives the call.
+        """
         argv = list(request.argv)
-        process = subprocess.Popen(
+        # Running caller-supplied argv is this executor's whole purpose, and the
+        # list form never reaches a shell.
+        process = subprocess.Popen(  # noqa: S603
             argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -126,7 +146,7 @@ class HostCommandExecutor:
                     sink.stderr(line)
 
             _wait(process, deadline)
-        except _TimedOut:
+        except _TimedOutError:
             _kill(process)
             _join(workers)
             timeout = request.timeout if request.timeout is not None else 0.0
@@ -164,10 +184,8 @@ def _write_stdin(stream: IO[str] | None, data: str | None) -> None:
     except (BrokenPipeError, ValueError, OSError):
         pass
     finally:
-        try:
+        with contextlib.suppress(BrokenPipeError, ValueError, OSError):
             stream.close()
-        except (BrokenPipeError, ValueError, OSError):
-            pass
 
 
 def _pump(stream: IO[str] | None, kind: str, sink: queue.Queue[tuple[str, str | None]]) -> None:
@@ -191,11 +209,11 @@ def _next(
         return lines.get()
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        raise _TimedOut
+        raise _TimedOutError
     try:
         return lines.get(timeout=remaining)
     except queue.Empty:
-        raise _TimedOut from None
+        raise _TimedOutError from None
 
 
 def _wait(process: subprocess.Popen[str], deadline: float | None) -> None:
@@ -206,17 +224,15 @@ def _wait(process: subprocess.Popen[str], deadline: float | None) -> None:
     try:
         process.wait(timeout=remaining)
     except subprocess.TimeoutExpired:
-        raise _TimedOut from None
+        raise _TimedOutError from None
 
 
 def _kill(process: subprocess.Popen[str]) -> None:
     if process.poll() is not None:
         return
     _signal_group(process, signal.SIGKILL)
-    try:
+    with contextlib.suppress(subprocess.TimeoutExpired):
         process.wait(timeout=_JOIN_TIMEOUT_S)
-    except subprocess.TimeoutExpired:
-        pass
 
 
 def _join(workers: list[threading.Thread]) -> None:
@@ -228,7 +244,5 @@ def _close(process: subprocess.Popen[str]) -> None:
     for stream in (process.stdin, process.stdout, process.stderr):
         if stream is None:
             continue
-        try:
+        with contextlib.suppress(BrokenPipeError, ValueError, OSError):
             stream.close()
-        except (BrokenPipeError, ValueError, OSError):
-            pass

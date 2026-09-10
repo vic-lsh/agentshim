@@ -82,11 +82,11 @@ session.turn("A long-running task.")
 Everything that escapes `turn()` is an `AgentShimError`:
 
 ```python
-from agentshim import CliExitError, CliTimeoutError, SessionResumeFailed
+from agentshim import CliExitError, CliTimeoutError, SessionResumeError
 
 try:
     session.turn("...")
-except SessionResumeFailed:
+except SessionResumeError:
     session.forget()          # the conversation is gone; start over
 except CliTimeoutError:
     ...                       # the process group has already been killed

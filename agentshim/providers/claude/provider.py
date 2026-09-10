@@ -5,14 +5,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from ...core.errors import ProviderCapabilityError, SessionResumeFailed
-from ...core.mcp import (
-    HttpMcpServer,
-    NoopInstallation,
-    StdioMcpServer,
-    install_config_file,
-)
-from ...core.profile import McpMechanism, OutputSchemaStyle, ProviderProfile, SchemaDialect
+from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
+from agentshim.core.mcp import HttpMcpServer, NoopInstallation, StdioMcpServer, install_config_file
+from agentshim.core.profile import McpMechanism, OutputSchemaStyle, ProviderProfile, SchemaDialect
+
 from .parser import ClaudeStreamParser
 from .sandbox import SANDBOX_ENV, SandboxConfig, build_settings, resolve_sandbox
 
@@ -20,10 +16,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
-    from ...core.errors import AgentShimError, CliExitError
-    from ...core.events import AgentEvent
-    from ...core.mcp import McpServer
-    from ...core.provider import ArgvContext, McpInstallation
+    from agentshim.core.errors import AgentShimError, CliExitError
+    from agentshim.core.events import AgentEvent
+    from agentshim.core.mcp import McpServer
+    from agentshim.core.provider import ArgvContext, McpInstallation
 
 MCP_CONFIG_FILENAME = ".mcp.json"
 MCP_SERVER_KEY = "mcpServers"
@@ -63,6 +59,11 @@ class ClaudeProvider:
     profile = PROFILE
 
     def __init__(self, *, sandbox: bool | SandboxConfig | None = None) -> None:
+        """Fix the sandbox option for every turn this provider runs.
+
+        ``True`` takes the default config; ``None`` and ``False`` both mean
+        unsandboxed.
+        """
         self.sandbox: SandboxConfig | None = resolve_sandbox(sandbox)
 
     @property
@@ -74,6 +75,7 @@ class ClaudeProvider:
         return dict(SANDBOX_ENV) if self.sandbox is not None else {}
 
     def build_argv(self, ctx: ArgvContext) -> list[str]:
+        """Build the print-mode argv; the prompt is not in it, it goes on stdin."""
         argv = [ctx.binary_path]
         if ctx.resume_session_id:
             # Before -p: claude parses the resume target as a session flag,
@@ -104,13 +106,16 @@ class ClaudeProvider:
         *,
         expect_structured: bool,
     ) -> ClaudeStreamParser:
+        """Return a parser for one run's ``stream-json`` output."""
         return ClaudeStreamParser(emit, expect_structured=expect_structured)
 
     def install_mcp(self, workspace: Path | None, servers: Sequence[McpServer]) -> McpInstallation:
+        """Write the servers into ``<workspace>/.mcp.json`` for the turn's lifetime."""
         if not servers:
             return NoopInstallation()
         if workspace is None:
-            raise ProviderCapabilityError("claude installs MCP servers into <cwd>/.mcp.json; the turn needs a cwd")
+            msg = "claude installs MCP servers into <cwd>/.mcp.json; the turn needs a cwd"
+            raise ProviderCapabilityError(msg)
         return install_config_file(
             workspace / MCP_CONFIG_FILENAME,
             server_key=MCP_SERVER_KEY,
@@ -127,7 +132,9 @@ class ClaudeProvider:
         if resumed:
             session_id = _resumed_session_id(error.argv)
             if session_id is not None:
-                return SessionResumeFailed(error.argv, error.returncode, session_id, error.stdout, error.stderr)
+                return SessionResumeError(
+                    error.argv, error.returncode, session_id, error.stdout, error.stderr
+                )
         return error
 
 

@@ -23,16 +23,26 @@ class SystemInit:
 
 @dataclass(frozen=True)
 class TextBlock:
+    """A ``text`` content block: prose the assistant addressed to the user."""
+
     text: str
 
 
 @dataclass(frozen=True)
 class ThinkingBlock:
+    """A ``thinking`` content block: reasoning the run chose to expose."""
+
     text: str
 
 
 @dataclass(frozen=True)
 class ToolUseBlock:
+    """A ``tool_use`` content block: one tool call and the arguments it got.
+
+    ``args`` is whatever the frame carried: a decoded object, an unparsed
+    string while Claude is still streaming the arguments, or nothing.
+    """
+
     tool_id: str | None
     tool: str
     args: Mapping[str, Any] | str | None
@@ -79,7 +89,10 @@ def parse_frame(data: Mapping[str, Any]) -> ClaudeFrame | None:
     """Map one decoded stdout object to a frame, or ``None`` if uninteresting."""
     kind = data.get("type")
     if kind == "system":
-        return SystemInit(session_id=_str_or_none(data.get("session_id")), subtype=_str_or_none(data.get("subtype")))
+        return SystemInit(
+            session_id=_str_or_none(data.get("session_id")),
+            subtype=_str_or_none(data.get("subtype")),
+        )
     if kind == "assistant":
         return _assistant(data)
     if kind == "user":

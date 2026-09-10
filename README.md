@@ -163,7 +163,7 @@ AgentShimError
   CliNotFoundError            binary not on PATH
   CliCheckError               binary found but the health check failed
   CliExitError                nonzero exit: argv, returncode, stdout, stderr
-    SessionResumeFailed       the conversation is gone: session_id
+    SessionResumeError        the conversation is gone: session_id
   CliTimeoutError             argv, timeout
   ProviderCapabilityError     the provider cannot do what the request asked
     SchemaDialectError        problems: list[str]

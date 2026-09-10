@@ -16,8 +16,8 @@ from .claude import scripted_lines as _claude_scripted
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from ..core.provider import Provider
-    from ..core.usage import TokenUsage
+    from agentshim.core.provider import Provider
+    from agentshim.core.usage import TokenUsage
 
 
 class ScriptedLines(Protocol):
@@ -30,8 +30,15 @@ class ScriptedLines(Protocol):
         session_id: str | None = None,
         usage: TokenUsage | None = None,
         tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
-        structured_output: Any | None = None,
-    ) -> list[str]: ...
+        structured_output: object | None = None,
+    ) -> list[str]:
+        """Return the stdout lines of one scripted turn.
+
+        ``tool_calls`` entries are ``(tool, args, output)``;
+        ``structured_output`` is any JSON-serializable value the turn should
+        report as its structured payload.
+        """
+        ...
 
 
 # To add a provider: implement providers/<name>/ (provider.py, parser.py,
@@ -54,7 +61,8 @@ def get_provider(name: str) -> Provider:
     """Construct the provider registered under *name* with its defaults."""
     factory = _FACTORIES.get(name)
     if factory is None:
-        raise ValueError(f"unknown provider {name!r}; available: {provider_names()}")
+        msg = f"unknown provider {name!r}; available: {provider_names()}"
+        raise ValueError(msg)
     return factory()
 
 
@@ -62,8 +70,15 @@ def get_scripted_lines(name: str) -> ScriptedLines:
     """Return the test-double stream builder for *name*."""
     scripted = _SCRIPTED.get(name)
     if scripted is None:
-        raise ValueError(f"no scripted stream for provider {name!r}; available: {sorted(_SCRIPTED)}")
+        msg = f"no scripted stream for provider {name!r}; available: {sorted(_SCRIPTED)}"
+        raise ValueError(msg)
     return scripted
 
 
-__all__ = ["ClaudeProvider", "ScriptedLines", "get_provider", "get_scripted_lines", "provider_names"]
+__all__ = [
+    "ClaudeProvider",
+    "ScriptedLines",
+    "get_provider",
+    "get_scripted_lines",
+    "provider_names",
+]

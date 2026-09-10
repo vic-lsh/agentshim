@@ -8,7 +8,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from agentshim import (
     CliCheckError,
     CliNotFoundError,
@@ -34,7 +33,12 @@ class TestRun:
             NullSink(),
         )
 
-        assert list(inner.requests[0].argv) == ["/usr/bin/env", "AGENTSHIM_WRAPPED=1", "claude", "-p"]
+        assert list(inner.requests[0].argv) == [
+            "/usr/bin/env",
+            "AGENTSHIM_WRAPPED=1",
+            "claude",
+            "-p",
+        ]
 
     def test_the_transform_can_change_any_field(self) -> None:
         inner = FakeExecutor(FakeRun())
@@ -56,7 +60,9 @@ class TestFindBinary:
 
     def test_a_custom_lookup_wins(self) -> None:
         inner = FakeExecutor(FakeRun(), binaries={"claude": "/inner/claude"})
-        executor = TransformingExecutor(inner, _wrap, find_binary=lambda name, env: f"/container/bin/{name}")
+        executor = TransformingExecutor(
+            inner, _wrap, find_binary=lambda name, _env: f"/container/bin/{name}"
+        )
         assert executor.find_binary("claude", {}) == "/container/bin/claude"
 
     def test_inner_lookup_failures_propagate(self) -> None:
@@ -70,7 +76,12 @@ class TestCheckBinary:
         inner = FakeExecutor(FakeRun())
         TransformingExecutor(inner, _wrap).check_binary("/bin/claude", {}, timeout=5)
 
-        assert list(inner.requests[0].argv) == ["/usr/bin/env", "AGENTSHIM_WRAPPED=1", "/bin/claude", "--help"]
+        assert list(inner.requests[0].argv) == [
+            "/usr/bin/env",
+            "AGENTSHIM_WRAPPED=1",
+            "/bin/claude",
+            "--help",
+        ]
         assert inner.requests[0].timeout == 5
 
     def test_a_failing_health_check_raises(self) -> None:
@@ -83,7 +94,9 @@ class TestCheckBinary:
         with pytest.raises(CliCheckError, match="did not respond"):
             TransformingExecutor(inner, _wrap).check_binary("/bin/claude", {}, timeout=5)
 
-    def test_a_transform_makes_an_otherwise_unrunnable_binary_checkable(self, tmp_path: Path) -> None:
+    def test_a_transform_makes_an_otherwise_unrunnable_binary_checkable(
+        self, tmp_path: Path
+    ) -> None:
         """The real point: the binary only exists behind the transform."""
         target = tmp_path / "claude"
         target.write_text("#!/bin/sh\nexit 0\n")
@@ -104,7 +117,9 @@ class TestCheckBinary:
 
         executor = TransformingExecutor(HostCommandExecutor(), redirect)
         result = executor.run(
-            CommandRequest(argv=["claude"], stdin=None, cwd=None, env=os.environ.copy(), timeout=30),
+            CommandRequest(
+                argv=["claude"], stdin=None, cwd=None, env=os.environ.copy(), timeout=30
+            ),
             NullSink(),
         )
 

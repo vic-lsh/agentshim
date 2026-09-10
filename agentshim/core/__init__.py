@@ -13,7 +13,7 @@ from .errors import (
     McpConfigError,
     ProviderCapabilityError,
     SchemaDialectError,
-    SessionResumeFailed,
+    SessionResumeError,
 )
 from .events import (
     AgentEvent,
@@ -91,7 +91,7 @@ __all__ = [
     "RunStarted",
     "SchemaDialect",
     "SchemaDialectError",
-    "SessionResumeFailed",
+    "SessionResumeError",
     "SessionStarted",
     "Stderr",
     "StdioMcpServer",

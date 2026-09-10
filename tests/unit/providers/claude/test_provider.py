@@ -7,7 +7,6 @@ from dataclasses import fields
 from pathlib import Path
 
 import pytest
-
 from agentshim import (
     CliExitError,
     HttpMcpServer,
@@ -16,7 +15,7 @@ from agentshim import (
     ProviderCapabilityError,
     ProviderProfile,
     SchemaDialect,
-    SessionResumeFailed,
+    SessionResumeError,
     StdioMcpServer,
     get_provider,
 )
@@ -24,7 +23,9 @@ from agentshim.providers.claude import ClaudeProvider
 
 
 def _stdio() -> StdioMcpServer:
-    return StdioMcpServer(name="vibesys-issues", command="python", args=["-m", "board.mcp", "issues.json"])
+    return StdioMcpServer(
+        name="vibesys-issues", command="python", args=["-m", "board.mcp", "issues.json"]
+    )
 
 
 class TestProfile:
@@ -96,7 +97,9 @@ class TestInstallMcp:
         assert config["mcpServers"]["my-srv"] == {"type": "sse", "url": "http://localhost:9000/sse"}
 
     def test_http_headers_are_included_when_set(self, tmp_path: Path) -> None:
-        server = HttpMcpServer(name="auth", url="https://x/sse", headers={"Authorization": "Bearer t"})
+        server = HttpMcpServer(
+            name="auth", url="https://x/sse", headers={"Authorization": "Bearer t"}
+        )
         ClaudeProvider().install_mcp(tmp_path, [server])
         config = json.loads((tmp_path / ".mcp.json").read_text())
         assert config["mcpServers"]["auth"]["headers"] == {"Authorization": "Bearer t"}
@@ -119,9 +122,11 @@ class TestClassifyExit:
 
     def test_any_nonzero_exit_on_a_resumed_turn_means_the_session_is_gone(self) -> None:
         """``claude --resume`` gives no distinguishable code for a lost transcript."""
-        error = CliExitError(["claude", "--resume", "abc-123", "-p"], 1, "", "no conversation found")
+        error = CliExitError(
+            ["claude", "--resume", "abc-123", "-p"], 1, "", "no conversation found"
+        )
         classified = ClaudeProvider().classify_exit(error, resumed=True)
-        assert isinstance(classified, SessionResumeFailed)
+        assert isinstance(classified, SessionResumeError)
         assert classified.session_id == "abc-123"
         assert classified.returncode == 1
         assert classified.stderr == "no conversation found"

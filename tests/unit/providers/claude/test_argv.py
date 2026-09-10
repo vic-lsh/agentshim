@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from agentshim import ArgvContext
 from agentshim.providers.claude import ClaudeProvider, SandboxConfig
@@ -28,7 +29,13 @@ class TestBaseArgv:
     def test_required_flags(self) -> None:
         argv = ClaudeProvider().build_argv(_ctx())
         assert argv[0] == "/usr/local/bin/claude"
-        assert argv[1:6] == ["-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"]
+        assert argv[1:6] == [
+            "-p",
+            "--dangerously-skip-permissions",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+        ]
 
     def test_model_is_appended_when_set(self) -> None:
         argv = ClaudeProvider().build_argv(_ctx(model="claude-opus-4"))
@@ -73,10 +80,11 @@ class TestOutputSchema:
         assert argv[argv.index("--json-schema") + 1] == inline
         assert "stream-json" in argv
 
-    def test_a_schema_path_is_ignored_by_an_inline_provider(self) -> None:
-        argv = ClaudeProvider().build_argv(_ctx(schema_path="/tmp/schema.json"))
+    def test_a_schema_path_is_ignored_by_an_inline_provider(self, tmp_path: Path) -> None:
+        schema_path = str(tmp_path / "schema.json")
+        argv = ClaudeProvider().build_argv(_ctx(schema_path=schema_path))
         assert "--json-schema" not in argv
-        assert "/tmp/schema.json" not in argv
+        assert schema_path not in argv
 
     def test_schema_is_omitted_when_unset(self) -> None:
         assert "--json-schema" not in ClaudeProvider().build_argv(_ctx())
@@ -100,7 +108,9 @@ class TestSandboxOption:
 
     def test_sandbox_env_is_only_set_with_a_sandbox(self) -> None:
         assert ClaudeProvider().sandbox_env == {}
-        assert ClaudeProvider(sandbox=True).sandbox_env == {"CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"}
+        assert ClaudeProvider(sandbox=True).sandbox_env == {
+            "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"
+        }
 
 
 class TestMcpArgv:

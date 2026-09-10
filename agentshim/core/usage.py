@@ -26,6 +26,11 @@ class TokenUsage:
     turns: int = 0
 
     def __add__(self, other: TokenUsage) -> TokenUsage:
+        """Accumulate a running total over the turns of a session.
+
+        Every field is summed, ``turns`` included, so folding per-turn usages
+        together yields both the token totals and the turn count.
+        """
         return TokenUsage(
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
@@ -36,6 +41,7 @@ class TokenUsage:
         )
 
     def to_dict(self) -> dict[str, int]:
+        """Flatten the counts into a JSON-serializable mapping keyed by field name."""
         return {
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
@@ -60,6 +66,11 @@ class ProviderUsage:
     raw: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        """Flatten the normalized counts, cost, and provider name into one mapping.
+
+        ``raw`` is deliberately left out: it is provider-shaped and unbounded,
+        while this mapping is meant to be cheap to log on every turn.
+        """
         return {
             **self.tokens.to_dict(),
             "total_cost_usd": self.total_cost_usd,

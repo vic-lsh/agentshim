@@ -8,12 +8,16 @@ import shutil
 import sys
 import threading
 import time
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agentshim import (
+    AgentEvent,
+    AgentEventHandler,
+    AgentSession,
     AssistantText,
     CliAgent,
     CliCheckError,
@@ -21,13 +25,17 @@ from agentshim import (
     CliNotFoundError,
     CliTimeoutError,
     CommandRequest,
+    CommandResult,
+    CommandStreamSink,
     HostCommandExecutor,
+    McpMechanism,
     OutputSchema,
+    OutputSchemaStyle,
     ProviderCapabilityError,
     RunFinished,
     RunStarted,
     SchemaDialectError,
-    SessionResumeFailed,
+    SessionResumeError,
     SessionStarted,
     StdioMcpServer,
     TokenUsage,
@@ -47,9 +55,23 @@ _MAPPING_SCHEMA: dict[str, Any] = {
 }
 
 
-def _agent(executor: FakeExecutor, **kwargs: Any) -> CliAgent:
-    kwargs.setdefault("env", dict(_ENV))
-    return CliAgent("claude", executor=executor, **kwargs)
+def _agent(
+    executor: FakeExecutor,
+    *,
+    event_handler: AgentEventHandler | None = None,
+    event_handlers: Sequence[AgentEventHandler] = (),
+    check_timeout: float = 15.0,
+    log: Callable[[str], None] | None = None,
+) -> CliAgent:
+    return CliAgent(
+        "claude",
+        executor=executor,
+        env=dict(_ENV),
+        event_handler=event_handler,
+        event_handlers=event_handlers,
+        check_timeout=check_timeout,
+        log=log,
+    )
 
 
 class TestConstruction:
@@ -66,14 +88,17 @@ class TestConstruction:
 
     def test_a_broken_binary_fails_at_construction(self) -> None:
         class Broken(FakeExecutor):
-            def check_binary(self, path: str, env: Any, *, timeout: float) -> None:
+            def check_binary(self, path: str, env: Mapping[str, str], *, timeout: float) -> None:
+                del env, timeout  # names fixed by the CommandExecutor protocol
                 raise CliCheckError(path, "not working")
 
         with pytest.raises(CliCheckError):
             _agent(Broken(FakeRun()))
 
     def test_a_provider_instance_can_be_passed_directly(self) -> None:
-        agent = CliAgent(ClaudeProvider(sandbox=True), executor=FakeExecutor(FakeRun()), env=dict(_ENV))
+        agent = CliAgent(
+            ClaudeProvider(sandbox=True), executor=FakeExecutor(FakeRun()), env=dict(_ENV)
+        )
         assert agent.profile.name == "claude"
 
     def test_the_supplied_env_is_used_verbatim(self) -> None:
@@ -91,7 +116,8 @@ class TestConstruction:
         seen: list[float] = []
 
         class Recording(FakeExecutor):
-            def check_binary(self, path: str, env: Any, *, timeout: float) -> None:
+            def check_binary(self, path: str, env: Mapping[str, str], *, timeout: float) -> None:
+                del path, env  # names fixed by the CommandExecutor protocol
                 seen.append(timeout)
 
         _agent(Recording(FakeRun()), check_timeout=42.0)
@@ -153,7 +179,9 @@ class TestSessionDefaults:
 
     def test_a_request_env_overlays_the_agent_env(self) -> None:
         executor = FakeExecutor(scripted_turn("claude", text="ok"))
-        _agent(executor).start_session().turn(TurnRequest(prompt="hi", env={"EXTRA": "1", "HOME": "/other"}))
+        _agent(executor).start_session().turn(
+            TurnRequest(prompt="hi", env={"EXTRA": "1", "HOME": "/other"})
+        )
         env = dict(executor.requests[0].env)
         assert env["EXTRA"] == "1"
         assert env["HOME"] == "/other"
@@ -194,7 +222,7 @@ class TestResume:
         adopted: list[bool] = []
 
         class Reentrant(FakeExecutor):
-            def run(self, request: CommandRequest, sink: Any) -> Any:
+            def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
                 adopted.append(session.adopt("other"))
                 return super().run(request, sink)
 
@@ -204,9 +232,7 @@ class TestResume:
         assert adopted == [False]
         assert session.session_id == "s1"
 
-    def test_adopt_is_refused_when_the_provider_cannot_resume(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from dataclasses import replace
-
+    def test_adopt_is_refused_when_the_provider_cannot_resume(self) -> None:
         provider = ClaudeProvider()
         provider.profile = replace(provider.profile, supports_resume=False)  # pyright: ignore[reportAttributeAccessIssue]
         agent = CliAgent(provider, executor=FakeExecutor(FakeRun()), env=dict(_ENV))
@@ -226,7 +252,7 @@ class TestResume:
     def test_a_failing_resumed_turn_raises_session_resume_failed(self) -> None:
         executor = FakeExecutor(FakeRun(returncode=1, stderr=["no conversation found\n"]))
         session = _agent(executor).start_session(session_id="gone")
-        with pytest.raises(SessionResumeFailed) as excinfo:
+        with pytest.raises(SessionResumeError) as excinfo:
             session.turn("hi")
         assert excinfo.value.session_id == "gone"
 
@@ -234,14 +260,16 @@ class TestResume:
         executor = FakeExecutor(FakeRun(returncode=1, stderr=["boom\n"]))
         with pytest.raises(CliExitError) as excinfo:
             _agent(executor).start_session().turn("hi")
-        assert not isinstance(excinfo.value, SessionResumeFailed)
+        assert not isinstance(excinfo.value, SessionResumeError)
         assert excinfo.value.returncode == 1
         assert excinfo.value.stderr == "boom\n"
 
 
 class TestLastResult:
     def test_last_result_tracks_the_latest_turn(self) -> None:
-        executor = FakeExecutor([scripted_turn("claude", text="one"), scripted_turn("claude", text="two")])
+        executor = FakeExecutor(
+            [scripted_turn("claude", text="one"), scripted_turn("claude", text="two")]
+        )
         session = _agent(executor).start_session()
         assert session.last_result is None
         session.turn("a")
@@ -300,7 +328,8 @@ class TestEvents:
         threads: list[int] = []
 
         class ThreadRecorder:
-            def on_event(self, event: Any) -> None:
+            def on_event(self, event: AgentEvent) -> None:
+                del event  # name fixed by the AgentEventHandler protocol
                 threads.append(threading.get_ident())
 
         binary = shutil.which("cat")
@@ -326,15 +355,14 @@ class _CatExecutor(HostCommandExecutor):
     def __init__(self, binary: str) -> None:
         self._binary = binary
 
-    def find_binary(self, name: str, env: Any) -> str:
+    def find_binary(self, name: str, env: Mapping[str, str]) -> str:
+        del name, env  # names fixed by the CommandExecutor protocol
         return self._binary
 
-    def check_binary(self, path: str, env: Any, *, timeout: float) -> None:
-        return None
+    def check_binary(self, path: str, env: Mapping[str, str], *, timeout: float) -> None:
+        del path, env, timeout  # names fixed by the CommandExecutor protocol
 
-    def run(self, request: CommandRequest, sink: Any) -> Any:
-        from dataclasses import replace
-
+    def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
         return super().run(replace(request, argv=[self._binary], timeout=30), sink)
 
 
@@ -345,15 +373,24 @@ class TestStructuredOutput:
         result = (
             _agent(executor)
             .start_session()
-            .turn(TurnRequest(prompt="go", output_schema=OutputSchema(schema=_MAPPING_SCHEMA, host_dir=tmp_path)))
+            .turn(
+                TurnRequest(
+                    prompt="go",
+                    output_schema=OutputSchema(schema=_MAPPING_SCHEMA, host_dir=tmp_path),
+                )
+            )
         )
         assert result.structured_output == payload
         assert result.text == "done"
 
     def test_the_schema_is_inlined_into_argv(self, tmp_path: Path) -> None:
-        executor = FakeExecutor(scripted_turn("claude", text="done", structured_output={"metrics": {}}))
+        executor = FakeExecutor(
+            scripted_turn("claude", text="done", structured_output={"metrics": {}})
+        )
         _agent(executor).start_session().turn(
-            TurnRequest(prompt="go", output_schema=OutputSchema(schema=_MAPPING_SCHEMA, host_dir=tmp_path))
+            TurnRequest(
+                prompt="go", output_schema=OutputSchema(schema=_MAPPING_SCHEMA, host_dir=tmp_path)
+            )
         )
         argv = list(executor.requests[0].argv)
         inline = argv[argv.index("--json-schema") + 1]
@@ -363,7 +400,9 @@ class TestStructuredOutput:
     def test_an_inline_provider_writes_no_schema_file(self, tmp_path: Path) -> None:
         executor = FakeExecutor(scripted_turn("claude", text="done"))
         _agent(executor).start_session().turn(
-            TurnRequest(prompt="go", output_schema=OutputSchema(schema=_MAPPING_SCHEMA, host_dir=tmp_path))
+            TurnRequest(
+                prompt="go", output_schema=OutputSchema(schema=_MAPPING_SCHEMA, host_dir=tmp_path)
+            )
         )
         assert list(tmp_path.iterdir()) == []
 
@@ -371,28 +410,28 @@ class TestStructuredOutput:
         executor = FakeExecutor(scripted_turn("claude", text="done"))
         assert _agent(executor).run("go").structured_output is None
 
-    def test_a_schema_the_dialect_rejects_fails_before_the_process_starts(self, tmp_path: Path) -> None:
+    def test_a_schema_the_dialect_rejects_fails_before_the_process_starts(
+        self, tmp_path: Path
+    ) -> None:
         executor = FakeExecutor(scripted_turn("claude", text="done"))
         schema = {"type": "object", "properties": {"a": {"type": "string"}}, "allOf": []}
         with pytest.raises(SchemaDialectError) as excinfo:
             _agent(executor).start_session().turn(
-                TurnRequest(prompt="go", output_schema=OutputSchema(schema=schema, host_dir=tmp_path))
+                TurnRequest(
+                    prompt="go", output_schema=OutputSchema(schema=schema, host_dir=tmp_path)
+                )
             )
         assert any("allOf" in problem for problem in excinfo.value.problems)
         assert executor.requests == []
 
 
 class TestCapabilityChecks:
-    def _provider_without(self, **overrides: Any) -> ClaudeProvider:
-        from dataclasses import replace
-
+    def _provider_without(self, **overrides: object) -> ClaudeProvider:
         provider = ClaudeProvider()
         provider.profile = replace(provider.profile, **overrides)  # pyright: ignore[reportAttributeAccessIssue]
         return provider
 
     def test_reasoning_effort_is_checked(self) -> None:
-        from agentshim import OutputSchemaStyle
-
         provider = self._provider_without(supports_reasoning_effort=False)
         executor = FakeExecutor(scripted_turn("claude", text="ok"))
         agent = CliAgent(provider, executor=executor, env=dict(_ENV))
@@ -402,18 +441,17 @@ class TestCapabilityChecks:
         assert OutputSchemaStyle.NONE is not None
 
     def test_output_schema_is_checked(self, tmp_path: Path) -> None:
-        from agentshim import OutputSchemaStyle
-
         provider = self._provider_without(output_schema=OutputSchemaStyle.NONE)
         agent = CliAgent(provider, executor=FakeExecutor(FakeRun()), env=dict(_ENV))
         with pytest.raises(ProviderCapabilityError, match="output schema"):
             agent.start_session().turn(
-                TurnRequest(prompt="hi", output_schema=OutputSchema(schema=_MAPPING_SCHEMA, host_dir=tmp_path))
+                TurnRequest(
+                    prompt="hi",
+                    output_schema=OutputSchema(schema=_MAPPING_SCHEMA, host_dir=tmp_path),
+                )
             )
 
     def test_mcp_support_is_checked(self) -> None:
-        from agentshim import McpMechanism
-
         provider = self._provider_without(mcp=McpMechanism.NONE)
         agent = CliAgent(provider, executor=FakeExecutor(FakeRun()), env=dict(_ENV))
         with pytest.raises(ProviderCapabilityError, match="MCP"):
@@ -433,7 +471,7 @@ class TestMcpLifecycle:
         seen: list[bool] = []
 
         class Watching(FakeExecutor):
-            def run(self, request: CommandRequest, sink: Any) -> Any:
+            def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
                 seen.append((tmp_path / ".mcp.json").exists())
                 return super().run(request, sink)
 
@@ -449,7 +487,9 @@ class TestMcpLifecycle:
         executor = FakeExecutor(FakeRun(returncode=1))
         with pytest.raises(CliExitError):
             _agent(executor).start_session(cwd=str(tmp_path)).turn(
-                TurnRequest(prompt="hi", mcp_servers=[StdioMcpServer(name="board", command="python")])
+                TurnRequest(
+                    prompt="hi", mcp_servers=[StdioMcpServer(name="board", command="python")]
+                )
             )
         assert not (tmp_path / ".mcp.json").exists()
 
@@ -490,7 +530,7 @@ class TestTimeoutAndCancel:
         _agent(FakeExecutor(FakeRun())).start_session().cancel()
 
 
-def _cancel_soon(session: Any) -> None:
+def _cancel_soon(session: AgentSession) -> None:
     time.sleep(0.4)
     session.cancel(grace_s=1.0)
 
@@ -541,7 +581,9 @@ def test_usage_survives_onto_the_turn_result() -> None:
 
 def test_events_and_result_agree_on_usage() -> None:
     recorder = RecordingEventHandler()
-    executor = FakeExecutor(scripted_turn("claude", text="done", usage=TokenUsage(input_tokens=10, turns=1)))
+    executor = FakeExecutor(
+        scripted_turn("claude", text="done", usage=TokenUsage(input_tokens=10, turns=1))
+    )
     result = _agent(executor, event_handler=recorder).run("go")
     reports = [event for event in recorder.events if isinstance(event, UsageReport)]
     assert reports[-1].usage == result.usage
@@ -558,8 +600,10 @@ def test_assistant_text_events_match_the_result_text() -> None:
 
 def test_python_is_not_required_on_the_path_for_argv() -> None:
     """argv[0] is always the resolved binary path, never a bare name."""
-    executor = FakeExecutor(scripted_turn("claude", text="ok"), binaries={"claude": "/opt/bin/claude"})
+    executor = FakeExecutor(
+        scripted_turn("claude", text="ok"), binaries={"claude": "/opt/bin/claude"}
+    )
     agent = _agent(executor)
     agent.run("go")
-    assert list(executor.requests[0].argv)[0] == "/opt/bin/claude"
+    assert next(iter(executor.requests[0].argv)) == "/opt/bin/claude"
     assert sys.executable  # sanity: the test runner has an interpreter

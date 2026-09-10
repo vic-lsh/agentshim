@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from agentshim import CliAgent, OutputSchema, TurnRequest
+
 from tests.e2e.conftest import requires_cli
 
 pytestmark = [pytest.mark.e2e, requires_cli("claude")]
@@ -39,6 +39,11 @@ def test_a_native_output_schema_returns_structured_output(tmp_path: Path) -> Non
     result = (
         CliAgent("claude")
         .start_session(cwd=str(tmp_path))
-        .turn(TurnRequest(prompt="What is 2 + 2?", output_schema=OutputSchema(schema=schema, host_dir=tmp_path)))
+        .turn(
+            TurnRequest(
+                prompt="What is 2 + 2?",
+                output_schema=OutputSchema(schema=schema, host_dir=tmp_path),
+            )
+        )
     )
     assert result.structured_output == {"answer": 4}

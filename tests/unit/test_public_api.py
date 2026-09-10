@@ -39,12 +39,18 @@ def test_core_and_execution_do_not_import_providers_at_module_level() -> None:
     for path in sorted((*(root / "core").rglob("*.py"), *(root / "execution").rglob("*.py"))):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in tree.body:
-            for statement in ast.walk(node) if isinstance(node, (ast.Import, ast.ImportFrom)) else ():
-                if isinstance(statement, ast.ImportFrom) and "providers" in (statement.module or ""):
+            for statement in (
+                ast.walk(node) if isinstance(node, (ast.Import, ast.ImportFrom)) else ()
+            ):
+                if isinstance(statement, ast.ImportFrom) and "providers" in (
+                    statement.module or ""
+                ):
                     offenders.append(f"{path.name}: {ast.unparse(statement)}")
                 if isinstance(statement, ast.Import):
                     offenders.extend(
-                        f"{path.name}: import {alias.name}" for alias in statement.names if "providers" in alias.name
+                        f"{path.name}: import {alias.name}"
+                        for alias in statement.names
+                        if "providers" in alias.name
                     )
     assert offenders == []
 

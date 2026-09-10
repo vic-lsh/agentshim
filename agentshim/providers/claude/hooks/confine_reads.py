@@ -20,6 +20,9 @@ import os
 import sys
 from typing import Any
 
+# argv[0] is this script, so a usable invocation carries at least one root.
+_MIN_ARGV = 2
+
 
 def _candidate_path(tool_input: dict[str, Any]) -> str | None:
     """Best-effort extraction of the filesystem target from a tool_input blob."""
@@ -40,7 +43,13 @@ def _is_under(path: str, roots: list[str]) -> bool:
 
 
 def main() -> int:
-    if len(sys.argv) < 2:
+    """Allow or deny one ``PreToolUse`` call, printing the deny decision.
+
+    Always exits 0: the decision travels in the printed JSON, and a hook that
+    cannot make sense of its input lets the tool call through rather than
+    breaking the run.
+    """
+    if len(sys.argv) < _MIN_ARGV:
         # Misconfigured hook — don't block the tool, just let it through.
         return 0
 
@@ -57,7 +66,9 @@ def main() -> int:
         # Tool call has no path argument (e.g. Glob without `path` defaults to cwd).
         return 0
 
-    target = os.path.realpath(os.path.abspath(candidate))
+    # realpath() already absolutizes a relative path against the cwd, and it
+    # resolves symlinks component by component, which is what the check needs.
+    target = os.path.realpath(candidate)
     if _is_under(target, roots):
         return 0
 

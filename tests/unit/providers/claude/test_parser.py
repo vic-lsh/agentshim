@@ -73,7 +73,9 @@ class TestAssistantContent:
 
     def test_tool_use_blocks_emit_a_tool_call(self) -> None:
         parser, events = _parser()
-        parser.feed_stdout(_assistant({"type": "tool_use", "id": "t1", "name": "Bash", "input": {"cmd": "ls"}}))
+        parser.feed_stdout(
+            _assistant({"type": "tool_use", "id": "t1", "name": "Bash", "input": {"cmd": "ls"}})
+        )
         assert events == [ToolCall("t1", "Bash", {"cmd": "ls"})]
 
     def test_multiple_blocks_are_emitted_in_order(self) -> None:
@@ -106,12 +108,18 @@ class TestAssistantContent:
 class TestToolResults:
     def test_a_result_is_paired_with_its_call(self) -> None:
         parser, events = _parser()
-        parser.feed_stdout(_assistant({"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}))
+        parser.feed_stdout(
+            _assistant({"type": "tool_use", "id": "t1", "name": "Bash", "input": {}})
+        )
         parser.feed_stdout(
             _line(
                 {
                     "type": "user",
-                    "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "file.txt"}]},
+                    "message": {
+                        "content": [
+                            {"type": "tool_result", "tool_use_id": "t1", "content": "file.txt"}
+                        ]
+                    },
                 }
             )
         )
@@ -125,7 +133,12 @@ class TestToolResults:
     def test_an_unpaired_result_has_no_duration(self) -> None:
         parser, events = _parser()
         parser.feed_stdout(
-            _line({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t9"}]}})
+            _line(
+                {
+                    "type": "user",
+                    "message": {"content": [{"type": "tool_result", "tool_use_id": "t9"}]},
+                }
+            )
         )
         result = events[-1]
         assert isinstance(result, ToolResult)
@@ -138,7 +151,11 @@ class TestToolResults:
             _line(
                 {
                     "type": "user",
-                    "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": ["a", "b"]}]},
+                    "message": {
+                        "content": [
+                            {"type": "tool_result", "tool_use_id": "t1", "content": ["a", "b"]}
+                        ]
+                    },
                 }
             )
         )
@@ -154,7 +171,12 @@ class TestToolResults:
                     "type": "user",
                     "message": {
                         "content": [
-                            {"type": "tool_result", "tool_use_id": "t1", "content": "boom", "is_error": True},
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "t1",
+                                "content": "boom",
+                                "is_error": True,
+                            },
                         ]
                     },
                 }
@@ -168,7 +190,9 @@ class TestToolResults:
 
     def test_a_user_message_without_a_tool_result_is_ignored(self) -> None:
         parser, events = _parser()
-        parser.feed_stdout(_line({"type": "user", "message": {"content": [{"type": "text", "text": "hi"}]}}))
+        parser.feed_stdout(
+            _line({"type": "user", "message": {"content": [{"type": "text", "text": "hi"}]}})
+        )
         assert events == []
 
 
@@ -339,12 +363,21 @@ class TestErrorResults:
     def test_an_error_result_emits_a_provider_error(self) -> None:
         parser, events = _parser()
         parser.feed_stdout(
-            _line({"type": "result", "subtype": "error_max_turns", "is_error": True, "result": "turn limit"})
+            _line(
+                {
+                    "type": "result",
+                    "subtype": "error_max_turns",
+                    "is_error": True,
+                    "result": "turn limit",
+                }
+            )
         )
         assert ProviderError("turn limit") in events
         assert parser.finish().error == "turn limit"
 
     def test_the_subtype_is_used_when_there_is_no_message(self) -> None:
         parser, _ = _parser()
-        parser.feed_stdout(_line({"type": "result", "subtype": "error_during_execution", "is_error": True}))
+        parser.feed_stdout(
+            _line({"type": "result", "subtype": "error_during_execution", "is_error": True})
+        )
         assert parser.finish().error == "error_during_execution"

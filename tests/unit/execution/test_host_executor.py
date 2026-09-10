@@ -11,7 +11,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-
 from agentshim import (
     CliCheckError,
     CliNotFoundError,
@@ -78,7 +77,11 @@ class TestRun:
 
         assert result.returncode == 0
         assert len(sink.handles) == 1
-        assert sink.stdout_lines == [f"cwd={tmp_path.name}\n", "env=env-value\n", "stdin=prompt text\n"]
+        assert sink.stdout_lines == [
+            f"cwd={tmp_path.name}\n",
+            "env=env-value\n",
+            "stdin=prompt text\n",
+        ]
         assert sink.stderr_lines == ["stderr-line\n"]
         assert result.stdout == "".join(sink.stdout_lines)
         assert result.stderr == "".join(sink.stderr_lines)
@@ -107,7 +110,9 @@ class TestRun:
         sink = RecordingSink()
 
         result = HostCommandExecutor().run(
-            CommandRequest(argv=[binary], stdin=prompt, cwd=None, env=os.environ.copy(), timeout=60),
+            CommandRequest(
+                argv=[binary], stdin=prompt, cwd=None, env=os.environ.copy(), timeout=60
+            ),
             sink,
         )
 
@@ -213,7 +218,8 @@ class TestSinkFailures:
         class Exploding(RecordingSink):
             def stdout(self, line: str) -> None:
                 super().stdout(line)
-                raise RuntimeError("sink failed")
+                message = "sink failed"
+                raise RuntimeError(message)
 
         sink = Exploding()
         code = "import time, sys\nprint('one', flush=True)\ntime.sleep(30)\n"

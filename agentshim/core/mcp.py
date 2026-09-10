@@ -35,10 +35,17 @@ class StdioMcpServer:
     env: Mapping[str, str] = _NO_ENV
 
     def __post_init__(self) -> None:
+        """Reject a spec the provider could never launch.
+
+        Validated here, at construction, because the same mistake would
+        otherwise surface a turn later as an opaque provider-side MCP error.
+        """
         if not self.name:
-            raise ValueError("MCP server name must not be empty")
+            msg = "MCP server name must not be empty"
+            raise ValueError(msg)
         if not self.command:
-            raise ValueError(f"MCP server {self.name!r} must declare a command")
+            msg = f"MCP server {self.name!r} must declare a command"
+            raise ValueError(msg)
 
 
 @dataclass(frozen=True)
@@ -50,10 +57,17 @@ class HttpMcpServer:
     headers: Mapping[str, str] = _NO_ENV
 
     def __post_init__(self) -> None:
+        """Reject a spec the provider could never reach.
+
+        Validated here, at construction, because the same mistake would
+        otherwise surface a turn later as an opaque provider-side MCP error.
+        """
         if not self.name:
-            raise ValueError("MCP server name must not be empty")
+            msg = "MCP server name must not be empty"
+            raise ValueError(msg)
         if not self.url:
-            raise ValueError(f"MCP server {self.name!r} must declare a url")
+            msg = f"MCP server {self.name!r} must declare a url"
+            raise ValueError(msg)
 
 
 McpServer = StdioMcpServer | HttpMcpServer
@@ -100,15 +114,33 @@ class ConfigFileInstallation:
     argv: Sequence[str] = ()
 
     def __init__(self, target: Path, backup: _Backup) -> None:
+        """Hold the undo record for one already-merged config file.
+
+        Built by ``install_config_file`` once the merged file is on disk.
+        ``backup`` describes the file as it was before the merge, which is what
+        ``restore`` replays, so it must not be rebuilt from the current file.
+        """
         self._target = target
         self._backup = backup
         self._done = False
 
     @property
     def target(self) -> Path:
+        """The config file this installation merged into and will restore.
+
+        Read-only so a caller can log or inspect the file without being able to
+        point the undo record at a different one.
+        """
         return self._target
 
     def restore(self) -> None:
+        """Take agentshim's entries back out of the config file.
+
+        Idempotent, so a caller can run it from a ``finally`` without tracking
+        whether the install got that far. Edits the agent made to the file
+        during the turn are preserved, and a file the agent deleted stays
+        deleted: both are workspace changes cleanup has no right to undo.
+        """
         if self._done:
             return
         self._done = True
@@ -142,8 +174,12 @@ class ConfigFileInstallation:
 
 
 def _restored_servers(current: dict[str, Any], backup: _Backup, target: Path) -> dict[str, Any]:
-    original_servers = _servers_object(backup.original_config.get(backup.server_key, {}), backup.server_key, target)
-    installed_servers = _servers_object(backup.installed_config.get(backup.server_key, {}), backup.server_key, target)
+    original_servers = _servers_object(
+        backup.original_config.get(backup.server_key, {}), backup.server_key, target
+    )
+    installed_servers = _servers_object(
+        backup.installed_config.get(backup.server_key, {}), backup.server_key, target
+    )
     restored = dict(_servers_object(current.get(backup.server_key, {}), backup.server_key, target))
 
     for name, installed_value in installed_servers.items():
@@ -209,13 +245,16 @@ def _load_json_object(raw: bytes, target: Path) -> dict[str, Any]:
     try:
         loaded: object = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise McpConfigError(f"cannot merge MCP servers into invalid JSON config: {target}") from exc
+        msg = f"cannot merge MCP servers into invalid JSON config: {target}"
+        raise McpConfigError(msg) from exc
     if not isinstance(loaded, dict):
-        raise McpConfigError(f"MCP config must contain a JSON object: {target}")
+        msg = f"MCP config must contain a JSON object: {target}"
+        raise McpConfigError(msg)
     return dict(cast("dict[str, Any]", loaded))
 
 
 def _servers_object(value: object, server_key: str, target: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise McpConfigError(f"{server_key!r} must be a JSON object in MCP config: {target}")
+        msg = f"{server_key!r} must be a JSON object in MCP config: {target}"
+        raise McpConfigError(msg)
     return cast("dict[str, Any]", value)

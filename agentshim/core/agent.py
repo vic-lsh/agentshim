@@ -8,8 +8,9 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..execution.executor import CommandRequest
-from ..execution.host import HostCommandExecutor
+from agentshim.execution.executor import CommandRequest
+from agentshim.execution.host import HostCommandExecutor
+
 from .env import interactive_env
 from .errors import CliExitError, ProviderCapabilityError, SchemaDialectError
 from .events import RunFinished, RunStarted, compose_event_handlers
@@ -21,7 +22,8 @@ from .turn import TurnRequest, TurnResult, coerce_request
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from ..execution.executor import CommandExecutor, CommandHandle
+    from agentshim.execution.executor import CommandExecutor, CommandHandle
+
     from .events import AgentEvent, AgentEventHandler
     from .profile import ProviderProfile
     from .provider import Provider, StreamParser
@@ -36,7 +38,8 @@ def _resolve_provider(provider: str | Provider) -> Provider:
     spelling has to keep working.
     """
     if isinstance(provider, str):
-        from ..providers import get_provider
+        # core must not import providers at module level; see docs/architecture.md
+        from agentshim.providers import get_provider  # noqa: PLC0415
 
         return get_provider(provider)
     return provider
@@ -49,7 +52,9 @@ class CliAgent:
     fails at construction instead of halfway through the first turn.
     """
 
-    def __init__(
+    # Each argument is an independent documented option of the public
+    # constructor; folding them into a config object would break the API.
+    def __init__(  # noqa: PLR0913
         self,
         provider: str | Provider,
         *,
@@ -61,6 +66,28 @@ class CliAgent:
         check_timeout: float = 15.0,
         log: Callable[[str], None] | None = None,
     ) -> None:
+        """Configure a provider CLI and prove it is usable before any turn runs.
+
+        Construction does real work: the binary is resolved on PATH and the
+        provider's health check is run, so a broken install is reported here
+        instead of halfway through the first turn.
+
+        Args:
+            provider: A registered provider name, or a ``Provider`` instance
+                for a provider that is not in the registry.
+            model: Provider-specific model id, or ``None`` for the CLI default.
+            executor: Where commands run; defaults to the local host.
+            env: Replaces the environment entirely rather than extending it.
+                The default is ``interactive_env()``, not ``os.environ``,
+                because provider CLIs are usually installed by a shell rc file.
+            event_handler: Merged with ``event_handlers``; both spellings exist
+                and either may be omitted.
+            event_handlers: Merged with ``event_handler``, and fanned out to in
+                the order given.
+            check_timeout: Seconds allowed for the one-off health check. It is
+                not a budget for a turn.
+            log: Sink for agentshim's own progress lines; dropped by default.
+        """
         self.provider: Provider = _resolve_provider(provider)
         self.profile: ProviderProfile = self.provider.profile
         self.model = model
@@ -109,6 +136,14 @@ class AgentSession:
         timeout: float | None = None,
         session_id: str | None = None,
     ) -> None:
+        """Bind a conversation to one agent, with per-turn defaults.
+
+        The session owns the provider's conversation id, which is what makes
+        successive turns resume one another. ``cwd`` and ``timeout`` are
+        defaults an individual ``TurnRequest`` may override. Passing
+        ``session_id`` adopts a conversation the provider already has, so the
+        first turn resumes rather than starts fresh.
+        """
         self._agent = agent
         self._cwd = cwd
         self._timeout = timeout
@@ -121,6 +156,11 @@ class AgentSession:
 
     @property
     def profile(self) -> ProviderProfile:
+        """Capability description of the provider this session talks to.
+
+        Re-exported from the agent so a caller can ask what a turn will support
+        without reaching into the session's private agent reference.
+        """
         return self._agent.profile
 
     def adopt(self, session_id: str) -> bool:
@@ -231,17 +271,22 @@ class AgentSession:
     def _check_capabilities(self, req: TurnRequest) -> None:
         profile = self.profile
         if req.reasoning_effort is not None and not profile.supports_reasoning_effort:
-            raise ProviderCapabilityError(f"{profile.name} does not support reasoning effort")
+            msg = f"{profile.name} does not support reasoning effort"
+            raise ProviderCapabilityError(msg)
         if req.output_schema is not None and profile.output_schema is OutputSchemaStyle.NONE:
-            raise ProviderCapabilityError(f"{profile.name} does not support a native output schema")
+            msg = f"{profile.name} does not support a native output schema"
+            raise ProviderCapabilityError(msg)
         if req.mcp_servers and profile.mcp is McpMechanism.NONE:
-            raise ProviderCapabilityError(f"{profile.name} does not support MCP servers")
+            msg = f"{profile.name} does not support MCP servers"
+            raise ProviderCapabilityError(msg)
 
     def _resolve_schema(self, schema: OutputSchema | None) -> tuple[str | None, str | None]:
         if schema is None:
             return None, None
         profile = self.profile
-        dialect = profile.schema_dialect if profile.schema_dialect is not None else SchemaDialect.STRICT
+        dialect = (
+            profile.schema_dialect if profile.schema_dialect is not None else SchemaDialect.STRICT
+        )
         problems = dialect_problems(schema.schema, dialect)
         if problems:
             raise SchemaDialectError(problems)

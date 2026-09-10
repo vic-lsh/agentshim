@@ -9,18 +9,17 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from agentshim.providers.claude import SandboxConfig, build_settings, resolve_sandbox
 from agentshim.providers.claude.sandbox import CONFINE_READS_HOOK
 
 
 class TestResolveSandbox:
     @pytest.mark.parametrize("value", [None, False])
-    def test_off_values_yield_none(self, value: bool | None) -> None:
+    def test_off_values_yield_none(self, *, value: bool | None) -> None:
         assert resolve_sandbox(value) is None
 
     def test_true_yields_the_default_config(self) -> None:
-        config = resolve_sandbox(True)
+        config = resolve_sandbox(value=True)
         assert isinstance(config, SandboxConfig)
         assert config.fail_if_unavailable is True
         assert config.auto_allow_bash is True
@@ -46,15 +45,17 @@ class TestSettings:
         }
 
     def test_filesystem_section(self) -> None:
-        config = SandboxConfig(allow_write=["/tmp/build"], deny_read=["~/.aws/credentials"])
+        config = SandboxConfig(allow_write=["/work/build"], deny_read=["~/.aws/credentials"])
         assert build_settings(config)["sandbox"]["filesystem"] == {
-            "allowWrite": ["/tmp/build"],
+            "allowWrite": ["/work/build"],
             "denyRead": ["~/.aws/credentials"],
         }
 
     def test_network_section(self) -> None:
         config = SandboxConfig(allowed_domains=["github.com", "*.npmjs.org"])
-        assert build_settings(config)["sandbox"]["network"] == {"allowedDomains": ["github.com", "*.npmjs.org"]}
+        assert build_settings(config)["sandbox"]["network"] == {
+            "allowedDomains": ["github.com", "*.npmjs.org"]
+        }
 
     def test_excluded_commands(self) -> None:
         config = SandboxConfig(excluded_commands=["docker *"])
@@ -97,7 +98,7 @@ class TestConfineReadsHook:
         """Invoke the hook exactly the way the settings block does."""
         settings = build_settings(SandboxConfig(confine_native_reads_to=roots))
         command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-        proc = subprocess.run(
+        proc = subprocess.run(  # noqa: S603 - fixed argv from build_settings, no shell
             shlex.split(command),
             input=json.dumps(payload),
             text=True,
@@ -134,13 +135,17 @@ class TestConfineReadsHook:
         assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
 
     def test_a_tool_call_without_a_path_is_allowed(self, tmp_path: Path) -> None:
-        code, out = self._run({"tool_name": "Glob", "tool_input": {"pattern": "**/*.py"}}, [str(tmp_path)])
+        code, out = self._run(
+            {"tool_name": "Glob", "tool_input": {"pattern": "**/*.py"}}, [str(tmp_path)]
+        )
         assert code == 0
         assert out == ""
 
     def test_invalid_hook_input_does_not_block_the_tool(self, tmp_path: Path) -> None:
         settings = build_settings(SandboxConfig(confine_native_reads_to=[str(tmp_path)]))
         command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-        proc = subprocess.run(shlex.split(command), input="not json", text=True, capture_output=True, check=False)
+        proc = subprocess.run(  # noqa: S603 - fixed argv from build_settings, no shell
+            shlex.split(command), input="not json", text=True, capture_output=True, check=False
+        )
         assert proc.returncode == 0
         assert proc.stdout == ""

@@ -15,9 +15,13 @@ class CommandHandle(Protocol):
     Held so a caller can stop the command from outside the timeout path.
     """
 
-    def terminate(self) -> None: ...
+    def terminate(self) -> None:
+        """Ask the command to stop, leaving it a chance to exit on its own."""
+        ...
 
-    def kill(self) -> None: ...
+    def kill(self) -> None:
+        """Stop the command now, with no chance for it to clean up."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -51,11 +55,17 @@ class CommandStreamSink(Protocol):
     ``CommandExecutor.run``.
     """
 
-    def started(self, handle: CommandHandle) -> None: ...
+    def started(self, handle: CommandHandle) -> None:
+        """Receive the handle of the started command, before any output."""
+        ...
 
-    def stdout(self, line: str) -> None: ...
+    def stdout(self, line: str) -> None:
+        """Receive one line of stdout."""
+        ...
 
-    def stderr(self, line: str) -> None: ...
+    def stderr(self, line: str) -> None:
+        """Receive one line of stderr."""
+        ...
 
 
 class CommandExecutor(Protocol):
@@ -102,16 +112,20 @@ class CallbackCommandStreamSink:
         on_stderr: Callable[[str], None],
         on_started: Callable[[CommandHandle], None] | None = None,
     ) -> None:
+        """Wire the sink to plain callables; only the output ones are required."""
         self._on_stdout = on_stdout
         self._on_stderr = on_stderr
         self._on_started = on_started
 
     def started(self, handle: CommandHandle) -> None:
+        """Forward the handle, when the caller asked for one."""
         if self._on_started is not None:
             self._on_started(handle)
 
     def stdout(self, line: str) -> None:
+        """Forward the line to ``on_stdout``."""
         self._on_stdout(line)
 
     def stderr(self, line: str) -> None:
+        """Forward the line to ``on_stderr``."""
         self._on_stderr(line)

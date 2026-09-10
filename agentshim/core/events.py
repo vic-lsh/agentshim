@@ -131,7 +131,13 @@ AgentEvent = (
 class AgentEventHandler(Protocol):
     """Receives every event of a turn, in order, on the caller's thread."""
 
-    def on_event(self, event: AgentEvent) -> None: ...
+    def on_event(self, event: AgentEvent) -> None:
+        """React to one event.
+
+        Called synchronously in the middle of a turn, so a slow handler slows
+        the turn down. A handler that raises fails the turn it is watching.
+        """
+        ...
 
 
 class EventHandlerBase:
@@ -149,9 +155,20 @@ class CompositeEventHandler:
     """Fan an event out to a fixed list of handlers, in order."""
 
     def __init__(self, handlers: Iterable[AgentEventHandler]) -> None:
+        """Snapshot the handlers to fan out to.
+
+        The iterable is copied at construction, so mutating the sequence that
+        was passed in does not change this handler; the copy is exposed as the
+        public ``handlers`` list instead.
+        """
         self.handlers: list[AgentEventHandler] = list(handlers)
 
     def on_event(self, event: AgentEvent) -> None:
+        """Pass the event to each handler in turn.
+
+        There is no error isolation: a handler that raises stops the ones
+        after it, matching the single-handler case where the turn fails.
+        """
         for handler in self.handlers:
             handler.on_event(event)
 
@@ -214,6 +231,13 @@ class ConsoleEventHandler:
         color: bool = True,
         show_lifecycle: bool = False,
     ) -> None:
+        """Set up a console renderer bound to one text stream.
+
+        ``stream`` is resolved once, at construction, so a later reassignment
+        of ``sys.stdout`` does not redirect an existing handler. ``color``
+        controls ANSI escapes only, and ``show_lifecycle`` opts in to provider
+        plumbing that is hidden by default because it is not model output.
+        """
         self._stream = stream if stream is not None else sys.stdout
         self._prefix = prefix
         self._color = color
@@ -254,31 +278,71 @@ class ConsoleEventHandler:
                 self._at_line_start = True
 
     def on_event(self, event: AgentEvent) -> None:
+        """Render one event, then flush so a piped console stays live.
+
+        Dispatch is by event family. Events with no console rendering, such as
+        ``SessionStarted`` and ``UsageReport``, fall through and only flush.
+        """
+        if isinstance(event, (RunStarted, RunFinished)):
+            self._render_run_boundary(event)
+        elif isinstance(event, (AssistantText, Reasoning, RawOutput)):
+            self._render_model_output(event)
+        elif isinstance(event, (ToolCall, ToolResult)):
+            self._render_tool(event)
+        else:
+            self._render_diagnostic(event)
+        self._stream.flush()
+
+    def _render_run_boundary(self, event: RunStarted | RunFinished) -> None:
+        """Fence the CLI process with rules, so a transcript shows where it ran.
+
+        The start rule follows the command line; the end rule only has to close
+        a partial line first.
+        """
         if isinstance(event, RunStarted):
             self._line(self._paint("$ " + " ".join(event.argv), self._DIM))
-            self._write("=" * 80 + "\n")
-        elif isinstance(event, RunFinished):
+        else:
             self._newline_if_needed()
-            self._write("=" * 80 + "\n")
-        elif isinstance(event, AssistantText):
+        self._write("=" * 80 + "\n")
+
+    def _render_model_output(self, event: AssistantText | Reasoning | RawOutput) -> None:
+        """Write what the model produced.
+
+        Assistant text and unrecognized stdout stream incrementally, since they
+        arrive in fragments. Reasoning is dimmed and clipped: it is context for
+        the reader, not the answer.
+        """
+        if isinstance(event, AssistantText):
             self._stream_text(event.text)
         elif isinstance(event, Reasoning):
             self._line(self._paint(_truncate_lines(event.text), self._DIM))
-        elif isinstance(event, ToolCall):
+        else:
+            self._stream_text(event.text.rstrip("\n") + "\n")
+
+    def _render_tool(self, event: ToolCall | ToolResult) -> None:
+        """Summarize a tool call or its result on one line.
+
+        Arguments and output are clipped: a console reader wants to know which
+        tool ran and roughly what came back, not to read a whole file dump.
+        """
+        if isinstance(event, ToolCall):
             self._line(self._paint(f"[Tool Use] {event.tool} {_truncate(event.args)}", self._BLUE))
-        elif isinstance(event, ToolResult):
-            output = event.stdout or event.stderr
-            if output:
-                self._line(self._paint(f"[Tool Result] {_truncate_lines(output)}", self._GREEN))
-            else:
-                self._line(self._paint(f"{event.tool} ran successfully", self._GREEN))
-        elif isinstance(event, Stderr):
+            return
+        output = event.stdout or event.stderr
+        if output:
+            self._line(self._paint(f"[Tool Result] {_truncate_lines(output)}", self._GREEN))
+        else:
+            self._line(self._paint(f"{event.tool} ran successfully", self._GREEN))
+
+    def _render_diagnostic(self, event: AgentEvent) -> None:
+        """Write the tagged non-output events, and drop the rest.
+
+        Lifecycle chatter is suppressed unless the handler was asked for it,
+        because on most providers it is far noisier than the model output.
+        """
+        if isinstance(event, Stderr):
             self._line(f"[stderr] {event.text.rstrip()}")
         elif isinstance(event, ProviderError):
             self._line(f"[error] {event.message}")
-        elif isinstance(event, Lifecycle):
-            if self._show_lifecycle:
-                self._line(self._paint(f"[{event.kind}] {event.detail}", self._DIM))
-        elif isinstance(event, RawOutput):
-            self._stream_text(event.text.rstrip("\n") + "\n")
-        self._stream.flush()
+        elif isinstance(event, Lifecycle) and self._show_lifecycle:
+            self._line(self._paint(f"[{event.kind}] {event.detail}", self._DIM))

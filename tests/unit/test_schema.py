@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from agentshim import SchemaDialect, compact_json, dialect_problems, materialize, normalize
 
 _SIMPLE = {
@@ -45,14 +44,20 @@ class TestDialectProblems:
     def test_non_object_root_is_a_problem(self) -> None:
         assert dialect_problems({"type": "array"}, SchemaDialect.OPEN) != []
 
-    @pytest.mark.parametrize("keyword", ["allOf", "oneOf", "not", "if", "patternProperties", "$schema"])
+    @pytest.mark.parametrize(
+        "keyword", ["allOf", "oneOf", "not", "if", "patternProperties", "$schema"]
+    )
     def test_unsupported_keywords_are_reported(self, keyword: str) -> None:
         schema = {"type": "object", "properties": {"a": {"type": "string"}}, keyword: {}}
         problems = dialect_problems(schema, SchemaDialect.OPEN)
         assert any(keyword in problem for problem in problems)
 
     def test_a_property_named_like_a_keyword_is_fine(self) -> None:
-        schema = {"type": "object", "properties": {"if": {"type": "string"}}, "additionalProperties": False}
+        schema = {
+            "type": "object",
+            "properties": {"if": {"type": "string"}},
+            "additionalProperties": False,
+        }
         assert dialect_problems(schema, SchemaDialect.OPEN) == []
 
     def test_non_local_ref_is_reported(self) -> None:
@@ -87,7 +92,10 @@ class TestDialectProblems:
 
 class TestNormalize:
     def test_objects_are_closed_and_every_property_required(self) -> None:
-        schema = {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}}}
+        schema = {
+            "type": "object",
+            "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+        }
         result = normalize(schema, SchemaDialect.STRICT)
         assert result["additionalProperties"] is False
         assert result["required"] == ["a", "b"]

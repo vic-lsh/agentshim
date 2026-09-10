@@ -9,16 +9,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from ..core.errors import CliNotFoundError, CliTimeoutError
-from ..core.usage import TokenUsage
-from ..execution.executor import CommandResult
-from ..providers import get_scripted_lines
+from agentshim.core.errors import CliNotFoundError, CliTimeoutError
+from agentshim.core.usage import TokenUsage
+from agentshim.execution.executor import CommandResult
+from agentshim.providers import get_scripted_lines
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from ..core.events import AgentEvent
-    from ..execution.executor import CommandRequest, CommandStreamSink
+    from agentshim.core.events import AgentEvent
+    from agentshim.execution.executor import CommandRequest, CommandStreamSink
 
 
 @dataclass
@@ -35,13 +35,16 @@ class FakeCommandHandle:
     """Handle that records the stop calls made against it."""
 
     def __init__(self) -> None:
+        """Start with nothing recorded."""
         self.terminated = False
         self.killed = False
 
     def terminate(self) -> None:
+        """Record a terminate call."""
         self.terminated = True
 
     def kill(self) -> None:
+        """Record a kill call."""
         self.killed = True
 
 
@@ -58,6 +61,11 @@ class FakeExecutor:
         *,
         binaries: Mapping[str, str] | None = None,
     ) -> None:
+        """Take one run, a sequence of runs, or a callable that picks per request.
+
+        *binaries* pins what ``find_binary`` answers; without it every name
+        resolves to a plausible path.
+        """
         if isinstance(runs, FakeRun):
             runs = [runs]
         self._runs = runs
@@ -68,6 +76,8 @@ class FakeExecutor:
         self.checked: list[str] = []
 
     def find_binary(self, name: str, env: Mapping[str, str]) -> str:
+        """Return the pinned path for *name*, or a plausible default one."""
+        del env  # part of the executor protocol; the fake ignores it
         if self._binaries:
             path = self._binaries.get(name)
             if path is None:
@@ -76,9 +86,12 @@ class FakeExecutor:
         return f"/usr/local/bin/{name}"
 
     def check_binary(self, path: str, env: Mapping[str, str], *, timeout: float) -> None:
+        """Record the check; the fake never inspects the binary."""
+        del env, timeout  # part of the executor protocol; the fake ignores them
         self.checked.append(path)
 
     def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
+        """Replay the next scripted run, driving *sink* like a real one would."""
         self.requests.append(request)
         run = self._next(request)
         handle = FakeCommandHandle()
@@ -120,6 +133,7 @@ class RecordingEventHandler:
     events: list[AgentEvent] = field(default_factory=_no_events)
 
     def on_event(self, event: AgentEvent) -> None:
+        """Append the event to ``events``."""
         self.events.append(event)
 
     def of_type(self, kind: type) -> list[AgentEvent]:
@@ -127,14 +141,16 @@ class RecordingEventHandler:
         return [event for event in self.events if isinstance(event, kind)]
 
 
-def scripted_turn(
+# Every parameter is an independent, separately documented knob of the test
+# double; folding them into a config object would only lengthen call sites.
+def scripted_turn(  # noqa: PLR0913
     provider: str,
     *,
     text: str = "",
     session_id: str | None = None,
     usage: TokenUsage | None = None,
     tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
-    structured_output: Any | None = None,
+    structured_output: object | None = None,
     returncode: int = 0,
 ) -> FakeRun:
     """Build a ``FakeRun`` whose stdout is *provider*'s real stream format."""

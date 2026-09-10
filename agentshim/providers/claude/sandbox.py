@@ -14,9 +14,13 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-CONFINE_READS_HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hooks", "confine_reads.py")
+# ``absolute()`` rather than ``resolve()``: the hook path is only handed back to
+# the interpreter, and an install reached through a symlinked tree should keep
+# using the path it was imported from.
+CONFINE_READS_HOOK = str(Path(__file__).absolute().parent / "hooks" / "confine_reads.py")
 
 #: Claude Code otherwise cd's into a per-invocation scratch dir under
 #: ``<project>/.local_tmp`` before every Bash call. That dir is outside the
@@ -85,7 +89,8 @@ def resolve_sandbox(value: object) -> SandboxConfig | None:
         return SandboxConfig()
     if isinstance(value, SandboxConfig):
         return value
-    raise TypeError(f"sandbox must be bool or SandboxConfig, got {type(value).__name__}")
+    msg = f"sandbox must be bool or SandboxConfig, got {type(value).__name__}"
+    raise TypeError(msg)
 
 
 def build_settings(config: SandboxConfig) -> dict[str, Any]:

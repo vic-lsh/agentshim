@@ -9,7 +9,11 @@ import threading
 _INTERACTIVE_ENV_TIMEOUT_S = 10.0
 
 _lock = threading.Lock()
-_cached: dict[str, str] | None = None
+# One-slot cache keyed by _CACHE_KEY. A dict rather than a rebound module
+# global so the reader does not need a `global` statement, and so a test can
+# clear it by replacing the mapping.
+_CACHE_KEY = "env"
+_cache: dict[str, dict[str, str]] = {}
 
 
 def interactive_env(*, refresh: bool = False) -> dict[str, str]:
@@ -21,15 +25,17 @@ def interactive_env(*, refresh: bool = False) -> dict[str, str]:
     costs hundreds of milliseconds and the answer does not change. Any
     failure, including the 10s timeout, falls back to ``os.environ``.
     """
-    global _cached
     with _lock:
-        if _cached is not None and not refresh:
-            return dict(_cached)
-        _cached = _probe()
-        return dict(_cached)
+        cached = _cache.get(_CACHE_KEY)
+        if cached is not None and not refresh:
+            return dict(cached)
+        probed = _probe()
+        _cache[_CACHE_KEY] = probed
+        return dict(probed)
 
 
 def _probe() -> dict[str, str]:
+    """Run ``bash -i -c env`` once and parse its output into a mapping."""
     try:
         # start_new_session detaches from the TTY so `bash -i` setting its
         # process group cannot stop us with SIGTTOU/SIGTTIN.

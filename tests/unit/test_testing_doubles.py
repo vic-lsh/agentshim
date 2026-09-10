@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import pytest
-
 from agentshim import (
+    AgentEventHandler,
     AssistantText,
     CliAgent,
     CliNotFoundError,
@@ -20,13 +19,19 @@ from agentshim import (
     ToolResult,
     UsageReport,
 )
-from agentshim.testing import FakeCommandHandle, FakeExecutor, FakeRun, RecordingEventHandler, scripted_turn
+from agentshim.testing import (
+    FakeCommandHandle,
+    FakeExecutor,
+    FakeRun,
+    RecordingEventHandler,
+    scripted_turn,
+)
 
 _ENV = {"PATH": "/usr/bin"}
 
 
-def _agent(executor: FakeExecutor, **kwargs: Any) -> CliAgent:
-    return CliAgent("claude", executor=executor, env=dict(_ENV), **kwargs)
+def _agent(executor: FakeExecutor, *, event_handler: AgentEventHandler | None = None) -> CliAgent:
+    return CliAgent("claude", executor=executor, env=dict(_ENV), event_handler=event_handler)
 
 
 class TestFakeExecutor:
@@ -44,14 +49,20 @@ class TestFakeExecutor:
     def test_the_last_run_repeats_once_exhausted(self) -> None:
         executor = FakeExecutor([FakeRun(stdout=["only\n"])])
         for _ in range(3):
-            assert executor.run(CommandRequest(["x"], None, None, {}, None), NullSink()).stdout == "only\n"
+            assert (
+                executor.run(CommandRequest(["x"], None, None, {}, None), NullSink()).stdout
+                == "only\n"
+            )
 
     def test_a_callable_picks_a_run_per_request(self) -> None:
         def choose(request: CommandRequest) -> FakeRun:
             return FakeRun(stdout=[f"{len(request.argv)}\n"])
 
         executor = FakeExecutor(choose)
-        assert executor.run(CommandRequest(["a", "b"], None, None, {}, None), NullSink()).stdout == "2\n"
+        assert (
+            executor.run(CommandRequest(["a", "b"], None, None, {}, None), NullSink()).stdout
+            == "2\n"
+        )
 
     def test_requests_are_recorded(self) -> None:
         executor = FakeExecutor(FakeRun())
@@ -82,7 +93,9 @@ class TestFakeExecutor:
             def stderr(self, line: str) -> None:
                 seen.append(line)
 
-        FakeExecutor(FakeRun(stderr=["oops\n"])).run(CommandRequest(["x"], None, None, {}, None), Sink())
+        FakeExecutor(FakeRun(stderr=["oops\n"])).run(
+            CommandRequest(["x"], None, None, {}, None), Sink()
+        )
         assert seen == ["oops\n"]
 
     def test_binary_lookup_defaults_to_a_plausible_path(self) -> None:
@@ -110,14 +123,18 @@ class TestScriptedTurn:
         assert AssistantText("pong") in recorder.events
 
     def test_every_scripted_line_is_a_json_object(self) -> None:
-        run = scripted_turn("claude", text="hi", session_id="s1", tool_calls=[("Bash", {"cmd": "ls"}, "out")])
+        run = scripted_turn(
+            "claude", text="hi", session_id="s1", tool_calls=[("Bash", {"cmd": "ls"}, "out")]
+        )
         for line in run.stdout:
             assert line.endswith("\n")
             assert isinstance(json.loads(line), dict)
 
     def test_tool_calls_become_paired_events(self) -> None:
         recorder = RecordingEventHandler()
-        executor = FakeExecutor(scripted_turn("claude", text="done", tool_calls=[("Bash", {"cmd": "ls"}, "file.txt")]))
+        executor = FakeExecutor(
+            scripted_turn("claude", text="done", tool_calls=[("Bash", {"cmd": "ls"}, "file.txt")])
+        )
         _agent(executor, event_handler=recorder).run("go")
 
         calls = [event for event in recorder.events if isinstance(event, ToolCall)]
@@ -150,7 +167,9 @@ class TestScriptedTurn:
 
     def test_usage_reports_are_emitted(self) -> None:
         recorder = RecordingEventHandler()
-        executor = FakeExecutor(scripted_turn("claude", text="x", usage=TokenUsage(input_tokens=5, turns=1)))
+        executor = FakeExecutor(
+            scripted_turn("claude", text="x", usage=TokenUsage(input_tokens=5, turns=1))
+        )
         _agent(executor, event_handler=recorder).run("go")
         assert any(isinstance(event, UsageReport) for event in recorder.events)
 

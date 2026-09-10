@@ -149,7 +149,7 @@ AgentShimError
   CliNotFoundError            binary not on PATH
   CliCheckError               binary found but the health check failed
   CliExitError                nonzero exit: argv, returncode, stdout, stderr
-    SessionResumeFailed       a resumed turn failed because the conversation is gone: session_id
+    SessionResumeError        a resumed turn failed because the conversation is gone: session_id
   CliTimeoutError             argv, timeout
   ProviderCapabilityError     the provider cannot do what the request asked
     SchemaDialectError        problems: list[str]
@@ -408,7 +408,7 @@ waits, and a killed process still has a code.
 `stdout` would make a renderer show it as success.
 
 **Claude's `classify_exit` maps *any* nonzero exit on a resumed turn to
-`SessionResumeFailed`.** `claude --resume` does not give a distinguishable
+`SessionResumeError`.** `claude --resume` does not give a distinguishable
 exit code for a missing transcript, and a resumed turn that failed is
 unusable either way: the caller has to start a fresh conversation. The
 session id is recovered from argv.

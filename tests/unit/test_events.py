@@ -51,6 +51,7 @@ class TestCompose:
                 self.tag = tag
 
             def on_event(self, event: object) -> None:
+                del event  # name fixed by the EventHandlerBase signature
                 seen.append(self.tag)
 
         CompositeEventHandler([Marking("a"), Marking("b")]).on_event(AssistantText("x"))

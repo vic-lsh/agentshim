@@ -34,6 +34,12 @@ class ToolTracker:
     """
 
     def __init__(self, *, unknown_name: str = "Tool") -> None:
+        """Start a tracker with no calls recorded.
+
+        ``unknown_name`` is what ``name()`` reports for a result frame whose
+        call was never seen, so a caller always has a displayable label even
+        when the provider's frames do not pair up.
+        """
         self._names: dict[str, str] = {}
         self._starts: dict[str, float] = {}
         self._unknown = unknown_name

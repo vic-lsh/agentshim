@@ -59,8 +59,9 @@ raises propagates out of `turn()` after the process is killed.
 A tool that failed is reported the same way on every provider: the message on
 `ToolResult.stderr` with a nonzero `exit_code`, and `stdout` empty. A
 renderer can therefore branch on `exit_code` alone and never mistake a
-failure for success. A provider that reports a real exit code passes it
-through; one that only reports a boolean failure uses `1`.
+failure for success, which is what `ConsoleEventHandler` does: a failed
+result is red, a successful one green. A provider that reports a real exit
+code passes it through; one that only reports a boolean failure uses `1`.
 
 ## Usage
 

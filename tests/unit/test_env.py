@@ -34,6 +34,7 @@ class _FakeRun:
         self._outcomes = list(outcomes)
         self.calls = 0
         self.timeouts: list[float] = []
+        self.commands: list[str] = []
 
     def __call__(
         self,
@@ -42,9 +43,9 @@ class _FakeRun:
         timeout: float,
         **options: bool,
     ) -> subprocess.CompletedProcess[str]:
-        # `options` absorbs capture_output/text/check/start_new_session; only
-        # argv-independent behaviour and the timeout matter here.
-        del argv, options
+        # `options` absorbs capture_output/text/check/start_new_session.
+        del options
+        self.commands.append(argv[-1])
         self.calls += 1
         self.timeouts.append(timeout)
         outcome = self._outcomes[min(self.calls - 1, len(self._outcomes) - 1)]
@@ -109,3 +110,30 @@ def test_values_containing_equals_are_kept_whole(monkeypatch: pytest.MonkeyPatch
     probe = _FakeRun(_completed("OPTS=a=b=c\nX=1\n"))
     monkeypatch.setattr(env_module.subprocess, "run", probe)
     assert interactive_env() == {"OPTS": "a=b=c", "X": "1"}
+
+
+def test_the_probe_asks_for_nul_separated_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    probe = _FakeRun(_completed("A=1\0"))
+    monkeypatch.setattr(env_module.subprocess, "run", probe)
+    assert interactive_env() == {"A": "1"}
+    assert probe.commands == ["env -0"]
+
+
+def test_a_multi_line_value_is_kept_whole(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Splitting on newlines truncated a key and turned its tail into junk keys."""
+    key = "-----BEGIN KEY-----\nAAAA\n-----END KEY-----"
+    probe = _FakeRun(_completed(f"SSH_KEY={key}\0X=1\0"))
+    monkeypatch.setattr(env_module.subprocess, "run", probe)
+    assert interactive_env() == {"SSH_KEY": key, "X": "1"}
+
+
+def test_a_shell_without_env_zero_falls_back_to_plain_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe = _FakeRun(
+        _completed(returncode=1, stderr="env: illegal option -- 0"),
+        _completed("A=1\nB=2\n"),
+    )
+    monkeypatch.setattr(env_module.subprocess, "run", probe)
+    assert interactive_env() == {"A": "1", "B": "2"}
+    assert probe.commands == ["env -0", "env"]

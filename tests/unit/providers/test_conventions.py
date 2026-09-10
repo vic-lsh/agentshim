@@ -157,8 +157,14 @@ class TestScriptedRoundTrip:
     def test_every_scripted_line_is_one_json_object(self, name: str) -> None:
         run = scripted_turn(name, text="hi", session_id=_SESSION_ID, usage=_usage())
         for line in run.stdout:
-            assert line.endswith("\n")
-            assert isinstance(json.loads(line), dict)
+            assert isinstance(json.loads(line), dict), line
+
+    def test_every_scripted_line_is_newline_terminated(self, name: str) -> None:
+        """Line-delimited JSON: one object per line, and none spanning two."""
+        run = scripted_turn(name, text="hi", session_id=_SESSION_ID, usage=_usage())
+        for line in run.stdout:
+            assert line.endswith("\n"), line
+            assert line.count("\n") == 1, line
 
 
 @pytest.mark.parametrize("name", PROVIDERS)

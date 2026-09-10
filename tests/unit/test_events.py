@@ -95,6 +95,38 @@ class TestConsoleEventHandler:
         out = self._render(ToolResult("t1", "Bash", "", "", 0, None))
         assert "Bash ran successfully" in out
 
+    def test_a_failed_tool_result_is_painted_red(self) -> None:
+        """A failure printed in green reads as a success on a console."""
+        stream = io.StringIO()
+        handler = ConsoleEventHandler(stream, color=True)
+
+        handler.on_event(ToolResult("t1", "Bash", "", "No such file", 2, 0.1))
+
+        rendered = stream.getvalue()
+        assert "\033[31m" in rendered
+        assert "\033[32m" not in rendered
+        assert "No such file" in rendered
+
+    def test_a_successful_tool_result_stays_green(self) -> None:
+        stream = io.StringIO()
+        handler = ConsoleEventHandler(stream, color=True)
+
+        handler.on_event(ToolResult("t1", "Bash", "file.txt", "", 0, 0.1))
+
+        assert "\033[32m" in stream.getvalue()
+
+    def test_a_result_with_no_exit_code_is_not_treated_as_a_failure(self) -> None:
+        stream = io.StringIO()
+        handler = ConsoleEventHandler(stream, color=True)
+
+        handler.on_event(ToolResult("t1", "Bash", "file.txt", "", None, None))
+
+        assert "\033[32m" in stream.getvalue()
+
+    def test_an_empty_failed_result_says_it_failed(self) -> None:
+        out = self._render(ToolResult("t1", "Bash", "", "", 3, None))
+        assert "Bash failed with exit 3" in out
+
     def test_long_tool_args_are_truncated(self) -> None:
         out = self._render(ToolCall("t1", "Bash", {"cmd": "x" * 500}))
         assert "..." in out

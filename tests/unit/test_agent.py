@@ -252,6 +252,13 @@ class TestResume:
         assert session.adopt("s1") is False
         assert session.session_id is None
 
+    def test_forget_reports_that_it_dropped_the_conversation(self) -> None:
+        session = _agent(FakeExecutor(scripted_turn("claude", text="ok"))).start_session(
+            session_id="s1"
+        )
+        assert session.forget() is True
+        assert session.session_id is None
+
     def test_forget_starts_a_fresh_conversation(self) -> None:
         executor = FakeExecutor([scripted_turn("claude", text="ok", session_id="s1")] * 2)
         session = _agent(executor).start_session()
@@ -260,6 +267,24 @@ class TestResume:
         assert session.session_id is None
         session.turn("again")
         assert "--resume" not in list(executor.requests[1].argv)
+
+    def test_forget_is_refused_while_a_turn_is_live(self) -> None:
+        """Same rule as ``adopt``: the running turn owns the conversation id."""
+        outcomes: list[bool] = []
+
+        class Forgetting(FakeExecutor):
+            def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
+                outcomes.append(session.forget())
+                return super().run(request, sink)
+
+        executor = Forgetting(scripted_turn("claude", text="ok", session_id="s2"))
+        session = _agent(executor).start_session(session_id="s1")
+
+        result = session.turn("hi")
+
+        assert outcomes == [False]
+        assert result.session_id == "s2"
+        assert session.session_id == "s2"
 
     def test_a_failing_resumed_turn_raises_session_resume_failed(self) -> None:
         executor = FakeExecutor(FakeRun(returncode=1, stderr=["no conversation found\n"]))

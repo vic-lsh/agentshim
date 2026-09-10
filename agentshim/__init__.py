@@ -78,6 +78,11 @@ from .execution import (
     TransformingExecutor,
 )
 from .providers import get_provider, provider_names
+from .providers.claude import ClaudeProvider, SandboxConfig
+from .providers.codex import CodexProvider
+from .providers.copilot import CopilotProvider
+from .providers.gemini import GeminiProvider
+from .providers.opencode import OpencodeProvider
 
 __version__ = "0.6.0"
 
@@ -89,11 +94,13 @@ __all__ = [
     "ArgvContext",
     "AssistantText",
     "CallbackCommandStreamSink",
+    "ClaudeProvider",
     "CliAgent",
     "CliCheckError",
     "CliExitError",
     "CliNotFoundError",
     "CliTimeoutError",
+    "CodexProvider",
     "CommandExecutor",
     "CommandHandle",
     "CommandRequest",
@@ -102,8 +109,10 @@ __all__ = [
     "CompositeEventHandler",
     "ConfigFileInstallation",
     "ConsoleEventHandler",
+    "CopilotProvider",
     "EventHandlerBase",
     "FlagsInstallation",
+    "GeminiProvider",
     "HostCommandExecutor",
     "HttpMcpServer",
     "Lifecycle",
@@ -115,6 +124,7 @@ __all__ = [
     "NoopInstallation",
     "NullEventHandler",
     "NullSink",
+    "OpencodeProvider",
     "OutputSchema",
     "OutputSchemaStyle",
     "ParsedTurn",
@@ -127,6 +137,7 @@ __all__ = [
     "Reasoning",
     "RunFinished",
     "RunStarted",
+    "SandboxConfig",
     "SchemaDialect",
     "SchemaDialectError",
     "SessionResumeError",

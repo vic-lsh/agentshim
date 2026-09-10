@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib
 from pathlib import Path
 
 import agentshim
@@ -58,3 +59,28 @@ def test_core_and_execution_do_not_import_providers_at_module_level() -> None:
 
 def test_provider_names_lists_the_ported_providers() -> None:
     assert agentshim.provider_names() == ["claude", "codex", "copilot", "gemini", "opencode"]
+
+
+def test_the_provider_classes_the_docs_name_are_exported() -> None:
+    """The docs tell callers to construct these directly, so they must be here."""
+    for name in (
+        "ClaudeProvider",
+        "CodexProvider",
+        "CopilotProvider",
+        "GeminiProvider",
+        "OpencodeProvider",
+        "SandboxConfig",
+    ):
+        assert name in agentshim.__all__, name
+        assert hasattr(agentshim, name), name
+
+
+def test_a_provider_package_does_not_export_fold_usage() -> None:
+    """``fold_usage`` has a different signature in each package.
+
+    Five names that look alike and take different arguments are worse than no
+    shared name at all, so it stays private to its own ``parser.py``.
+    """
+    for name in agentshim.provider_names():
+        package = importlib.import_module(f"agentshim.providers.{name}")
+        assert "fold_usage" not in package.__all__, name

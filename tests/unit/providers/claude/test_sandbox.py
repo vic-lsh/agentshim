@@ -92,6 +92,25 @@ class TestConfineReadsWiring:
         command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
         assert shlex.split(command)[2:] == [str(root)]
 
+    @pytest.mark.parametrize("name", ["it's here", 'say "hi"', "cost $HOME", "back`tick`"])
+    def test_shell_metacharacters_in_a_path_stay_literal(self, tmp_path: Path, name: str) -> None:
+        """Claude runs the hook through a shell, so the path has to be quoted."""
+        root = tmp_path / name
+        root.mkdir()
+        settings = build_settings(SandboxConfig(confine_native_reads_to=[str(root)]))
+        command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+
+        echoed = subprocess.run(  # noqa: S602 - a shell is exactly what Claude uses here
+            f"printf '%s' {command.split(' ', 2)[2]}",
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        assert shlex.split(command)[2:] == [str(root)]
+        assert echoed.stdout == str(root)
+
 
 class TestConfineReadsHook:
     def _run(self, payload: dict[str, object], roots: list[str]) -> tuple[int, str]:

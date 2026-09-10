@@ -220,6 +220,7 @@ class ConsoleEventHandler:
 
     _BLUE = "\033[34m"
     _GREEN = "\033[32m"
+    _RED = "\033[31m"
     _DIM = "\033[2m"
     _RESET = "\033[0m"
 
@@ -328,11 +329,19 @@ class ConsoleEventHandler:
         if isinstance(event, ToolCall):
             self._line(self._paint(f"[Tool Use] {event.tool} {_truncate(event.args)}", self._BLUE))
             return
+        # A failed tool reports on ``stderr`` with a nonzero ``exit_code`` on
+        # every provider, so the exit code is what decides the colour: reading
+        # the streams instead painted a failure green whenever the CLI still
+        # printed something on stdout.
+        failed = bool(event.exit_code)
+        colour = self._RED if failed else self._GREEN
         output = event.stdout or event.stderr
         if output:
-            self._line(self._paint(f"[Tool Result] {_truncate_lines(output)}", self._GREEN))
+            self._line(self._paint(f"[Tool Result] {_truncate_lines(output)}", colour))
+        elif failed:
+            self._line(self._paint(f"{event.tool} failed with exit {event.exit_code}", colour))
         else:
-            self._line(self._paint(f"{event.tool} ran successfully", self._GREEN))
+            self._line(self._paint(f"{event.tool} ran successfully", colour))
 
     def _render_diagnostic(self, event: AgentEvent) -> None:
         """Write the tagged non-output events, and drop the rest.

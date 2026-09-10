@@ -185,9 +185,19 @@ class AgentSession:
             self.session_id = session_id
         return True
 
-    def forget(self) -> None:
-        """Start the next turn as a fresh conversation."""
-        self.session_id = None
+    def forget(self) -> bool:
+        """Start the next turn as a fresh conversation.
+
+        Returns ``False``, changing nothing, when a turn is in flight, which is
+        the rule ``adopt`` already follows: the running turn is about to write
+        the conversation id it was given, so dropping it mid-flight would
+        either be undone a moment later or discard an id nobody else has.
+        """
+        with self._lock:
+            if not self._idle.is_set():
+                return False
+            self.session_id = None
+        return True
 
     def cancel(self, grace_s: float = 5.0) -> None:
         """Stop the running turn: terminate, then kill after ``grace_s``.

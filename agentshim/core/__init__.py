@@ -1,4 +1,9 @@
-"""Provider-agnostic core: types, protocols, and the session that runs a turn."""
+"""Provider-agnostic core: the types and protocols a provider is written against.
+
+The agent and its session live one layer out, in ``agentshim/agent.py``:
+turning a provider name into a provider means importing ``providers``, which
+this package may not do.
+"""
 
 from __future__ import annotations
 

@@ -24,7 +24,7 @@ agentshim/
     stream.py          ToolTracker, parse_json_object
     schema.py          output-schema dialect checks and materialization
     mcp.py             McpServer specs, JSON config-file merge and restore
-    env.py             interactive_env()
+    env.py             interactive_env(), from `bash -i -c 'env -0'`
     _files.py          private: atomic_write, shared by schema.py and mcp.py
   execution/           process transport
     executor.py        CommandRequest, CommandResult, CommandHandle, sinks, CommandExecutor
@@ -59,9 +59,12 @@ Rules:
   handling, MCP file merge, schema materialization) lives in `core/`.
 - Every provider package has the same shape: `provider.py`, `parser.py`,
   `events.py`, `scripted.py`, and an `__init__.py` exporting
-  `<Name>Provider`, `PROFILE`, `<Name>StreamParser`, `fold_usage`,
-  `scripted_lines`, and `mcp_entry` where the provider has one. Anything
-  beyond that is provider-specific (Claude's `sandbox.py` and `hooks/`).
+  `<Name>Provider`, `PROFILE`, `<Name>StreamParser`, `scripted_lines`, and
+  `mcp_entry` where the provider has one. `fold_usage` is deliberately not on
+  that list: every package has one and no two take the same arguments, so a
+  caller could never write code against the name. It stays private to its own
+  `parser.py`. Anything beyond that is provider-specific (Claude's
+  `sandbox.py` and `hooks/`).
 - Imports inside `agentshim/` are absolute across packages
   (`from agentshim.core.events import ...`) and relative between siblings of
   the same package (`from .parser import ...`).
@@ -169,7 +172,8 @@ nonzero `exit_code` and an empty `stdout`, on every provider.
 field-wise so per-turn usages fold into a session total.
 `ProviderUsage.raw` holds the last raw provider usage mapping for
 diagnostics. Each provider package normalizes its CLI's counts in a
-`fold_usage` function.
+`fold_usage` function private to its own `parser.py`; the five signatures
+have nothing in common, so the name is not part of the package contract.
 
 ### Errors
 
@@ -277,7 +281,7 @@ class AgentSession:
     session_id: str | None              # readable and writable
     last_result: TurnResult | None
     def adopt(self, session_id: str) -> bool   # False if unsupported or a conversation is live
-    def forget(self) -> None
+    def forget(self) -> bool                   # False if a turn is in flight
     def turn(self, request: TurnRequest | str) -> TurnResult
     def cancel(self, grace_s: float = 5.0) -> None   # thread-safe; terminate then kill
 ```
@@ -481,9 +485,11 @@ exit code for a missing transcript, and a resumed turn that failed is
 unusable either way: the caller has to start a fresh conversation. The
 session id is recovered from argv.
 
-**`adopt` refuses while a turn is in flight**, tracked by the session's idle
-flag rather than by the presence of a process handle: the handle only appears
-once the executor has started the process, which is too late.
+**`adopt` and `forget` both refuse while a turn is in flight**, tracked by
+the session's idle flag rather than by the presence of a process handle: the
+handle only appears once the executor has started the process, which is too
+late. Both return `bool` rather than raising, because racing a turn is a
+scheduling question the caller can retry, not a programming error.
 
 **`cancel` records the request when there is no handle yet.** The same
 too-late window (installing MCP servers, building argv, spawning) would

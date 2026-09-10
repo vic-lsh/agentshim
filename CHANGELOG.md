@@ -26,7 +26,9 @@ provider. `import-linter` enforces the ordering as a build gate
 - `agentshim/providers/<name>/` holds one CLI each, all with the same
   layout: `provider.py`, `parser.py`, `events.py`, `scripted.py`, and an
   `__init__.py` exporting `<Name>Provider`, `PROFILE`, `scripted_lines`.
-  All five ship: claude, codex, copilot, gemini, opencode.
+  All five ship: claude, codex, copilot, gemini, opencode. `fold_usage` is
+  not part of that contract: every package has one and no two take the same
+  arguments, so it stays private to its own `parser.py`.
 - `agentshim/testing/` is new and part of the public API.
 
 `ProviderProfile` declares every optional behaviour, so no caller probes a
@@ -158,6 +160,24 @@ needs a `cwd`, and raises `ProviderCapabilityError` without one.
   `parse_json_object` returns `None` for blank lines, invalid JSON and
   non-objects alike, and the parser emits `RawOutput` so the line stays
   observable instead of crashing the turn or being dropped.
+- **`ConsoleEventHandler` painted failed tool results green.** It chose the
+  colour from whether there was any output rather than from `exit_code`, so a
+  failure read as a success. Failures are red now, and a failed result with no
+  output says so instead of "ran successfully".
+- **`AgentSession.forget()` could race a running turn.** It cleared
+  `session_id` without the session lock, so an id the in-flight turn was about
+  to write survived the forget, or an id nobody else had was dropped. It now
+  follows `adopt`'s rule, refusing under the lock while a turn is in flight,
+  and returns `bool` to say which happened.
+- **`interactive_env()` truncated multi-line variables.** The probe parsed
+  `env` output by splitting on newlines, so a value containing one (a key, an
+  exported shell function) was cut short and its remaining lines became junk
+  keys. The probe asks for `env -0` and splits on NUL, falling back to plain
+  `env` where `-0` is not supported.
+- **Claude's read-confinement hook quoted paths by hand.** The command was
+  assembled by wrapping each part in literal double quotes, which leaves `$`,
+  backticks and `"` inside a path live for the shell Claude runs it in. It uses
+  `shlex.join` now.
 - **Claude tool results rendered as Python dict reprs.** A `tool_result`
   whose content is a list of blocks, which is how Claude sends anything but
   plain text, was flattened with `str()`, so `ToolResult.stdout` carried
@@ -283,6 +303,11 @@ needs a `cwd`, and raises `ProviderCapabilityError` without one.
   MCP installs when the turn has no host `cwd`, which is the container case
   (the CLI runs at the container path while the config file belongs on the
   bind-mounted host workspace). Defaults to `cwd`.
+- `ClaudeProvider`, `CodexProvider`, `CopilotProvider`, `GeminiProvider`,
+  `OpencodeProvider` and `SandboxConfig` are exported from `agentshim`
+  directly. The docs already told callers to construct them, so they were
+  reaching into `agentshim.providers.<name>` for something the public API
+  should have carried.
 - `scripts/check_imports.sh` and the `[tool.importlinter]` contract.
 - `__version__` on the package.
 

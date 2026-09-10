@@ -12,6 +12,7 @@ See https://code.claude.com/docs/en/sandboxing.
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -136,7 +137,10 @@ def _confine_reads_hook(roots: list[str]) -> dict[str, Any]:
     """
     resolved = [os.path.realpath(root) for root in roots]
     parts = [sys.executable, CONFINE_READS_HOOK, *resolved]
-    command = " ".join(f'"{part}"' for part in parts)
+    # Claude runs the hook through a shell. Wrapping each part in literal
+    # double quotes leaves $, ` and " inside a path live; ``shlex.quote``
+    # does not.
+    command = shlex.join(parts)
     return {
         "PreToolUse": [
             {

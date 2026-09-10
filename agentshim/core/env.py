@@ -35,12 +35,31 @@ def interactive_env(*, refresh: bool = False) -> dict[str, str]:
 
 
 def _probe() -> dict[str, str]:
-    """Run ``bash -i -c env`` once and parse its output into a mapping."""
+    """Run ``bash -i -c 'env -0'`` once and parse its output into a mapping.
+
+    ``env -0`` separates entries with NUL, which is the only separator a
+    variable's own value cannot contain: a multi-line value (a private key, a
+    shell function exported into the environment) split on newlines silently
+    truncates that variable and turns the rest of it into junk keys. ``env
+    -0`` is a GNU extension, so a shell whose ``env`` does not have it falls
+    back to plain ``env`` and the line-based reading.
+    """
+    raw = _run_env("env -0")
+    if raw is None:
+        raw = _run_env("env")
+    if raw is None:
+        return os.environ.copy()
+    return _parse_env(raw) or os.environ.copy()
+
+
+def _run_env(command: str) -> str | None:
+    """Run *command* in an interactive shell, or ``None`` if it did not work."""
     try:
         # start_new_session detaches from the TTY so `bash -i` setting its
         # process group cannot stop us with SIGTTOU/SIGTTIN.
-        completed = subprocess.run(
-            ["/bin/bash", "-i", "-c", "env"],
+        # The command is one of this module's two literals, never caller input.
+        completed = subprocess.run(  # noqa: S603
+            ["/bin/bash", "-i", "-c", command],
             capture_output=True,
             text=True,
             check=False,
@@ -48,13 +67,18 @@ def _probe() -> dict[str, str]:
             timeout=_INTERACTIVE_ENV_TIMEOUT_S,
         )
     except (OSError, subprocess.SubprocessError):
-        return os.environ.copy()
+        return None
     if completed.returncode != 0:
-        return os.environ.copy()
+        return None
+    return completed.stdout
 
+
+def _parse_env(raw: str) -> dict[str, str]:
+    """Split a dump of the environment into entries, NUL-separated if it is."""
+    entries = raw.split("\0") if "\0" in raw else raw.splitlines()
     env: dict[str, str] = {}
-    for line in completed.stdout.splitlines():
-        if "=" in line:
-            key, value = line.split("=", 1)
+    for entry in entries:
+        if "=" in entry:
+            key, value = entry.split("=", 1)
             env[key] = value
-    return env or os.environ.copy()
+    return env

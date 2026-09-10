@@ -163,6 +163,62 @@ class TestToolResults:
         assert isinstance(result, ToolResult)
         assert result.stdout == "a\nb"
 
+    def test_text_content_blocks_contribute_their_text(self) -> None:
+        """A block list must not reach the caller as Python dict reprs."""
+        parser, events = _parser()
+        parser.feed_stdout(
+            _line(
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "t1",
+                                "content": [
+                                    {"type": "text", "text": "first line"},
+                                    {"type": "text", "text": "second line"},
+                                ],
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        result = events[-1]
+        assert isinstance(result, ToolResult)
+        assert result.stdout == "first line\nsecond line"
+
+    def test_a_non_text_block_is_rendered_as_json(self) -> None:
+        parser, events = _parser()
+        parser.feed_stdout(
+            _line(
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "t1",
+                                "content": [
+                                    {"type": "text", "text": "caption"},
+                                    {"type": "image", "source": {"type": "base64", "data": "aGk="}},
+                                ],
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        result = events[-1]
+        assert isinstance(result, ToolResult)
+        caption, rendered = result.stdout.split("\n")
+        assert caption == "caption"
+        assert json.loads(rendered) == {
+            "type": "image",
+            "source": {"type": "base64", "data": "aGk="},
+        }
+
     def test_an_error_result_lands_on_stderr(self) -> None:
         parser, events = _parser()
         parser.feed_stdout(

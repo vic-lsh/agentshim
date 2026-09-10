@@ -158,6 +158,11 @@ needs a `cwd`, and raises `ProviderCapabilityError` without one.
   `parse_json_object` returns `None` for blank lines, invalid JSON and
   non-objects alike, and the parser emits `RawOutput` so the line stays
   observable instead of crashing the turn or being dropped.
+- **Claude tool results rendered as Python dict reprs.** A `tool_result`
+  whose content is a list of blocks, which is how Claude sends anything but
+  plain text, was flattened with `str()`, so `ToolResult.stdout` carried
+  `{'type': 'text', 'text': 'hi'}` instead of `hi`. Text blocks now
+  contribute their text and every other block is serialized as JSON.
 - **`HttpMcpServer` meant a different transport on every provider.** The same
   spec became SSE on claude and copilot but streamable HTTP on gemini, codex
   and opencode, so a server reachable on one provider silently failed on

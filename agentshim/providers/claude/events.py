@@ -6,6 +6,7 @@ and so a change in Claude's wire format has one place to land.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -170,14 +171,33 @@ def _tool_result(data: Mapping[str, Any]) -> ToolResultBlock | None:
 
 
 def _tool_output(value: object) -> str:
-    """Flatten a tool_result payload, which may be a string or a block list."""
+    """Flatten a tool_result payload, which may be a string or a block list.
+
+    Anything but plain text arrives as a list of content blocks. Rendering
+    those with ``str()`` prints Python dict reprs, single quotes and ``True``
+    included, into a result a caller displays or re-parses, so text blocks
+    contribute their text and every other block is serialized as JSON.
+    """
     if value is None:
         return ""
     if isinstance(value, str):
         return value
     if isinstance(value, list):
-        return "\n".join(str(item) for item in cast("list[object]", value))
-    return str(value)
+        return "\n".join(_output_block(item) for item in cast("list[object]", value))
+    return _output_block(value)
+
+
+def _output_block(item: object) -> str:
+    """Render one content block of a tool result."""
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict):
+        block = cast("dict[str, Any]", item)
+        if block.get("type") == "text":
+            return _text(block.get("text"))
+    # ``default=str`` because a block may carry something JSON cannot encode
+    # and a tool result is never worth failing the turn over.
+    return json.dumps(item, ensure_ascii=False, default=str)
 
 
 def _text(value: object) -> str:

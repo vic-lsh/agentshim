@@ -1,35 +1,47 @@
 # MCP Servers
 
-Claude Code and Codex can be configured with MCP servers by passing
-`HttpMcpServer` and `StdioMcpServer` objects at construction time.
+Ask for MCP servers per turn. agentshim installs them the way the provider
+expects, and restores whatever it changed when the turn ends, including when
+the turn fails.
 
 ```python
-from agentshim import ClaudeCodeCodingAgent, HttpMcpServer, StdioMcpServer
+from agentshim import CliAgent, StdioMcpServer, TurnRequest
 
-agent = ClaudeCodeCodingAgent(
-    model="sonnet",
-    mcp_servers=[
-        HttpMcpServer(
-            name="docs",
-            url="http://localhost:9000/sse",
-            headers={"Authorization": "Bearer dev-token"},
-        ),
-        StdioMcpServer(
-            name="github",
-            command="npx",
-            args=["-y", "@modelcontextprotocol/server-github"],
-            env={"GITHUB_TOKEN": "ghp_example"},
-        ),
-    ],
+servers = [
+    StdioMcpServer(
+        name="issues",
+        command="python",
+        args=["-m", "board.mcp", "issues.json"],
+        env={"BOARD_TOKEN": "..."},
+    )
+]
+
+agent = CliAgent("claude")
+agent.start_session(cwd="/workspace").turn(
+    TurnRequest(prompt="File a bug for the failing test.", mcp_servers=servers)
 )
-
-chat = agent.start_session(cwd=".")
-print(chat.generate("Use the MCP tools to inspect the repo."))
 ```
 
-Notes:
+`HttpMcpServer(name=..., url=..., headers=...)` describes an HTTP/SSE server.
 
-- `HttpMcpServer` is for HTTP/SSE-backed MCP servers.
-- `StdioMcpServer` is for subprocess-backed MCP servers.
-- Gemini and Opencode currently reject `mcp_servers`; use Claude Code or Codex
-  if you need MCP.
+## How installation works
+
+`ProviderProfile.mcp` declares the mechanism:
+
+- `CONFIG_FILE`: the servers are merged into the provider's JSON config in the
+  workspace (`.mcp.json` for Claude Code). The original bytes are kept and
+  written back on restore. If the file changed during the turn, only the
+  entries agentshim added are removed: an edit the agent made to one of them,
+  a server it added, and unrelated top-level keys all survive. Deleting the
+  file during the turn is treated as a workspace edit and is not undone.
+- `CLI_FLAGS`: the servers become flags appended to argv; nothing outlives the
+  process.
+- `NONE`: asking for servers raises `ProviderCapabilityError`.
+
+A `CONFIG_FILE` provider needs a `cwd`, since that is where the config lives.
+
+## Doing it yourself
+
+`install_config_file(target, server_key=..., servers=..., defaults=...)`
+returns an installation whose `restore()` is idempotent, if you need the same
+merge semantics outside a turn.

@@ -1,23 +1,54 @@
 # Providers
 
-If you already know which backend you want, construct the provider class
-yourself.
+`get_provider(name)` resolves a name to a provider with its default options;
+`provider_names()` lists what is available.
 
 ```python
-from agentshim import ClaudeCodeCodingAgent
+from agentshim import CliAgent, get_provider, provider_names
 
-agent = ClaudeCodeCodingAgent(model="sonnet")
-chat = agent.start_session(cwd=".")
-
-print(chat.generate("What does this project do?"))
-print(chat.generate("Which files should I read first?"))
+print(provider_names())
+agent = CliAgent("claude")
 ```
 
-The bundled provider classes are:
+Pass a provider instance instead of a name when you need a provider-specific
+option:
 
-- `ClaudeCodeCodingAgent`
-- `CodexCodingAgent`
-- `GeminiCodingAgent`
-- `OpencodeCodingAgent`
+```python
+from agentshim import CliAgent, interactive_env
+from agentshim.providers.claude import ClaudeProvider, SandboxConfig
 
-Use `CodingAgent(provider=...)` when the provider should be selected at runtime.
+provider = ClaudeProvider(sandbox=SandboxConfig(allowed_domains=["github.com"]))
+agent = CliAgent(provider, env={**interactive_env(), **provider.sandbox_env})
+```
+
+## Capabilities
+
+Everything a caller needs to know before running a turn is declared on
+`agent.profile`, so nothing has to probe a provider object:
+
+```python
+profile = agent.profile
+profile.supports_resume            # bool
+profile.supports_reasoning_effort  # bool
+profile.mcp                        # McpMechanism
+profile.output_schema              # OutputSchemaStyle
+profile.schema_dialect             # SchemaDialect | None
+profile.state_dirs                 # home-relative provider state
+profile.auth_env_vars              # credential variables to forward
+profile.container_install          # shell commands installing the CLI
+```
+
+Asking for something a provider cannot do raises `ProviderCapabilityError`
+before the process starts.
+
+## Per-provider behaviour
+
+| | claude | codex | gemini | opencode | copilot |
+|---|---|---|---|---|---|
+| resume | `--resume <id>` | `exec resume <id>` | `--resume <id>` | `run --session <id>` | `--resume <id>` |
+| MCP | `.mcp.json` | `--config mcp_servers.*` | `.gemini/settings.json` | `opencode.json` | `--additional-mcp-config` |
+| output schema | `--json-schema`, OPEN | `--output-schema`, STRICT | none | none | none |
+| reasoning effort | `--effort` | `-c model_reasoning_effort` | none | none | none |
+| stream | `stream-json` | `--json` | `stream-json` | `run --format json` | `--output-format json` |
+
+0.6 ships claude. The other four are being ported to the same protocol.

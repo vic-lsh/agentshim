@@ -78,8 +78,9 @@ class NoopInstallation:
 
     argv: Sequence[str] = ()
 
-    def restore(self) -> None:
+    def restore(self) -> str | None:
         """Nothing was installed."""
+        return None
 
 
 @dataclass
@@ -88,8 +89,9 @@ class FlagsInstallation:
 
     argv: Sequence[str]
 
-    def restore(self) -> None:
+    def restore(self) -> str | None:
         """Flags live only in one argv; nothing outlives the process."""
+        return None
 
 
 _MISSING = object()
@@ -133,17 +135,33 @@ class ConfigFileInstallation:
         """
         return self._target
 
-    def restore(self) -> None:
+    def restore(self) -> str | None:
         """Take agentshim's entries back out of the config file.
 
         Idempotent, so a caller can run it from a ``finally`` without tracking
         whether the install got that far. Edits the agent made to the file
         during the turn are preserved, and a file the agent deleted stays
         deleted: both are workspace changes cleanup has no right to undo.
+
+        Never raises. The unmerge reads the file the agent may have rewritten,
+        so it can find something that is no longer JSON, or an object; that is
+        a normal outcome of letting an agent loose in the workspace, and a
+        cleanup that raised for it would destroy the turn's result or mask the
+        error the turn failed with. Anything the unmerge cannot handle falls
+        back to writing the bytes the file had before the turn, and the
+        returned note says so.
         """
         if self._done:
-            return
+            return None
+        try:
+            self._unmerge()
+        except (McpConfigError, OSError) as exc:
+            return self._rewrite_original(exc)
         self._done = True
+        return None
+
+    def _unmerge(self) -> None:
+        """Remove agentshim's entries, keeping every edit the agent made."""
         target = self._target
         backup = self._backup
 
@@ -171,6 +189,34 @@ class ConfigFileInstallation:
             atomic_write(target, json.dumps(current, indent=2).encode())
         else:
             target.unlink()
+
+    def _rewrite_original(self, cause: Exception) -> str:
+        """Put the file back verbatim when the unmerge could not run.
+
+        The precise unmerge needs to read the current file as JSON. When that
+        is impossible the only remaining guarantee worth keeping is that the
+        entries agentshim injected do not outlive the turn, so the file goes
+        back to exactly the bytes it had, or is removed if it had none.
+        """
+        target = self._target
+        original = self._backup.original_bytes
+        try:
+            if original is None:
+                target.unlink(missing_ok=True)
+            else:
+                atomic_write(target, original)
+        except OSError as exc:
+            # Leave ``_done`` unset: a later call may still succeed, and the
+            # injected entries are still in the file until one does.
+            return (
+                f"could not restore MCP config {target} ({cause}); "
+                f"rewriting the original bytes failed too ({exc})"
+            )
+        self._done = True
+        return (
+            f"MCP config {target} could not be unmerged ({cause}); "
+            "wrote back the bytes it had before the turn"
+        )
 
 
 def _restored_servers(current: dict[str, Any], backup: _Backup, target: Path) -> dict[str, Any]:

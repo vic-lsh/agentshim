@@ -226,7 +226,7 @@ class StreamParser(Protocol):
 
 class McpInstallation(Protocol):
     argv: Sequence[str]                       # flags to append (CLI_FLAGS providers), else ()
-    def restore(self) -> None: ...            # idempotent
+    def restore(self) -> str | None: ...      # idempotent, never raises; a note to log
 
 class Provider(Protocol):
     profile: ProviderProfile
@@ -343,7 +343,11 @@ hook is invoked through `sys.executable`.
 
 MCP config-file installation merges servers into the provider's JSON file,
 keeps the original bytes, and restores on `restore()`. If the file changed
-during the turn, only the entries agentshim added are removed.
+during the turn, only the entries agentshim added are removed. `restore()`
+never raises: it runs from the session's `finally`, where an exception would
+destroy a successful `TurnResult` or mask the error the turn failed with. A
+file the agent left unreadable as JSON falls back to the original bytes
+written verbatim, and the returned note is logged through the agent's `log`.
 
 ## Testing support
 

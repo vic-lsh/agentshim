@@ -493,6 +493,56 @@ class TestMcpLifecycle:
             )
         assert not (tmp_path / ".mcp.json").exists()
 
+    def test_a_config_the_agent_broke_is_restored_verbatim(self, tmp_path: Path) -> None:
+        """Cleanup runs in a ``finally``; it must not destroy a good result."""
+        target = tmp_path / ".mcp.json"
+        original = b'{"mcpServers":{"existing":{"command":"user"}}}\n'
+        target.write_bytes(original)
+        notes: list[str] = []
+
+        class Breaking(FakeExecutor):
+            def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
+                target.write_text("not json")
+                return super().run(request, sink)
+
+        executor = Breaking(scripted_turn("claude", text="ok"))
+        result = (
+            _agent(executor, log=notes.append)
+            .start_session(cwd=str(tmp_path))
+            .turn(
+                TurnRequest(
+                    prompt="hi", mcp_servers=[StdioMcpServer(name="board", command="python")]
+                )
+            )
+        )
+
+        assert result.text == "ok"
+        assert target.read_bytes() == original
+        assert any("could not be unmerged" in note for note in notes)
+
+    def test_a_broken_config_does_not_mask_the_error_the_turn_failed_with(
+        self, tmp_path: Path
+    ) -> None:
+        target = tmp_path / ".mcp.json"
+        original = b'{"mcpServers":{"existing":{"command":"user"}}}\n'
+        target.write_bytes(original)
+
+        class Breaking(FakeExecutor):
+            def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
+                target.write_text("not json")
+                return super().run(request, sink)
+
+        executor = Breaking(FakeRun(returncode=3))
+        with pytest.raises(CliExitError) as excinfo:
+            _agent(executor).start_session(cwd=str(tmp_path)).turn(
+                TurnRequest(
+                    prompt="hi", mcp_servers=[StdioMcpServer(name="board", command="python")]
+                )
+            )
+
+        assert excinfo.value.returncode == 3
+        assert target.read_bytes() == original
+
     def test_no_config_is_written_when_no_servers_are_requested(self, tmp_path: Path) -> None:
         executor = FakeExecutor(scripted_turn("claude", text="ok"))
         _agent(executor).start_session(cwd=str(tmp_path)).turn("hi")

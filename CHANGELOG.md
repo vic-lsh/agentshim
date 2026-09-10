@@ -158,6 +158,16 @@ needs a `cwd`, and raises `ProviderCapabilityError` without one.
   `parse_json_object` returns `None` for blank lines, invalid JSON and
   non-objects alike, and the parser emits `RawOutput` so the line stays
   observable instead of crashing the turn or being dropped.
+- **MCP restore could destroy the turn.** `ConfigFileInstallation.restore()`
+  marked itself done before doing any work and raised `McpConfigError` when
+  the agent had left the config file non-JSON or non-object. Raised from the
+  session's `finally`, that discarded a successful `TurnResult` or masked the
+  real `CliExitError`, and left agentshim's injected entries in the file
+  forever. `restore()` now never raises: anything the precise unmerge cannot
+  handle falls back to writing the file's original bytes verbatim (removing
+  the file when there were none), and it reports what it did as a note the
+  session logs through the agent's `log`. `McpInstallation.restore()`
+  therefore returns `str | None` rather than `None`.
 - **Undecodable CLI output.** The child was read in text mode with the
   platform default codec and no error handler, and the reader thread
   swallowed the resulting `UnicodeDecodeError`. One byte that is not valid

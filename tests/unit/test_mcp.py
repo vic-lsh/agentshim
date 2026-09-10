@@ -180,6 +180,91 @@ class TestFileEditedDuringTheTurn:
         assert not target.exists()
 
 
+class TestRestoreNeverRaises:
+    """Restore runs from a ``finally``: raising there would destroy the turn."""
+
+    def test_a_config_that_is_no_longer_json_falls_back_to_the_original_bytes(
+        self, tmp_path: Path
+    ) -> None:
+        target = tmp_path / ".mcp.json"
+        original = b'{"mcpServers":{"existing":{"command":"user"}}}\n'
+        target.write_bytes(original)
+        installation = _install(target)
+
+        target.write_text("not json")
+        note = installation.restore()
+
+        assert target.read_bytes() == original
+        assert note is not None
+        assert "could not be unmerged" in note
+
+    def test_a_config_that_is_no_longer_an_object_falls_back(self, tmp_path: Path) -> None:
+        target = tmp_path / ".mcp.json"
+        original = b'{"theme":"dark"}\n'
+        target.write_bytes(original)
+        installation = _install(target)
+
+        target.write_text("[1, 2]")
+
+        assert installation.restore() is not None
+        assert target.read_bytes() == original
+
+    def test_a_broken_config_we_created_is_removed(self, tmp_path: Path) -> None:
+        target = tmp_path / ".mcp.json"
+        installation = _install(target)
+
+        target.write_text("not json")
+
+        assert installation.restore() is not None
+        assert not target.exists()
+
+    def test_a_server_key_that_is_no_longer_an_object_falls_back(self, tmp_path: Path) -> None:
+        target = tmp_path / ".mcp.json"
+        original = b'{"theme":"dark"}\n'
+        target.write_bytes(original)
+        installation = _install(target)
+
+        target.write_text('{"theme":"dark","mcpServers":"nope"}')
+
+        assert installation.restore() is not None
+        assert target.read_bytes() == original
+
+    def test_the_fallback_is_not_repeated_on_a_second_restore(self, tmp_path: Path) -> None:
+        target = tmp_path / ".mcp.json"
+        original = b'{"theme":"dark"}\n'
+        target.write_bytes(original)
+        installation = _install(target)
+
+        target.write_text("not json")
+        assert installation.restore() is not None
+
+        target.write_text("agent wrote this after the turn")
+        assert installation.restore() is None
+        assert target.read_text() == "agent wrote this after the turn"
+
+    def test_a_restore_that_cannot_write_reports_instead_of_raising(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / ".mcp.json"
+        target.write_bytes(b'{"theme":"dark"}\n')
+        installation = _install(target)
+        target.write_text("not json")
+
+        def fail_mkstemp(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            message = "read-only file system"
+            raise OSError(message)
+
+        monkeypatch.setattr("agentshim.core._files.tempfile.mkstemp", fail_mkstemp)
+        note = installation.restore()
+
+        assert note is not None
+        assert "read-only file system" in note
+
+    def test_the_trivial_installations_report_nothing(self) -> None:
+        assert NoopInstallation().restore() is None
+        assert FlagsInstallation(["--config", "x=1"]).restore() is None
+
+
 class TestFailureModes:
     def test_invalid_json_config_raises(self, tmp_path: Path) -> None:
         target = tmp_path / ".mcp.json"

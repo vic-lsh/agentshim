@@ -262,7 +262,9 @@ class AgentSession:
             self.last_result = turn_result
             return turn_result
         finally:
-            installation.restore()
+            note = installation.restore()
+            if note:
+                agent.log(note)
             self._set_handle(None)
             self._idle.set()
 

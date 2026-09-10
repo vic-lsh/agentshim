@@ -83,11 +83,15 @@ class McpInstallation(Protocol):
 
     argv: Sequence[str]
 
-    def restore(self) -> None:
+    def restore(self) -> str | None:
         """Put the workspace back the way the turn found it.
 
-        Must be idempotent and safe to call from a ``finally`` block, including
-        when the install itself failed part way through.
+        Must be idempotent, must never raise, and must be safe to call from a
+        ``finally`` block, including when the install itself failed part way
+        through: cleanup that raises there would destroy the turn's result or
+        mask the error the turn actually failed with. Returns a note when the
+        workspace could not be restored the normal way, for the caller to log,
+        and ``None`` otherwise.
         """
         ...
 

@@ -33,6 +33,26 @@ exactly when `mcp` is `CONFIG_FILE` and matches where `install_mcp` actually
 writes, `state_root_env` is uppercase when set, and `container_env` keys are
 uppercase.
 
+### Added
+
+- `agentshim.testing.scripted_resume_failure(provider, *, session_id=None)`:
+  a `FakeRun` that fails the way *provider* recognises a lost resumed
+  conversation, so a consumer can test `SessionResumeError` handling without
+  knowing any provider's wire format. Backed by a required
+  `resume_failure_lines(...)` entry in every `providers/<name>/scripted.py`,
+  found through `providers.get_resume_failure_lines(name)` the same way
+  `scripted_turn` finds `scripted_lines`, so a new provider cannot ship
+  without one.
+- `agentshim.testing.installed_mcp_servers(provider, request, workspace)`:
+  the MCP servers one turn installed, keyed by server name, each normalized
+  to `command`/`args`/`env` (stdio) or `url`/`transport` (HTTP) regardless of
+  how the provider itself renders it. Reads the config file for a
+  CONFIG_FILE provider and parses `request.argv` for a CLI_FLAGS one, via a
+  `parse_mcp_servers` kept next to the renderer it inverts
+  (`providers/codex/provider.py`, `providers/copilot/provider.py`). Meant to
+  be called from inside a `FakeExecutor` `run` callback: a CONFIG_FILE
+  provider's config exists only for the lifetime of the turn.
+
 ## 0.6.0
 
 A restructure, not an upgrade. 0.6 replaces the whole public API of 0.5 and

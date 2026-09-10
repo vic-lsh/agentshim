@@ -6,16 +6,24 @@ events; never on a provider's internal attributes.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from agentshim.core.errors import CliNotFoundError, CliTimeoutError
+from agentshim.core.profile import McpMechanism
 from agentshim.core.usage import TokenUsage
 from agentshim.execution.executor import CommandResult
-from agentshim.providers import get_scripted_lines
+from agentshim.providers import get_provider, get_resume_failure_lines, get_scripted_lines
+from agentshim.providers.claude import provider as _claude
+from agentshim.providers.codex.provider import parse_mcp_servers as _parse_codex_mcp_servers
+from agentshim.providers.copilot.provider import parse_mcp_servers as _parse_copilot_mcp_servers
+from agentshim.providers.gemini import provider as _gemini
+from agentshim.providers.opencode import provider as _opencode
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
+    from pathlib import Path
 
     from agentshim.core.events import AgentEvent
     from agentshim.execution.executor import CommandRequest, CommandStreamSink
@@ -164,11 +172,147 @@ def scripted_turn(  # noqa: PLR0913
     return FakeRun(stdout=lines, returncode=returncode)
 
 
+def scripted_resume_failure(provider: str, *, session_id: str | None = None) -> FakeRun:
+    """Build a ``FakeRun`` for a resumed turn *provider* cannot continue.
+
+    Serve this to a session that has already ``adopt``-ed a session id: the
+    turn's ``resumed`` flag plus *provider*'s own exit-classification rule
+    (documented on ``docs/architecture.md``, "Resume diagnosis is
+    provider-dependent") is what turns the nonzero exit into
+    ``SessionResumeError`` on claude, codex, gemini and opencode. Copilot
+    gives no such signal, so the same run there stays a plain
+    ``CliExitError``. Served to a *fresh* (non-resumed) turn instead, every
+    provider's rule falls back to a plain ``CliExitError`` too.
+
+    Finds the scripted failure through ``providers/<name>/scripted.py``'s
+    ``resume_failure_lines``, the same convention ``scripted_turn`` uses for
+    ``scripted_lines``, so a new provider cannot ship without one.
+
+    Args:
+        provider: A registered provider name.
+        session_id: Folded into the scripted failure message for realism;
+            it does not change what a raised error reports, which is always
+            read from the resumed turn's own argv.
+
+    Returns:
+        A ``FakeRun`` with a nonzero exit code.
+    """
+    stdout, stderr, returncode = get_resume_failure_lines(provider)(session_id=session_id)
+    return FakeRun(stdout=list(stdout), stderr=list(stderr), returncode=returncode)
+
+
+def installed_mcp_servers(
+    provider: str, request: CommandRequest, workspace: Path
+) -> dict[str, dict[str, Any]]:
+    """Return the MCP servers *request* installed for one turn, keyed by name.
+
+    Call this from inside a ``FakeExecutor`` ``run`` callback, while the turn
+    that installed the servers is still running: a config-file provider's
+    config file exists only for the lifetime of the turn, since the library
+    restores it from the session's ``finally`` once the run returns, and a
+    CLI-flags provider's servers live only in the one argv the run received.
+
+    Each entry is a plain dict in a canonical shape, regardless of how the
+    provider itself renders it: ``command``, ``args`` and ``env`` for a
+    server started over stdio, ``url`` and ``transport`` for one reached over
+    HTTP.
+
+    Args:
+        provider: A registered provider name.
+        request: The ``CommandRequest`` the executor's ``run`` callback
+            received for this turn.
+        workspace: The turn's MCP workspace (its ``cwd``, unless
+            ``TurnRequest.mcp_workspace`` overrode it). Unused for a
+            CLI-flags provider.
+
+    Returns:
+        One canonical entry per installed server.
+    """
+    profile = get_provider(provider).profile
+    if profile.mcp is McpMechanism.NONE:
+        return {}
+    if profile.mcp is McpMechanism.CLI_FLAGS:
+        return _flags_mcp_servers(provider, request.argv)
+    return _config_file_mcp_servers(provider, workspace)
+
+
+def _flags_mcp_servers(provider: str, argv: Sequence[str]) -> dict[str, dict[str, Any]]:
+    if provider == "codex":
+        return _parse_codex_mcp_servers(argv)
+    if provider == "copilot":
+        return _parse_copilot_mcp_servers(argv)
+    msg = f"no MCP-flags parser registered for provider {provider!r}"
+    raise ValueError(msg)
+
+
+def _config_file_mcp_servers(provider: str, workspace: Path) -> dict[str, dict[str, Any]]:
+    if provider == "claude":
+        target = workspace / _claude.MCP_CONFIG_FILENAME
+        server_key = _claude.MCP_SERVER_KEY
+        canonical = _claude_mcp_entry
+    elif provider == "gemini":
+        target = workspace / _gemini.MCP_CONFIG_FILENAME
+        server_key = _gemini.MCP_SERVER_KEY
+        canonical = _gemini_mcp_entry
+    elif provider == "opencode":
+        target = workspace / _opencode.MCP_CONFIG_FILENAME
+        server_key = _opencode.MCP_SERVER_KEY
+        canonical = _opencode_mcp_entry
+    else:
+        msg = f"no MCP config-file reader registered for provider {provider!r}"
+        raise ValueError(msg)
+    if not target.exists():
+        return {}
+    config = json.loads(target.read_text())
+    servers = config.get(server_key, {})
+    return {name: canonical(raw) for name, raw in servers.items()}
+
+
+def _claude_mcp_entry(raw: Mapping[str, Any]) -> dict[str, Any]:
+    if "url" in raw:
+        return {"url": raw["url"], "transport": raw.get("type", "http")}
+    return {
+        "command": raw.get("command", ""),
+        "args": list(raw.get("args", ())),
+        "env": dict(raw.get("env", {})),
+    }
+
+
+def _gemini_mcp_entry(raw: Mapping[str, Any]) -> dict[str, Any]:
+    # gemini picks the transport by which key holds the address: ``httpUrl``
+    # is streamable HTTP, plain ``url`` is SSE.
+    if "httpUrl" in raw:
+        return {"url": raw["httpUrl"], "transport": "http"}
+    if "url" in raw:
+        return {"url": raw["url"], "transport": "sse"}
+    return {
+        "command": raw.get("command", ""),
+        "args": list(raw.get("args", ())),
+        "env": dict(raw.get("env", {})),
+    }
+
+
+def _opencode_mcp_entry(raw: Mapping[str, Any]) -> dict[str, Any]:
+    if raw.get("type") == "remote":
+        # opencode has one remote server type and negotiates the transport
+        # itself, so it is not recoverable from the config; "http" matches
+        # ``HttpMcpServer``'s own default.
+        return {"url": raw["url"], "transport": "http"}
+    command = list(raw.get("command", ()))
+    return {
+        "command": command[0] if command else "",
+        "args": command[1:],
+        "env": dict(raw.get("environment", {})),
+    }
+
+
 __all__ = [
     "FakeCommandHandle",
     "FakeExecutor",
     "FakeRun",
     "RecordingEventHandler",
     "TokenUsage",
+    "installed_mcp_servers",
+    "scripted_resume_failure",
     "scripted_turn",
 ]

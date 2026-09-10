@@ -11,7 +11,7 @@ from agentshim.core.profile import McpMechanism, OutputSchemaStyle, ProviderProf
 from .parser import CopilotStreamParser
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
     from pathlib import Path
 
     from agentshim.core.errors import AgentShimError, CliExitError
@@ -145,3 +145,37 @@ def mcp_entry(server: McpServer) -> dict[str, Any]:
     if stdio.env:
         rendered["env"] = dict(stdio.env)
     return rendered
+
+
+def parse_mcp_servers(argv: Sequence[str]) -> dict[str, dict[str, Any]]:
+    """Recover the MCP servers rendered into *argv* by ``install_mcp``.
+
+    The inverse of ``mcp_entry``, kept next to it so the two cannot drift:
+    reads the ``--additional-mcp-config`` flag's JSON payload back and maps
+    each entry to the canonical shape ``installed_mcp_servers`` returns.
+
+    Args:
+        argv: The argv a turn actually ran, as recorded on a ``CommandRequest``.
+
+    Returns:
+        One canonical entry per server, keyed by server name.
+    """
+    args = list(argv)
+    if MCP_CONFIG_FLAG not in args:
+        return {}
+    index = args.index(MCP_CONFIG_FLAG)
+    if index + 1 >= len(args):
+        return {}
+    config = json.loads(args[index + 1])
+    servers = config.get(MCP_SERVER_KEY, {})
+    return {name: _canonical_entry(raw) for name, raw in servers.items()}
+
+
+def _canonical_entry(raw: Mapping[str, Any]) -> dict[str, Any]:
+    if "url" in raw:
+        return {"url": raw["url"], "transport": raw.get("type", "http")}
+    return {
+        "command": raw.get("command", ""),
+        "args": list(raw.get("args", ())),
+        "env": dict(raw.get("env", {})),
+    }

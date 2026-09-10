@@ -85,6 +85,25 @@ def scripted_lines(
     return lines
 
 
+def resume_failure_lines(*, session_id: str | None = None) -> tuple[list[str], list[str], int]:
+    """Build the stdout, stderr and exit code of a resumed turn with no rollout.
+
+    ``CodexProvider.classify_exit`` is the one provider that names its
+    failure explicitly: it matches "thread/resume failed" and "no rollout
+    found" on stderr, so unlike the other providers a plain nonzero exit is
+    not enough here; the message has to say so.
+
+    Args:
+        session_id: Thread id to name in the scripted stderr message.
+
+    Returns:
+        ``(stdout, stderr, returncode)`` for a ``FakeRun``.
+    """
+    thread = session_id or "unknown-thread"
+    stderr = [f"thread/resume failed: no rollout found for thread {thread}\n"]
+    return [], stderr, 1
+
+
 def _usage_payload(usage: TokenUsage | None) -> dict[str, int]:
     if usage is None:
         return {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0}

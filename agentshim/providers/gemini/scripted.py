@@ -90,6 +90,27 @@ def scripted_lines(
     return lines
 
 
+def resume_failure_lines(*, session_id: str | None = None) -> tuple[list[str], list[str], int]:
+    """Build the stdout, stderr and exit code of a resumed turn Gemini cannot continue.
+
+    ``GeminiProvider.classify_exit`` treats any nonzero exit of a resumed
+    turn as ``SessionResumeError``: the CLI reports a refused resume the same
+    way it reports any other startup failure. ``session_id`` is folded into
+    the message for realism only; the id ``SessionResumeError`` actually
+    reports comes from the resumed turn's own argv, not from anything
+    scripted here.
+
+    Args:
+        session_id: Conversation id to name in the scripted stderr message.
+
+    Returns:
+        ``(stdout, stderr, returncode)`` for a ``FakeRun``.
+    """
+    detail = f" {session_id}" if session_id else ""
+    stderr = [f"Error: failed to load session{detail}\n"]
+    return [], stderr, 1
+
+
 def _stats(usage: TokenUsage | None, tool_calls: int) -> dict[str, int]:
     """Render token counts the way ``convertToStreamStats`` does.
 

@@ -39,7 +39,8 @@ agentshim/
     gemini/            provider.py, parser.py, events.py, scripted.py
     opencode/          provider.py, parser.py, events.py, scripted.py
   testing/             test doubles shipped for consumers
-    __init__.py        FakeExecutor, FakeRun, RecordingEventHandler, scripted_turn
+    __init__.py        FakeExecutor, FakeRun, RecordingEventHandler, scripted_turn,
+                       scripted_resume_failure, installed_mcp_servers
 ```
 
 Rules:
@@ -59,12 +60,13 @@ Rules:
   handling, MCP file merge, schema materialization) lives in `core/`.
 - Every provider package has the same shape: `provider.py`, `parser.py`,
   `events.py`, `scripted.py`, and an `__init__.py` exporting
-  `<Name>Provider`, `PROFILE`, `<Name>StreamParser`, `scripted_lines`, and
-  `mcp_entry` where the provider has one. `fold_usage` is deliberately not on
-  that list: every package has one and no two take the same arguments, so a
-  caller could never write code against the name. It stays private to its own
-  `parser.py`. Anything beyond that is provider-specific (Claude's
-  `sandbox.py` and `hooks/`).
+  `<Name>Provider`, `PROFILE`, `<Name>StreamParser`, `scripted_lines`,
+  `resume_failure_lines`, and `mcp_entry` where the provider has one.
+  `fold_usage` is deliberately not on that list: every package has one and no
+  two take the same arguments, so a caller could never write code against the
+  name. It stays private to its own `parser.py`. Anything beyond that is
+  provider-specific (Claude's `sandbox.py` and `hooks/`, Codex's and
+  Copilot's `parse_mcp_servers`, kept next to the argv renderer it inverts).
 - Imports inside `agentshim/` are absolute across packages
   (`from agentshim.core.events import ...`) and relative between siblings of
   the same package (`from .parser import ...`).
@@ -414,6 +416,44 @@ passed, rather than quietly producing a turn without one.
 
 `FakeCommandHandle` records `terminate()`/`kill()`;
 `RecordingEventHandler.of_type(kind)` filters what it recorded.
+
+```python
+def scripted_resume_failure(provider: str, *, session_id: str | None = None) -> FakeRun
+
+def installed_mcp_servers(
+    provider: str, request: CommandRequest, workspace: Path
+) -> dict[str, dict[str, Any]]
+```
+
+`scripted_resume_failure` builds a `FakeRun` that fails the way *provider*
+recognises a lost resumed conversation, so a consumer can test
+`SessionResumeError` handling without knowing any provider's wire format.
+Serve it to a session that has already `adopt`-ed a session id: on claude,
+codex, gemini and opencode the turn's `resumed` flag plus the nonzero exit is
+what `classify_exit` turns into `SessionResumeError`; served to a *fresh*
+turn instead, or to Copilot at all, the same run raises a plain
+`CliExitError` (Copilot gives no signal that tells a lost session apart from
+any other failure). It finds the scripted failure the same way `scripted_turn`
+does, through `providers.get_resume_failure_lines(name)`, which maps to
+`resume_failure_lines(...)` in `providers/<name>/scripted.py` — a required
+entry, so a new provider cannot ship without one. `session_id` is folded into
+the scripted message for realism only; what a raised error actually reports
+always comes from the resumed turn's own argv.
+
+`installed_mcp_servers` returns the MCP servers one turn installed, keyed by
+server name, each a plain dict in a canonical shape regardless of how the
+provider itself renders it: `command`, `args` and `env` for a server started
+over stdio, `url` and `transport` for one reached over HTTP. For a
+CONFIG_FILE provider it reads the config file the provider writes, using that
+provider's own filename/path and server-key constants; for a CLI_FLAGS
+provider it parses the servers back out of `request.argv` using a
+`parse_mcp_servers` function kept next to the argv renderer it inverts
+(`providers/codex/provider.py`, `providers/copilot/provider.py`), so the two
+cannot drift apart. A CONFIG_FILE provider's config file exists only for the
+lifetime of the turn: the library restores it in the session's `finally`, so
+`installed_mcp_servers` has to be called from inside a `FakeExecutor` `run`
+callback, while the turn is still in flight, not after `agent.run(...)`
+returns.
 
 End-to-end tests under `tests/e2e/` run the real CLIs and are skipped unless
 `AGENTSHIM_E2E=1` and the binary is on PATH, so CI never runs them.

@@ -479,11 +479,13 @@ and `1` where it only reports a boolean.
 `tests/unit/providers/test_conventions.py` pins this and the other rules
 across all five providers.
 
-**Claude's `classify_exit` maps *any* nonzero exit on a resumed turn to
-`SessionResumeError`.** `claude --resume` does not give a distinguishable
-exit code for a missing transcript, and a resumed turn that failed is
-unusable either way: the caller has to start a fresh conversation. The
-session id is recovered from argv.
+**Claude, Gemini and opencode map *any* nonzero exit on a resumed turn to
+`SessionResumeError`.** None of those CLIs gives a distinguishable exit for
+a missing transcript, and a resumed turn that failed is unusable either way:
+the caller has to start a fresh conversation, and without the typed error a
+caller holding a checkpoint would offer the same dead id forever. The session
+id is recovered from argv. Codex is the exception: it names a lost rollout on
+stderr, so only that case is classified.
 
 **`adopt` and `forget` both refuse while a turn is in flight**, tracked by
 the session's idle flag rather than by the presence of a process handle: the

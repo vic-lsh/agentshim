@@ -192,9 +192,13 @@ class ClaudeStreamParser:
             self._emit(ProviderError(self._error))
 
     def _structured_payload(self, frame: ResultFrame) -> object | None:
+        # Only a turn that asked for a schema gets a payload: an unrequested
+        # ``structured_output`` field must never replace the prose answer.
+        if not self._expect_structured:
+            return None
         if frame.structured_output is not None:
             return frame.structured_output
-        if not self._expect_structured or not frame.text:
+        if not frame.text:
             return None
         # Older Claude Code builds put the schema-conformant payload in
         # ``result`` instead of a dedicated field.

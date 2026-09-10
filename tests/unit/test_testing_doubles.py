@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from agentshim import (
@@ -13,10 +14,12 @@ from agentshim import (
     CliTimeoutError,
     CommandRequest,
     NullSink,
+    OutputSchema,
     SessionStarted,
     TokenUsage,
     ToolCall,
     ToolResult,
+    TurnRequest,
     UsageReport,
 )
 from agentshim.testing import (
@@ -171,10 +174,22 @@ class TestScriptedTurn:
         result = _agent(executor).run("go")
         assert result.usage.tokens == usage
 
-    def test_structured_output_round_trips(self) -> None:
+    def test_structured_output_round_trips(self, tmp_path: Path) -> None:
         payload = {"a": 3, "b": [1, 2]}
         executor = FakeExecutor(scripted_turn("claude", text="done", structured_output=payload))
-        assert _agent(executor).run("go").structured_output == payload
+        request = TurnRequest(
+            prompt="go",
+            output_schema=OutputSchema(schema={"type": "object"}, host_dir=tmp_path),
+        )
+        assert _agent(executor).run(request).structured_output == payload
+
+    def test_an_unrequested_structured_payload_is_ignored(self) -> None:
+        # Only a turn that asked for a schema gets a payload; the prose
+        # answer stays the result otherwise.
+        executor = FakeExecutor(scripted_turn("claude", text="done", structured_output={"a": 3}))
+        result = _agent(executor).run("go")
+        assert result.structured_output is None
+        assert result.text == "done"
 
     def test_a_nonzero_return_code_is_scripted(self) -> None:
         run = scripted_turn("claude", text="done", returncode=2)

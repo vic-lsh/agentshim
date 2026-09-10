@@ -299,6 +299,13 @@ needs a `cwd`, and raises `ProviderCapabilityError` without one.
   command with a pipe for stdin, so it can never inherit a TTY.
 - `AgentSession.adopt()`, `forget()`, and a thread-safe `cancel()` that
   terminates the process group and kills it after a grace period.
+- Gemini and opencode classify any nonzero exit of a resumed turn as
+  `SessionResumeError`, the rule Claude already followed: neither CLI can
+  tell a lost session apart from another failure, and a caller holding a
+  checkpoint would otherwise offer the same dead id forever. Codex keeps
+  matching its explicit "no rollout found" message.
+- The Claude parser only reports `structured_output` for a turn that asked
+  for a schema, so an unrequested field can never replace the prose answer.
 - `TurnRequest.mcp_workspace`: the host directory that receives config-file
   MCP installs when the turn has no host `cwd`, which is the container case
   (the CLI runs at the container path while the config file belongs on the

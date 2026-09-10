@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from agentshim.core.errors import ProviderCapabilityError
+from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
 from agentshim.core.mcp import (
     HttpMcpServer,
     NoopInstallation,
@@ -112,15 +112,30 @@ class GeminiProvider:
         )
 
     def classify_exit(self, error: CliExitError, *, resumed: bool) -> AgentShimError:
-        """Return the exit error unchanged.
+        """Any nonzero exit on a resumed turn means the conversation is gone.
 
         Gemini CLI reports a refused resume the same way it reports any other
-        startup failure: a fatal error on stderr and a generic nonzero exit.
-        Mapping a resumed turn's failure to ``SessionResumeError`` would
-        therefore be a guess, so ``resumed`` does not change the outcome.
+        startup failure, so the cause cannot be told apart. A resumed turn
+        that failed is unusable either way: the caller has to start a fresh
+        conversation, and ``SessionResumeError`` is what tells it so.
         """
-        del resumed
+        if resumed:
+            session_id = _resumed_session_id(error.argv, "--resume")
+            if session_id is not None:
+                return SessionResumeError(
+                    error.argv, error.returncode, session_id, error.stdout, error.stderr
+                )
         return error
+
+
+def _resumed_session_id(argv: Sequence[str], flag: str) -> str | None:
+    args = list(argv)
+    if flag not in args:
+        return None
+    index = args.index(flag)
+    if index + 1 >= len(args):
+        return None
+    return args[index + 1]
 
 
 def mcp_entry(server: McpServer) -> dict[str, Any]:

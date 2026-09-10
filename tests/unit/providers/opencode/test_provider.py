@@ -14,6 +14,7 @@ from agentshim import (
     OutputSchemaStyle,
     ProviderCapabilityError,
     ProviderProfile,
+    SessionResumeError,
     StdioMcpServer,
     get_provider,
 )
@@ -158,7 +159,14 @@ class TestClassifyExit:
         error = CliExitError(["opencode", "run"], 1, "", "boom")
         assert OpencodeProvider().classify_exit(error, resumed=False) is error
 
-    def test_a_resumed_turn_keeps_the_exit_error_too(self) -> None:
+    def test_any_nonzero_exit_on_a_resumed_turn_means_the_session_is_gone(self) -> None:
         """opencode gives no distinguishable exit code for a refused resume."""
         error = CliExitError(["opencode", "run", "--session", "ses_1"], 1, "", "session not found")
+        classified = OpencodeProvider().classify_exit(error, resumed=True)
+        assert isinstance(classified, SessionResumeError)
+        assert classified.session_id == "ses_1"
+        assert classified.returncode == 1
+
+    def test_a_resumed_turn_without_the_flag_in_argv_stays_generic(self) -> None:
+        error = CliExitError(["opencode", "run"], 1, "", "boom")
         assert OpencodeProvider().classify_exit(error, resumed=True) is error

@@ -12,7 +12,12 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from agentshim.core.errors import CliCheckError, CliNotFoundError, CliTimeoutError
+from agentshim.core.errors import (
+    CliCheckError,
+    CliExitError,
+    CliNotFoundError,
+    CliTimeoutError,
+)
 
 from .executor import CommandRequest, CommandResult, NullSink
 
@@ -115,6 +120,11 @@ class HostCommandExecutor:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            # A provider CLI may print a byte that is not valid UTF-8 (a file
+            # excerpt, a mis-encoded tool result). Without these the decoder
+            # raises mid-stream and the rest of the turn's output is lost.
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
             cwd=request.cwd,
             env=dict(request.env),
@@ -124,11 +134,12 @@ class HostCommandExecutor:
         stdout_lines: list[str] = []
         stderr_lines: list[str] = []
         workers: list[threading.Thread] = []
+        failures: list[tuple[str, BaseException]] = []
 
         try:
             workers.append(_spawn(_write_stdin, process.stdin, request.stdin))
-            workers.append(_spawn(_pump, process.stdout, "out", lines))
-            workers.append(_spawn(_pump, process.stderr, "err", lines))
+            workers.append(_spawn(_pump, process.stdout, "out", lines, failures))
+            workers.append(_spawn(_pump, process.stderr, "err", lines, failures))
             sink.started(ProcessCommandHandle(process))
             deadline = None if request.timeout is None else time.monotonic() + request.timeout
 
@@ -161,11 +172,38 @@ class HostCommandExecutor:
             _join(workers)
             _close(process)
 
-        return CommandResult(
-            returncode=process.returncode if process.returncode is not None else -1,
-            stdout="".join(stdout_lines),
-            stderr="".join(stderr_lines),
-        )
+        returncode = process.returncode if process.returncode is not None else -1
+        stdout = "".join(stdout_lines)
+        stderr = "".join(stderr_lines)
+        if failures:
+            raise _reader_failure(argv, returncode, stdout, stderr, failures[0])
+        return CommandResult(returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def _reader_failure(
+    argv: list[str],
+    returncode: int,
+    stdout: str,
+    stderr: str,
+    failure: tuple[str, BaseException],
+) -> CliExitError:
+    """Turn a reader-thread crash into an error the caller cannot mistake for success.
+
+    A stream that stopped being read is not a stream that ended: presenting it
+    as a clean EOF would hand back a truncated (often empty) transcript with a
+    zero exit code. The bytes that were read before the failure are kept, so a
+    caller can still see how far the turn got.
+    """
+    kind, exc = failure
+    stream_name = "stdout" if kind == "out" else "stderr"
+    binary = argv[0] if argv else "cli"
+    return CliExitError(
+        argv,
+        returncode,
+        stdout,
+        stderr,
+        message=f"could not read {stream_name} from {binary}: {exc!r}",
+    )
 
 
 def _spawn(target: object, *args: object) -> threading.Thread:
@@ -188,16 +226,25 @@ def _write_stdin(stream: IO[str] | None, data: str | None) -> None:
             stream.close()
 
 
-def _pump(stream: IO[str] | None, kind: str, sink: queue.Queue[tuple[str, str | None]]) -> None:
+def _pump(
+    stream: IO[str] | None,
+    kind: str,
+    sink: queue.Queue[tuple[str, str | None]],
+    failures: list[tuple[str, BaseException]],
+) -> None:
     if stream is None:
         sink.put((kind, _EOF))
         return
     try:
         for line in iter(stream.readline, ""):
             sink.put((kind, line))
-    except (ValueError, OSError):
-        pass
+    except (ValueError, OSError) as exc:
+        failures.append((kind, exc))
     finally:
+        # Closing the read end makes the child's next write fail instead of
+        # blocking forever on a full pipe that nobody is draining.
+        with contextlib.suppress(BrokenPipeError, ValueError, OSError):
+            stream.close()
         sink.put((kind, _EOF))
 
 

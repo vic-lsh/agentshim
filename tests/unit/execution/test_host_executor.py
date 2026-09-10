@@ -119,6 +119,53 @@ class TestRun:
         assert result.returncode == 0
         assert result.stdout == prompt
 
+    def test_an_invalid_byte_does_not_discard_the_stream(self) -> None:
+        """One undecodable byte must not cost the rest of the CLI's output.
+
+        The decoder replaces it with U+FFFD, so the frames printed before and
+        after the bad byte both reach the sink.
+        """
+        sink = RecordingSink()
+        code = (
+            "import sys\n"
+            "out = sys.stdout.buffer\n"
+            "out.write(b'{\"a\": 1}\\n')\n"
+            "out.write(b'\\xff\\xfe\\n')\n"
+            "out.write(b'{\"b\": 2}\\n')\n"
+            "out.flush()\n"
+        )
+
+        result = HostCommandExecutor().run(_request(code), sink)
+
+        assert result.returncode == 0
+        assert sink.stdout_lines == ['{"a": 1}\n', "\ufffd\ufffd\n", '{"b": 2}\n']
+        assert result.stdout == '{"a": 1}\n\ufffd\ufffd\n{"b": 2}\n'
+
+    def test_a_large_output_after_an_invalid_byte_does_not_deadlock(self) -> None:
+        """An undecodable byte must not leave the child blocked on a full pipe.
+
+        With no timeout there is nothing to break the deadlock, so a reader
+        that gave up on the stream would hang the call forever.
+        """
+        payload_lines = 2048
+        code = (
+            "import sys\n"
+            "out = sys.stdout.buffer\n"
+            "out.write(b'\\xff\\xfe\\n')\n"
+            f"for _ in range({payload_lines}):\n"
+            "    out.write(b'x' * 1023 + b'\\n')\n"
+            "out.flush()\n"
+        )
+        sink = RecordingSink()
+        started = time.monotonic()
+
+        result = HostCommandExecutor().run(_request(code, timeout=None), sink)
+
+        assert time.monotonic() - started < 10
+        assert result.returncode == 0
+        assert len(sink.stdout_lines) == payload_lines + 1
+        assert len(result.stdout) >= 2 * 1024 * 1024
+
     def test_concurrent_runs_do_not_interleave(self) -> None:
         line_count = 100
 

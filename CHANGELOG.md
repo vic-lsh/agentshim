@@ -158,6 +158,15 @@ needs a `cwd`, and raises `ProviderCapabilityError` without one.
   `parse_json_object` returns `None` for blank lines, invalid JSON and
   non-objects alike, and the parser emits `RawOutput` so the line stays
   observable instead of crashing the turn or being dropped.
+- **Undecodable CLI output.** The child was read in text mode with the
+  platform default codec and no error handler, and the reader thread
+  swallowed the resulting `UnicodeDecodeError`. One byte that is not valid
+  UTF-8 therefore discarded the rest of the turn's output and returned exit 0
+  with an empty transcript, or, with a large output and no timeout, hung the
+  turn forever because nobody was draining the child's pipe. The streams are
+  now decoded as UTF-8 with `errors="replace"`, the reader closes its end of
+  the pipe when it stops for any reason, and a reader that did fail raises
+  `CliExitError` instead of presenting a truncated stream as a clean EOF.
 - **Stdin deadlock.** 0.5 wrote the whole prompt to the child's stdin on the
   calling thread. A prompt larger than the pipe buffer, sent to a CLI that
   was not reading stdin, blocked the turn forever. `HostCommandExecutor`

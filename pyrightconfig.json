@@ -5,8 +5,7 @@
     "build/",
     "dist/",
     "agentshim/codex",
-    "agentshim/copilot",
-    "agentshim/opencode"
+    "agentshim/copilot"
   ],
   "typeCheckingMode": "standard",
   "pythonVersion": "3.10",

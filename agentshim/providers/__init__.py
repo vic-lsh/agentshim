@@ -14,6 +14,8 @@ from .claude import ClaudeProvider
 from .claude import scripted_lines as _claude_scripted
 from .gemini import GeminiProvider
 from .gemini import scripted_lines as _gemini_scripted
+from .opencode import OpencodeProvider
+from .opencode import scripted_lines as _opencode_scripted
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -41,11 +43,13 @@ class ScriptedLines(Protocol):
 _FACTORIES: dict[str, Callable[[], Provider]] = {
     "claude": ClaudeProvider,
     "gemini": GeminiProvider,
+    "opencode": OpencodeProvider,
 }
 
 _SCRIPTED: dict[str, ScriptedLines] = {
     "claude": _claude_scripted,
     "gemini": _gemini_scripted,
+    "opencode": _opencode_scripted,
 }
 
 
@@ -73,6 +77,7 @@ def get_scripted_lines(name: str) -> ScriptedLines:
 __all__ = [
     "ClaudeProvider",
     "GeminiProvider",
+    "OpencodeProvider",
     "ScriptedLines",
     "get_provider",
     "get_scripted_lines",

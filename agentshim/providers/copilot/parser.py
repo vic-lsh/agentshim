@@ -19,7 +19,8 @@ from agentshim.core.events import (
 from agentshim.core.provider import ParsedTurn
 from agentshim.core.stream import ToolTracker, parse_json_object
 from agentshim.core.usage import ProviderUsage, TokenUsage
-from agentshim.providers.copilot.events import (
+
+from .events import (
     AssistantIntent,
     AssistantMessage,
     AssistantMessageDelta,
@@ -38,7 +39,8 @@ if TYPE_CHECKING:
     from typing import Any
 
     from agentshim.core.events import AgentEvent
-    from agentshim.providers.copilot.events import CopilotFrame
+
+    from .events import CopilotFrame
 
 PROVIDER_NAME = "copilot"
 
@@ -65,9 +67,21 @@ def fold_usage(frame: UsageFrame) -> TokenUsage:
 class CopilotStreamParser:
     """Stateful parser for one Copilot CLI run."""
 
-    def __init__(self, emit: Callable[[AgentEvent], None]) -> None:
-        """Start a parser that publishes its events through *emit*."""
+    def __init__(
+        self,
+        emit: Callable[[AgentEvent], None],
+        *,
+        expect_structured: bool = False,
+    ) -> None:
+        """Start a parser that publishes events through ``emit``.
+
+        Args:
+            emit: Sink for every event this run produces.
+            expect_structured: Recorded only to keep the parser substitutable;
+                Copilot has no native output schema, so nothing reads it.
+        """
         self._emit = emit
+        self._expect_structured = expect_structured
         self._tools = ToolTracker()
         self._session_id: str | None = None
         self._final_text: str | None = None

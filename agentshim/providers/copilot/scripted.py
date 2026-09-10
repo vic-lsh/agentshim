@@ -15,6 +15,10 @@ if TYPE_CHECKING:
 
     from agentshim.core.usage import TokenUsage
 
+_NO_STRUCTURED_OUTPUT = (
+    "copilot has no native output schema; scripted_turn cannot produce structured output"
+)
+
 
 def scripted_lines(
     *,
@@ -22,16 +26,30 @@ def scripted_lines(
     session_id: str | None = None,
     usage: TokenUsage | None = None,
     tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
-    structured_output: object = None,
+    structured_output: object | None = None,
 ) -> list[str]:
     """Build the stdout of one Copilot turn.
 
     ``tool_calls`` entries are ``(tool, args, output)`` and become a
     ``tool.execution_start`` frame plus its ``tool.execution_complete``.
-    ``structured_output`` is ignored: Copilot has no output-schema mode, so
-    a scripted turn cannot pretend to produce one.
+
+    Args:
+        text: The assistant reply, emitted as one complete message frame.
+        session_id: Conversation id for the terminal ``result`` frame;
+            omitted when None.
+        usage: Token counts to report in the ``assistant.usage`` frame.
+        tool_calls: Tool calls to script.
+        structured_output: Must be None; Copilot has no native output schema.
+
+    Returns:
+        The stdout lines, each a JSON object with a trailing newline.
+
+    Raises:
+        ValueError: If ``structured_output`` is given.
     """
-    del structured_output
+    if structured_output is not None:
+        raise ValueError(_NO_STRUCTURED_OUTPUT)
+
     lines: list[str] = []
     for index, (tool, args, output) in enumerate(tool_calls):
         call_id = f"tool-{index}"

@@ -43,7 +43,7 @@ PROVIDER_NAME = "opencode"
 FAILED_TOOL_STATE = "error"
 
 
-def fold_tokens(tokens: Mapping[str, Any] | None, turns: int = 1) -> TokenUsage:
+def fold_usage(tokens: Mapping[str, Any] | None, turns: int = 1) -> TokenUsage:
     """Normalize one ``step-finish`` token block to the shared counts.
 
     opencode reports ``input`` as the tokens that were not served from the
@@ -198,7 +198,7 @@ class OpencodeStreamParser:
         )
 
     def _step_finish(self, frame: StepFinishEvent) -> None:
-        step = fold_tokens(frame.tokens)
+        step = fold_usage(frame.tokens)
         self._tokens = self._tokens + step
         self._raw_tokens = frame.tokens if frame.tokens is not None else self._raw_tokens
         if frame.cost is not None:

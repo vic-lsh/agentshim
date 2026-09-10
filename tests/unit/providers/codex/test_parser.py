@@ -136,17 +136,25 @@ class TestCommandExecution:
         assert result.duration_s is not None
         assert result.duration_s >= 0
 
-    def test_a_failing_command_keeps_its_exit_code(self) -> None:
+    def test_a_failing_command_reports_on_stderr_with_its_exit_code(self) -> None:
         parser, events = _parser()
         parser.feed_stdout(
             _item(
                 "item.completed",
-                {"id": "c2", "type": "command_execution", "command": "false", "exit_code": 1},
+                {
+                    "id": "c2",
+                    "type": "command_execution",
+                    "command": "false",
+                    "aggregated_output": "no such file\n",
+                    "exit_code": 1,
+                },
             )
         )
         result = events[-1]
         assert isinstance(result, ToolResult)
         assert result.exit_code == 1
+        assert result.stderr == "no such file\n"
+        assert result.stdout == ""
 
     def test_an_unpaired_completion_has_no_duration(self) -> None:
         parser, events = _parser()
@@ -194,7 +202,7 @@ class TestGenericItems:
         assert result.tool == "mcp_tool_call"
         assert "hits" in result.stdout
 
-    def test_a_failed_item_surfaces_its_error_payload(self) -> None:
+    def test_a_failed_item_surfaces_its_error_payload_on_stderr(self) -> None:
         parser, events = _parser()
         parser.feed_stdout(
             _item(
@@ -209,7 +217,9 @@ class TestGenericItems:
         )
         result = events[-1]
         assert isinstance(result, ToolResult)
-        assert "boom" in result.stdout
+        assert "boom" in result.stderr
+        assert result.stdout == ""
+        assert result.exit_code == 1
 
     def test_a_file_change_is_a_tool_call_with_no_output(self) -> None:
         parser, events = _parser()

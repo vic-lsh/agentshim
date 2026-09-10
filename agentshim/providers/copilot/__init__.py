@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from agentshim.providers.copilot.parser import CopilotStreamParser, fold_usage
-from agentshim.providers.copilot.provider import PROFILE, CopilotProvider
-from agentshim.providers.copilot.scripted import scripted_lines
+from .parser import CopilotStreamParser, fold_usage
+from .provider import PROFILE, CopilotProvider, mcp_entry
+from .scripted import scripted_lines
 
 __all__ = [
     "PROFILE",
     "CopilotProvider",
     "CopilotStreamParser",
     "fold_usage",
+    "mcp_entry",
     "scripted_lines",
 ]

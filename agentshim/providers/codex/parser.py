@@ -47,6 +47,9 @@ PROVIDER_NAME = "codex"
 #: Codex reports every shell command under one item type, so one tool name.
 COMMAND_TOOL = "execute"
 
+#: Item status that means the call failed rather than produced output.
+FAILED_ITEM_STATUS = "failed"
+
 
 def fold_usage(frame: TurnCompleted, previous: TokenUsage) -> TokenUsage:
     """Add one ``turn.completed`` frame's counts to the running total.
@@ -178,18 +181,43 @@ class CodexStreamParser:
             if item.text:
                 self._emit(Reasoning(item.text))
         elif isinstance(item, CommandItem):
-            self._emit(self._result(item.item_id, COMMAND_TOOL, item.output, item.exit_code))
+            failed = item.status == FAILED_ITEM_STATUS or bool(item.exit_code)
+            self._emit(
+                self._result(item.item_id, COMMAND_TOOL, item.output, item.exit_code, failed=failed)
+            )
         else:
-            self._emit(self._result(item.item_id, item.kind, summarize_item(item), None))
+            self._emit(
+                self._result(
+                    item.item_id,
+                    item.kind,
+                    summarize_item(item),
+                    None,
+                    failed=item.status == FAILED_ITEM_STATUS,
+                )
+            )
 
     def _result(
-        self, item_id: str | None, tool: str, stdout: str, exit_code: int | None
+        self,
+        item_id: str | None,
+        tool: str,
+        output: str,
+        exit_code: int | None,
+        *,
+        failed: bool,
     ) -> ToolResult:
+        """Build a tool result, routing a failure onto ``stderr``.
+
+        Every provider reports a failed tool the same way: the message on
+        ``stderr`` with a nonzero ``exit_code``, so a renderer cannot mistake
+        it for success.
+        """
+        if failed and exit_code is None:
+            exit_code = 1
         return ToolResult(
             tool_id=item_id,
             tool=tool,
-            stdout=stdout,
-            stderr="",
+            stdout="" if failed else output,
+            stderr=output if failed else "",
             exit_code=exit_code,
             duration_s=self._tools.duration(item_id),
         )

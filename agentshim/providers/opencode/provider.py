@@ -119,7 +119,7 @@ class OpencodeProvider:
         other run, with no distinguishable exit code, so mapping a resumed
         turn's failure to ``SessionResumeError`` would be a guess.
         """
-        _ = resumed
+        del resumed
         return error
 
 

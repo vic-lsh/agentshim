@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from agentshim import CliAgent, SessionStarted, TokenUsage, ToolCall, ToolResult, UsageReport
 from agentshim.core.events import AgentEvent
 from agentshim.providers.copilot import CopilotStreamParser, scripted_lines
@@ -56,12 +57,10 @@ class TestScriptedLines:
             json.loads(line)["type"] for line in scripted_lines(text="hi")
         ]
 
-    def test_structured_output_is_ignored(self) -> None:
+    def test_structured_output_is_rejected(self) -> None:
         """Copilot has no output-schema mode, so a scripted turn cannot fake one."""
-        lines = scripted_lines(text="hi", structured_output={"a": 3})
-        assert all("structured" not in line for line in lines)
-        _, parser = _replay(lines)
-        assert parser.finish().structured_output is None
+        with pytest.raises(ValueError, match="no native output schema"):
+            scripted_lines(text="hi", structured_output={"a": 3})
 
 
 class TestRoundTrip:

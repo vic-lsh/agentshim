@@ -119,7 +119,7 @@ class GeminiProvider:
         Mapping a resumed turn's failure to ``SessionResumeError`` would
         therefore be a guess, so ``resumed`` does not change the outcome.
         """
-        _ = resumed
+        del resumed
         return error
 
 

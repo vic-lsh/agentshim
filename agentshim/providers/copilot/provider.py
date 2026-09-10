@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 from agentshim.core.mcp import FlagsInstallation, HttpMcpServer, NoopInstallation
 from agentshim.core.profile import McpMechanism, OutputSchemaStyle, ProviderProfile
-from agentshim.providers.copilot.parser import CopilotStreamParser
+
+from .parser import CopilotStreamParser
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -90,11 +91,10 @@ class CopilotProvider:
     ) -> CopilotStreamParser:
         """Return a parser for one run.
 
-        Copilot has no output-schema mode, so a structured payload is never
-        expected of it and the flag is dropped.
+        Copilot has no output-schema mode, so the parser records the flag and
+        never acts on it.
         """
-        del expect_structured
-        return CopilotStreamParser(emit)
+        return CopilotStreamParser(emit, expect_structured=expect_structured)
 
     def install_mcp(self, workspace: Path | None, servers: Sequence[McpServer]) -> McpInstallation:
         """Render the servers into one ``--additional-mcp-config`` flag.

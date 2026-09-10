@@ -41,7 +41,7 @@ PROVIDER_NAME = "gemini"
 FATAL_SEVERITY = "error"
 
 
-def fold_stats(stats: Mapping[str, Any] | None, turns: int = 0) -> TokenUsage:
+def fold_usage(stats: Mapping[str, Any] | None, turns: int = 0) -> TokenUsage:
     """Normalize Gemini's ``result`` stats to the shared token counts.
 
     ``StreamJsonFormatter.convertToStreamStats`` reports ``input_tokens`` as
@@ -180,7 +180,7 @@ class GeminiStreamParser:
         # One CLI invocation is one turn: Gemini's stats carry no count of
         # the tool-calling rounds the agent loop took.
         self._usage = ProviderUsage(
-            tokens=fold_stats(frame.stats, turns=1),
+            tokens=fold_usage(frame.stats, turns=1),
             total_cost_usd=None,
             provider=PROVIDER_NAME,
             raw=frame.stats,

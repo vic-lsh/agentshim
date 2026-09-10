@@ -158,6 +158,15 @@ needs a `cwd`, and raises `ProviderCapabilityError` without one.
   `parse_json_object` returns `None` for blank lines, invalid JSON and
   non-objects alike, and the parser emits `RawOutput` so the line stays
   observable instead of crashing the turn or being dropped.
+- **Three non-`AgentShimError` exceptions escaped `turn()`**, against the
+  documented contract that catching `AgentShimError` is enough. Installing MCP
+  servers into a read-only workspace raised `PermissionError` from the config
+  write, and now raises `McpConfigError`. A schema carrying a `NaN` or an
+  infinity raised `ValueError` from `materialize`, and now raises
+  `ProviderCapabilityError`. `TransformingExecutor.check_binary` raised
+  `FileNotFoundError` when the transform's own prefix binary (`docker`, a
+  sandbox wrapper) was missing, and now raises `CliCheckError`.
+  `tests/unit/test_turn_contract.py` pins all three.
 - **Atomic writes replaced symlinks.** `atomic_write` renamed its temporary
   file onto the path it was given, so a `.mcp.json` (or `.gemini/settings.json`,
   or `opencode.json`) that was a symlink into a dotfiles checkout became a

@@ -56,6 +56,14 @@ class TransformingExecutor:
             raise CliCheckError(
                 path, f"{path} did not respond to '--help' within {timeout}s"
             ) from exc
+        except OSError as exc:
+            # The transform usually prefixes the command with a launcher of
+            # its own (``docker exec``, a sandbox wrapper). A missing or
+            # unrunnable launcher is a failed health check, not a stray
+            # ``FileNotFoundError`` escaping the public API.
+            raise CliCheckError(
+                path, f"cannot run the transformed command for {path!r}: {exc}"
+            ) from exc
         if result.returncode != 0:
             raise CliCheckError(
                 path,

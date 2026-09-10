@@ -13,6 +13,7 @@ import json
 from typing import TYPE_CHECKING, Any, cast
 
 from ._files import atomic_write
+from .errors import ProviderCapabilityError
 from .profile import SchemaDialect
 
 if TYPE_CHECKING:
@@ -262,8 +263,18 @@ def materialize(schema: Mapping[str, Any], host_dir: Path) -> Path:
     The name is content-addressed so repeated turns with the same schema
     reuse one file, and the write is atomic so a CLI reading the path
     concurrently never sees a partial document.
+
+    A schema carrying a value JSON cannot express, a ``NaN`` or an infinity,
+    raises ``ProviderCapabilityError``: the provider cannot be given this
+    schema, which is the same answer a dialect problem gets, and it is what
+    keeps a bare ``ValueError`` out of ``turn()``.
     """
-    encoded = (json.dumps(dict(schema), indent=2, sort_keys=True, allow_nan=False) + "\n").encode()
+    try:
+        serialized = json.dumps(dict(schema), indent=2, sort_keys=True, allow_nan=False)
+    except ValueError as exc:
+        msg = f"output schema cannot be serialized as JSON: {exc}"
+        raise ProviderCapabilityError(msg) from exc
+    encoded = (serialized + "\n").encode()
     digest = hashlib.sha256(encoded).hexdigest()[:16]
     target = host_dir / f"{digest}.json"
     atomic_write(target, encoded)

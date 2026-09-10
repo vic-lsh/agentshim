@@ -343,7 +343,7 @@ class TestFailureModes:
             raise OSError(message)
 
         monkeypatch.setattr("agentshim.core._files.os.replace", fail_replace)
-        with pytest.raises(OSError, match="disk full"):
+        with pytest.raises(McpConfigError, match="disk full"):
             _install(target)
 
         assert target.read_bytes() == original

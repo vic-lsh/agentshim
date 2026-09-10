@@ -272,7 +272,11 @@ def install_config_file(
     installation therefore reports the resolved path.
     """
     target = real_path(target)
-    original = target.read_bytes() if target.exists() else None
+    try:
+        original = target.read_bytes() if target.exists() else None
+    except OSError as exc:
+        msg = f"cannot read MCP config: {target} ({exc})"
+        raise McpConfigError(msg) from exc
     original_config = _load_json_object(original, target) if original is not None else {}
     config = dict(original_config)
 
@@ -288,7 +292,13 @@ def install_config_file(
         installed_config=config,
         server_key=server_key,
     )
-    atomic_write(target, json.dumps(config, indent=2).encode())
+    try:
+        atomic_write(target, json.dumps(config, indent=2).encode())
+    except OSError as exc:
+        # A read-only or unwritable workspace is an MCP config problem the
+        # caller can act on, not a stray ``PermissionError`` out of ``turn()``.
+        msg = f"cannot write MCP config: {target} ({exc})"
+        raise McpConfigError(msg) from exc
     return ConfigFileInstallation(target, backup)
 
 

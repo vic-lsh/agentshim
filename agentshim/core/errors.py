@@ -134,4 +134,4 @@ class SchemaDialectError(ProviderCapabilityError):
 
 
 class McpConfigError(AgentShimError):
-    """An MCP config file is unreadable or is not a JSON object."""
+    """An MCP config file is unreadable, unwritable, or is not a JSON object."""

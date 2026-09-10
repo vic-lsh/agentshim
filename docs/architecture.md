@@ -182,11 +182,15 @@ AgentShimError
   CliTimeoutError             argv, timeout, partial: ParsedTurn | None
   ProviderCapabilityError     the provider cannot do what the request asked
     SchemaDialectError        problems: list[str]
-  McpConfigError              config file unreadable or not an object
+  McpConfigError              config file unreadable, unwritable, or not an object
 ```
 
 Nothing else escapes `turn()`: no bare `RuntimeError`, no
-`subprocess.TimeoutExpired`.
+`subprocess.TimeoutExpired`, no `OSError` from a config write, no
+`ValueError` from a schema JSON cannot express.
+`tests/unit/test_turn_contract.py` pins the paths that once broke this.
+The one documented exception is an event handler that raises: it fails the
+turn it is watching, with its own exception.
 
 ### Profile
 

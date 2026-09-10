@@ -32,7 +32,6 @@ docs = [
 packages = ["agentshim"]
 # Not yet ported to the 0.6 provider protocol; they do not import.
 exclude = [
-    "agentshim/codex",
     "agentshim/copilot",
     "agentshim/gemini",
     "agentshim/opencode",
@@ -47,7 +46,6 @@ target-version = "py310"
 src = ["agentshim", "tests", "scripts"]
 # Not yet ported to the 0.6 provider protocol; same list as pyrightconfig.json.
 extend-exclude = [
-    "agentshim/codex",
     "agentshim/copilot",
     "agentshim/gemini",
     "agentshim/opencode",

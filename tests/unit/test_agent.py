@@ -43,9 +43,21 @@ from agentshim import (
     UsageReport,
 )
 from agentshim.providers.claude import ClaudeProvider
-from agentshim.testing import FakeExecutor, FakeRun, RecordingEventHandler, scripted_turn
+from agentshim.testing import (
+    FakeCommandHandle,
+    FakeExecutor,
+    FakeRun,
+    RecordingEventHandler,
+    scripted_turn,
+)
 
 _ENV = {"PATH": "/usr/bin:/bin", "HOME": "/home/tester"}
+
+
+def _claude_init(session_id: str) -> str:
+    """The frame Claude Code prints to name a conversation."""
+    return json.dumps({"type": "system", "subtype": "init", "session_id": session_id}) + "\n"
+
 
 _MAPPING_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -263,6 +275,25 @@ class TestResume:
         assert not isinstance(excinfo.value, SessionResumeError)
         assert excinfo.value.returncode == 1
         assert excinfo.value.stderr == "boom\n"
+
+    def test_a_session_named_before_a_nonzero_exit_stays_resumable(self) -> None:
+        """A turn that named the conversation and then failed is still resumable."""
+        executor = FakeExecutor(FakeRun(stdout=[_claude_init("s-named")], returncode=1))
+        session = _agent(executor).start_session()
+
+        with pytest.raises(CliExitError):
+            session.turn("hi")
+
+        assert session.session_id == "s-named"
+
+    def test_a_conversation_the_provider_lost_is_not_adopted(self) -> None:
+        executor = FakeExecutor(FakeRun(stdout=[_claude_init("s-new")], returncode=1))
+        session = _agent(executor).start_session(session_id="s-old")
+
+        with pytest.raises(SessionResumeError):
+            session.turn("hi")
+
+        assert session.session_id == "s-old"
 
 
 class TestLastResult:
@@ -600,12 +631,76 @@ class TestTimeoutAndCancel:
 
         assert time.monotonic() - started < 15
 
-    def test_cancel_before_a_turn_is_a_no_op(self) -> None:
-        _agent(FakeExecutor(FakeRun())).start_session().cancel()
+    def test_cancel_outside_a_turn_leaves_the_next_turn_alone(self) -> None:
+        """Cancelling an idle session is deliberately inert, not a lost cancel.
+
+        A cancel is only ever recorded while a turn is in flight, so it cannot
+        be held over and fired at whatever turn happens to start next.
+        """
+        executor = FakeExecutor(scripted_turn("claude", text="ok"))
+        session = _agent(executor).start_session()
+
+        session.cancel()
+        result = session.turn("hi")
+
+        assert result.text == "ok"
+        assert not executor.handles[0].terminated
+
+    def test_cancel_before_the_process_exists_still_stops_the_turn(self) -> None:
+        """The handle appears only once the CLI is spawned; a cancel before
+        that must not be dropped on the floor."""
+
+        class SlowToSpawn(FakeExecutor):
+            def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
+                time.sleep(0.5)
+                return super().run(request, sink)
+
+        executor = SlowToSpawn(scripted_turn("claude", text="ok"))
+        session = _agent(executor).start_session()
+        canceller = threading.Thread(target=_cancel_soon, args=(session, 0.1))
+        started = time.monotonic()
+
+        canceller.start()
+        try:
+            session.turn("hi")
+        finally:
+            canceller.join()
+
+        assert executor.handles[0].terminated
+        assert time.monotonic() - started < 5
+
+    def test_a_timeout_closes_the_run_and_keeps_what_was_parsed(self) -> None:
+        recorder = RecordingEventHandler()
+        executor = FakeExecutor(FakeRun(timeout=True))
+
+        with pytest.raises(CliTimeoutError) as excinfo:
+            _agent(executor, event_handler=recorder).start_session(timeout=1.0).turn("hi")
+
+        assert isinstance(recorder.events[-1], RunFinished)
+        assert recorder.events[-1].exit_code is None
+        assert excinfo.value.partial is not None
+        assert excinfo.value.partial.text == ""
+
+    def test_a_session_named_before_a_timeout_is_recoverable(self) -> None:
+        class TimingOutAfterInit(FakeExecutor):
+            def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
+                sink.started(FakeCommandHandle())
+                sink.stdout(_claude_init("s-timed-out"))
+                raise CliTimeoutError(request.argv, 1.0)
+
+        executor = TimingOutAfterInit(FakeRun())
+        session = _agent(executor).start_session(timeout=1.0)
+
+        with pytest.raises(CliTimeoutError) as excinfo:
+            session.turn("hi")
+
+        assert session.session_id == "s-timed-out"
+        assert excinfo.value.partial is not None
+        assert excinfo.value.partial.session_id == "s-timed-out"
 
 
-def _cancel_soon(session: AgentSession) -> None:
-    time.sleep(0.4)
+def _cancel_soon(session: AgentSession, delay_s: float = 0.4) -> None:
+    time.sleep(delay_s)
     session.cancel(grace_s=1.0)
 
 

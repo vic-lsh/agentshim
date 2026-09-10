@@ -158,6 +158,25 @@ needs a `cwd`, and raises `ProviderCapabilityError` without one.
   `parse_json_object` returns `None` for blank lines, invalid JSON and
   non-objects alike, and the parser emits `RawOutput` so the line stays
   observable instead of crashing the turn or being dropped.
+- **A cancel before the CLI spawned was dropped.** `cancel()` looked only at
+  the process handle, which the executor publishes after it has started the
+  process. A cancel arriving while the turn was installing MCP servers,
+  building argv or spawning therefore did nothing at all. The request is now
+  recorded under the session lock and paid out the moment the handle appears.
+  It is only ever recorded while a turn is in flight and is cleared when that
+  turn ends, so cancelling an idle session still leaves the next turn alone.
+- **A timed-out turn emitted no `RunFinished` and never finished its
+  parser.** An `AgentShimError` from the executor skipped the run's closing
+  path entirely, so a handler saw a run that started and never ended, and
+  whatever the parser had read, the session id included, was thrown away. The
+  run now closes the same way it does on a clean exit: `RunFinished(None)`,
+  `parser.finish()`, adopt the session id, re-raise. `CliTimeoutError` gained
+  `partial: ParsedTurn | None` carrying that reading.
+- **A turn that named its conversation and then failed was unresumable.** The
+  nonzero-exit check raised before `parsed.session_id` was adopted, so the id
+  the provider had already printed was lost. Adoption now happens first, and
+  is skipped only when `classify_exit` reported `SessionResumeError`, which is
+  the provider saying the conversation is gone.
 - **MCP restore could destroy the turn.** `ConfigFileInstallation.restore()`
   marked itself done before doing any work and raised `McpConfigError` when
   the agent had left the config file non-JSON or non-object. Raised from the

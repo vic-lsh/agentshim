@@ -14,7 +14,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agentshim.core.env import interactive_env
-from agentshim.core.errors import CliExitError, ProviderCapabilityError, SchemaDialectError
+from agentshim.core.errors import (
+    AgentShimError,
+    CliExitError,
+    CliTimeoutError,
+    ProviderCapabilityError,
+    SchemaDialectError,
+    SessionResumeError,
+)
 from agentshim.core.events import RunFinished, RunStarted, compose_event_handlers
 from agentshim.core.profile import McpMechanism, OutputSchemaStyle, SchemaDialect
 from agentshim.core.provider import ArgvContext
@@ -29,9 +36,9 @@ if TYPE_CHECKING:
 
     from agentshim.core.events import AgentEvent, AgentEventHandler
     from agentshim.core.profile import ProviderProfile
-    from agentshim.core.provider import Provider, StreamParser
+    from agentshim.core.provider import McpInstallation, ParsedTurn, Provider, StreamParser
     from agentshim.core.turn import OutputSchema
-    from agentshim.execution.executor import CommandExecutor, CommandHandle
+    from agentshim.execution.executor import CommandExecutor, CommandHandle, CommandResult
 
 
 def _resolve_provider(provider: str | Provider) -> Provider:
@@ -151,6 +158,7 @@ class AgentSession:
         self.last_result: TurnResult | None = None
         self._lock = threading.Lock()
         self._handle: CommandHandle | None = None
+        self._cancel_requested = False
         self._idle = threading.Event()
         self._idle.set()
 
@@ -182,42 +190,54 @@ class AgentSession:
         self.session_id = None
 
     def cancel(self, grace_s: float = 5.0) -> None:
-        """Stop the running turn: terminate, then kill after ``grace_s``."""
+        """Stop the running turn: terminate, then kill after ``grace_s``.
+
+        A turn is in flight from the moment ``turn()`` is entered, but the
+        process handle only appears once the executor has spawned the CLI.
+        Cancelling in that window (installing MCP servers, building argv,
+        spawning) records the request instead of dropping it, and the process
+        is terminated as soon as its handle is published. Calling this while no
+        turn is running does nothing and leaves the next turn alone.
+        """
+        with self._lock:
+            if self._idle.is_set():
+                return
+            self._cancel_requested = True
+            handle = self._handle
+        if handle is not None:
+            handle.terminate()
+        if self._idle.wait(grace_s):
+            return
         with self._lock:
             handle = self._handle
-        if handle is None:
-            return
-        handle.terminate()
-        if not self._idle.wait(grace_s):
+        if handle is not None:
             handle.kill()
 
     def turn(self, request: TurnRequest | str) -> TurnResult:
-        """Run one prompt and return everything it produced."""
+        """Run one prompt and return everything it produced.
+
+        The session counts as busy from here, not from the moment the process
+        exists, so ``adopt`` and ``cancel`` both see a turn that is still
+        installing MCP servers or building argv.
+        """
         req = coerce_request(request)
         agent = self._agent
-        provider = agent.provider
         cwd = req.cwd if req.cwd is not None else self._cwd
         timeout = req.timeout if req.timeout is not None else self._timeout
         env = dict(agent.env)
         if req.env:
             env.update(req.env)
 
-        self._check_capabilities(req)
-        schema_inline, schema_path = self._resolve_schema(req.output_schema)
-
-        workspace = req.mcp_workspace
-        if workspace is None and cwd is not None:
-            workspace = Path(cwd)
-        installation = provider.install_mcp(workspace, req.mcp_servers)
-        resumed = self.session_id is not None
-        handler = agent.event_handler
-
-        def emit(event: AgentEvent) -> None:
-            handler.on_event(event)
-
         self._idle.clear()
+        installation: McpInstallation | None = None
         try:
-            argv = provider.build_argv(
+            self._check_capabilities(req)
+            schema_inline, schema_path = self._resolve_schema(req.output_schema)
+            workspace = req.mcp_workspace
+            if workspace is None and cwd is not None:
+                workspace = Path(cwd)
+            installation = agent.provider.install_mcp(workspace, req.mcp_servers)
+            argv = agent.provider.build_argv(
                 ArgvContext(
                     binary_path=agent.binary_path,
                     model=agent.model,
@@ -230,47 +250,115 @@ class AgentSession:
                     extra_args=req.extra_args,
                 )
             )
-            parser = provider.new_parser(emit, expect_structured=req.output_schema is not None)
-            emit(RunStarted(tuple(argv)))
-            started = time.monotonic()
-            result = agent.executor.run(
-                CommandRequest(argv=argv, stdin=req.prompt, cwd=cwd, env=env, timeout=timeout),
-                _ParserSink(parser, self._set_handle),
-            )
-            duration_ms = int((time.monotonic() - started) * 1000)
-            emit(RunFinished(result.returncode))
-            parsed = parser.finish()
-
-            if result.returncode != 0:
-                raise provider.classify_exit(
-                    CliExitError(argv, result.returncode, result.stdout, result.stderr),
-                    resumed=resumed,
-                )
-
-            if parsed.session_id:
-                self.session_id = parsed.session_id
-            turn_result = TurnResult(
-                text=parsed.text,
-                structured_output=parsed.structured_output,
-                session_id=self.session_id,
-                resumed=resumed,
-                usage=parsed.usage,
-                cost_usd=parsed.cost_usd,
-                duration_ms=duration_ms,
-                exit_code=result.returncode,
-            )
-            self.last_result = turn_result
-            return turn_result
+            command = CommandRequest(argv=argv, stdin=req.prompt, cwd=cwd, env=env, timeout=timeout)
+            return self._execute(command, expect_structured=req.output_schema is not None)
         finally:
-            note = installation.restore()
-            if note:
-                agent.log(note)
-            self._set_handle(None)
+            if installation is not None:
+                note = installation.restore()
+                if note:
+                    agent.log(note)
+            with self._lock:
+                self._handle = None
+                self._cancel_requested = False
             self._idle.set()
 
+    def _execute(self, command: CommandRequest, *, expect_structured: bool) -> TurnResult:
+        """Run one prepared command and turn what it printed into a result."""
+        agent = self._agent
+        handler = agent.event_handler
+        resumed = self.session_id is not None
+
+        def emit(event: AgentEvent) -> None:
+            handler.on_event(event)
+
+        argv = list(command.argv)
+        parser = agent.provider.new_parser(emit, expect_structured=expect_structured)
+        emit(RunStarted(tuple(argv)))
+        started = time.monotonic()
+        try:
+            result = agent.executor.run(command, _ParserSink(parser, self._set_handle))
+        except AgentShimError as error:
+            self._abandon(parser, emit, error)
+            raise
+        duration_ms = int((time.monotonic() - started) * 1000)
+        emit(RunFinished(result.returncode))
+        parsed = parser.finish()
+        self._adopt_then_report(parsed, result, argv, resumed=resumed)
+
+        turn_result = TurnResult(
+            text=parsed.text,
+            structured_output=parsed.structured_output,
+            session_id=self.session_id,
+            resumed=resumed,
+            usage=parsed.usage,
+            cost_usd=parsed.cost_usd,
+            duration_ms=duration_ms,
+            exit_code=result.returncode,
+        )
+        self.last_result = turn_result
+        return turn_result
+
+    def _abandon(
+        self,
+        parser: StreamParser,
+        emit: Callable[[AgentEvent], None],
+        error: AgentShimError,
+    ) -> None:
+        """Close out a run the executor could not finish.
+
+        A timeout or a transport failure ends the stream mid-turn, but the run
+        still started, so the boundary event and ``parser.finish()`` are owed to
+        the caller exactly as on a clean exit. The session id matters most: a
+        turn that named the conversation before it timed out is still
+        resumable, and dropping the id would strand it. A timeout also carries
+        the partial reading, since that is the only way back to it once the
+        error is raised.
+        """
+        emit(RunFinished(None))
+        partial = parser.finish()
+        if partial.session_id:
+            self.session_id = partial.session_id
+        if isinstance(error, CliTimeoutError):
+            error.partial = partial
+
+    def _adopt_then_report(
+        self,
+        parsed: ParsedTurn,
+        result: CommandResult,
+        argv: Sequence[str],
+        *,
+        resumed: bool,
+    ) -> None:
+        """Adopt the conversation the run named, then raise on a nonzero exit.
+
+        Adoption comes first because a provider that named the session and then
+        failed leaves a conversation the caller can still resume; raising
+        before adopting strands it. The exception is a conversation the
+        provider says is gone, which there is no point resuming.
+        """
+        error: AgentShimError | None = None
+        if result.returncode != 0:
+            error = self._agent.provider.classify_exit(
+                CliExitError(argv, result.returncode, result.stdout, result.stderr),
+                resumed=resumed,
+            )
+        if parsed.session_id and not isinstance(error, SessionResumeError):
+            self.session_id = parsed.session_id
+        if error is not None:
+            raise error
+
     def _set_handle(self, handle: CommandHandle | None) -> None:
+        """Publish the running process, honouring a cancel that already fired.
+
+        ``cancel`` can arrive before the executor has anything to stop. It
+        records the request rather than dropping it, and this is where that
+        record is paid out.
+        """
         with self._lock:
             self._handle = handle
+            cancelled = self._cancel_requested
+        if handle is not None and cancelled:
+            handle.terminate()
 
     def _check_capabilities(self, req: TurnRequest) -> None:
         profile = self.profile

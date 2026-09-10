@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from .provider import ParsedTurn
+
 
 class AgentShimError(Exception):
     """Base class for every error agentshim raises."""
@@ -99,10 +101,14 @@ class CliTimeoutError(AgentShimError):
         """Record the command and the budget it overran.
 
         ``timeout`` is the budget in seconds that was allowed, not the elapsed
-        time, which is unknown once the process has been killed.
+        time, which is unknown once the process has been killed. ``partial``
+        starts empty and is filled in by the session with whatever the stream
+        parser read before the budget ran out; it is the only way back to the
+        session id of a turn that named its conversation and then timed out.
         """
         self.argv = tuple(argv)
         self.timeout = timeout
+        self.partial: ParsedTurn | None = None
         binary = self.argv[0] if self.argv else "cli"
         super().__init__(f"{binary} did not finish within {timeout}s")
 

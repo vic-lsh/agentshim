@@ -179,7 +179,7 @@ AgentShimError
   CliCheckError               binary found but the health check failed
   CliExitError                nonzero exit: argv, returncode, stdout, stderr
     SessionResumeError        a resumed turn failed because the conversation is gone: session_id
-  CliTimeoutError             argv, timeout
+  CliTimeoutError             argv, timeout, partial: ParsedTurn | None
   ProviderCapabilityError     the provider cannot do what the request asked
     SchemaDialectError        problems: list[str]
   McpConfigError              config file unreadable or not an object
@@ -278,14 +278,20 @@ class AgentSession:
     def cancel(self, grace_s: float = 5.0) -> None   # thread-safe; terminate then kill
 ```
 
-`turn()` in order: resolve cwd, timeout, env; check capabilities
-(`reasoning_effort`, `output_schema`) against the profile; materialize the
-schema; install MCP servers; build argv; run through the executor with the
-parser as the sink; on nonzero exit build `CliExitError` and raise
-`provider.classify_exit(...)`; in `finally` restore MCP config and clear the
-process handle; then adopt `session_id` from the parser and return
-`TurnResult`. Binary lookup and the health check run once in
+`turn()` in order: mark the session busy; resolve cwd, timeout, env; check
+capabilities (`reasoning_effort`, `output_schema`) against the profile;
+materialize the schema; install MCP servers; build argv; run through the
+executor with the parser as the sink; emit `RunFinished` and call
+`parser.finish()`; adopt `session_id` from the parser; on nonzero exit build
+`CliExitError` and raise `provider.classify_exit(...)`; in `finally` restore
+MCP config, clear the process handle and the cancel request, and mark the
+session idle. Binary lookup and the health check run once in
 `CliAgent.__init__`.
+
+An `AgentShimError` out of the executor (a timeout, a transport failure) takes
+the same closing path: `RunFinished(None)`, `parser.finish()`, adopt the
+session id, then re-raise. A `CliTimeoutError` carries the partial
+`ParsedTurn` on `.partial`.
 
 ## Execution
 
@@ -468,6 +474,18 @@ session id is recovered from argv.
 **`adopt` refuses while a turn is in flight**, tracked by the session's idle
 flag rather than by the presence of a process handle: the handle only appears
 once the executor has started the process, which is too late.
+
+**`cancel` records the request when there is no handle yet.** The same
+too-late window (installing MCP servers, building argv, spawning) would
+otherwise make `cancel()` a silent no-op on a turn that has already begun. The
+flag is set only while the session is busy and is cleared in `turn()`'s
+`finally`, so it can never carry over to a turn that starts later, and
+`_set_handle` terminates the process as soon as one exists.
+
+**A nonzero exit adopts the session id before it raises.** A provider that
+named the conversation and then failed leaves something the caller can resume;
+raising first strands it. The exception is `SessionResumeError`, where the
+provider is saying the conversation is gone.
 
 **Truncation in `ConsoleEventHandler` has no per-tool exceptions.** Giving
 named tools a larger budget is caller policy; a caller who wants it writes

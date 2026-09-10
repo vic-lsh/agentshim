@@ -176,6 +176,8 @@ def _server_flags(server: McpServer) -> list[str]:
     if isinstance(server, HttpMcpServer):
         if server.headers:
             raise ProviderCapabilityError(_HTTP_HEADERS_UNSUPPORTED)
+        # A ``--config`` override carries the address and nothing else, so
+        # Codex works the transport out from the endpoint itself.
         return ["--config", f"{prefix}.url={_toml_str(server.url)}"]
     flags = [
         "--config",

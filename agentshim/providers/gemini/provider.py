@@ -130,8 +130,10 @@ def mcp_entry(server: McpServer) -> dict[str, Any]:
     caller installed on purpose.
     """
     if isinstance(server, HttpMcpServer):
-        # ``httpUrl`` selects streamable HTTP; ``url`` would mean SSE.
-        entry: dict[str, Any] = {"httpUrl": server.url, "trust": True}
+        # Gemini picks the transport by which key holds the address:
+        # ``httpUrl`` is streamable HTTP, plain ``url`` is SSE.
+        url_key = "httpUrl" if server.transport == "http" else "url"
+        entry: dict[str, Any] = {url_key: server.url, "trust": True}
         if server.headers:
             entry["headers"] = dict(server.headers)
         return entry

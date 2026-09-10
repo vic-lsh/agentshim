@@ -101,6 +101,11 @@ class TestInstallMcp:
         server = HttpMcpServer(name="my-srv", url="http://localhost:9000/sse")
         assert _flags(server) == ["--config", 'mcp_servers.my_srv.url="http://localhost:9000/sse"']
 
+    def test_both_transports_render_the_same_url_override(self) -> None:
+        """A ``--config`` override has room for the address and nothing else."""
+        sse = HttpMcpServer(name="my-srv", url="http://localhost:9000/sse", transport="sse")
+        assert _flags(sse) == ["--config", 'mcp_servers.my_srv.url="http://localhost:9000/sse"']
+
     def test_http_headers_are_refused_rather_than_dropped(self) -> None:
         server = HttpMcpServer(
             name="auth", url="https://x/sse", headers={"Authorization": "Bearer t"}

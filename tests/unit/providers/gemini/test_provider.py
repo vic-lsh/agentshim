@@ -108,6 +108,17 @@ class TestInstallMcp:
             "trust": True,
         }
 
+    def test_an_sse_server_uses_the_plain_url_key(self, tmp_path: Path) -> None:
+        """Gemini selects the transport by which key carries the address."""
+        GeminiProvider().install_mcp(
+            tmp_path,
+            [HttpMcpServer(name="my-srv", url="http://localhost:9000/sse", transport="sse")],
+        )
+        assert _settings(tmp_path)["mcpServers"]["my-srv"] == {  # pyright: ignore[reportIndexIssue]
+            "url": "http://localhost:9000/sse",
+            "trust": True,
+        }
+
     def test_http_headers_are_included_when_set(self, tmp_path: Path) -> None:
         server = HttpMcpServer(
             name="auth", url="https://x/mcp", headers={"Authorization": "Bearer t"}

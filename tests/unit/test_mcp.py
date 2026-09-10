@@ -33,6 +33,15 @@ class TestServerSpecs:
     def test_http_defaults(self) -> None:
         server = HttpMcpServer(name="h", url="http://localhost:8080/sse")
         assert server.headers == {}
+        assert server.transport == "http"
+
+    def test_the_sse_transport_can_be_asked_for(self) -> None:
+        server = HttpMcpServer(name="h", url="http://localhost:8080/sse", transport="sse")
+        assert server.transport == "sse"
+
+    def test_an_unknown_transport_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="transport must be"):
+            HttpMcpServer(name="h", url="http://x", transport="websocket")  # pyright: ignore[reportArgumentType]
 
     def test_specs_are_frozen(self) -> None:
         server = StdioMcpServer(name="tool", command="npx")

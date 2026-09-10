@@ -132,6 +132,8 @@ def mcp_entry(server: McpServer) -> dict[str, Any]:
     extra ``permission`` block is needed.
     """
     if isinstance(server, HttpMcpServer):
+        # opencode has one remote server type and negotiates the transport
+        # itself, so ``transport`` has nothing to select here.
         entry: dict[str, Any] = {"type": "remote", "url": server.url, "enabled": True}
         if server.headers:
             entry["headers"] = dict(server.headers)

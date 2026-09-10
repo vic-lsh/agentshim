@@ -89,9 +89,18 @@ class TestInstallMcp:
         config = json.loads((tmp_path / ".mcp.json").read_text())
         assert config["mcpServers"]["tool"]["env"] == {"KEY": "val"}
 
-    def test_http_servers_declare_their_transport(self, tmp_path: Path) -> None:
+    def test_http_servers_default_to_streamable_http(self, tmp_path: Path) -> None:
         """Claude validates the config strictly and needs an explicit type."""
-        server = HttpMcpServer(name="my-srv", url="http://localhost:9000/sse")
+        server = HttpMcpServer(name="my-srv", url="http://localhost:9000/mcp")
+        ClaudeProvider().install_mcp(tmp_path, [server])
+        config = json.loads((tmp_path / ".mcp.json").read_text())
+        assert config["mcpServers"]["my-srv"] == {
+            "type": "http",
+            "url": "http://localhost:9000/mcp",
+        }
+
+    def test_an_sse_server_is_declared_as_sse(self, tmp_path: Path) -> None:
+        server = HttpMcpServer(name="my-srv", url="http://localhost:9000/sse", transport="sse")
         ClaudeProvider().install_mcp(tmp_path, [server])
         config = json.loads((tmp_path / ".mcp.json").read_text())
         assert config["mcpServers"]["my-srv"] == {"type": "sse", "url": "http://localhost:9000/sse"}

@@ -22,7 +22,23 @@ agent.start_session(cwd="/workspace").turn(
 )
 ```
 
-`HttpMcpServer(name=..., url=..., headers=...)` describes an HTTP/SSE server.
+`HttpMcpServer(name=..., url=..., headers=..., transport=...)` describes a
+remote server. `transport` is `"http"` (streamable HTTP, the default) or
+`"sse"`; they are different wire protocols, so a CLI told the wrong one
+connects and then fails. What each provider does with it:
+
+| provider | `transport="http"` | `transport="sse"` |
+| --- | --- | --- |
+| claude | `{"type": "http", "url": ...}` | `{"type": "sse", "url": ...}` |
+| copilot | `{"type": "http", "url": ...}` | `{"type": "sse", "url": ...}` |
+| gemini | `{"httpUrl": ...}` | `{"url": ...}` |
+| opencode | `{"type": "remote", "url": ...}` | same |
+| codex | `mcp_servers.<name>.url=...` | same |
+
+opencode has one remote server type and codex's `--config` override carries
+only the address, so neither can be told which transport to use; both work it
+out from the endpoint. Codex additionally cannot carry HTTP headers, and
+raises `ProviderCapabilityError` rather than dropping them.
 
 ## How installation works
 
@@ -46,4 +62,12 @@ survives the turn.
 
 `install_config_file(target, server_key=..., servers=..., defaults=...)`
 returns an installation whose `restore()` is idempotent, if you need the same
-merge semantics outside a turn.
+merge semantics outside a turn. `restore()` never raises: if the file is no
+longer readable as JSON it writes the original bytes back verbatim and returns
+a note saying so.
+
+Concurrent installs into one workspace from separate processes are not
+supported. The merge is read-modify-write on a plain JSON file with no lock,
+so two agents installing into the same `.mcp.json` at the same time will race,
+and one restore can undo the other's entries. Give each concurrent turn its
+own workspace, or its own `TurnRequest.mcp_workspace`.

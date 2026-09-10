@@ -122,7 +122,8 @@ class CopilotProvider:
 def mcp_entry(server: McpServer) -> dict[str, Any]:
     """Render one server the way ``--additional-mcp-config`` describes it."""
     if isinstance(server, HttpMcpServer):
-        entry: dict[str, Any] = {"type": "sse", "url": server.url}
+        # Copilot uses the spec's own transport names in ``type``.
+        entry: dict[str, Any] = {"type": server.transport, "url": server.url}
         if server.headers:
             entry["headers"] = dict(server.headers)
         return entry

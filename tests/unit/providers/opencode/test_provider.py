@@ -106,6 +106,19 @@ class TestInstallMcp:
             "enabled": True,
         }
 
+    def test_both_transports_render_the_same_remote_entry(self, tmp_path: Path) -> None:
+        """opencode has one remote type and negotiates the transport itself."""
+        for transport in ("http", "sse"):
+            OpencodeProvider().install_mcp(
+                tmp_path,
+                [HttpMcpServer(name="my-srv", url="http://localhost:9000/x", transport=transport)],  # pyright: ignore[reportArgumentType]
+            )
+            assert _config(tmp_path)["mcp"]["my-srv"] == {  # pyright: ignore[reportIndexIssue]
+                "type": "remote",
+                "url": "http://localhost:9000/x",
+                "enabled": True,
+            }
+
     def test_http_headers_are_included_when_set(self, tmp_path: Path) -> None:
         server = HttpMcpServer(
             name="auth", url="https://x/mcp", headers={"Authorization": "Bearer t"}

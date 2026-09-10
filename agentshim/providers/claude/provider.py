@@ -151,8 +151,9 @@ def _resumed_session_id(argv: Sequence[str]) -> str | None:
 def mcp_entry(server: McpServer) -> dict[str, Any]:
     """Render one server the way ``.mcp.json`` describes it."""
     if isinstance(server, HttpMcpServer):
-        # Claude validates the config strictly and needs an explicit type.
-        entry: dict[str, Any] = {"type": "sse", "url": server.url}
+        # Claude validates the config strictly and needs an explicit type; it
+        # names the two remote transports exactly as the spec does.
+        entry: dict[str, Any] = {"type": server.transport, "url": server.url}
         if server.headers:
             entry["headers"] = dict(server.headers)
         return entry

@@ -158,6 +158,16 @@ needs a `cwd`, and raises `ProviderCapabilityError` without one.
   `parse_json_object` returns `None` for blank lines, invalid JSON and
   non-objects alike, and the parser emits `RawOutput` so the line stays
   observable instead of crashing the turn or being dropped.
+- **`HttpMcpServer` meant a different transport on every provider.** The same
+  spec became SSE on claude and copilot but streamable HTTP on gemini, codex
+  and opencode, so a server reachable on one provider silently failed on
+  another. `HttpMcpServer` now takes
+  `transport: Literal["http", "sse"] = "http"`, and each provider renders it
+  the way its CLI names it (`{"type": ...}` on claude and copilot,
+  `httpUrl`/`url` on gemini). opencode's single `remote` type and Codex's
+  `--config` URL override cannot express the choice, so both work it out from
+  the endpoint; `docs/mcp.md` has the table. The default changes claude and
+  copilot from SSE to streamable HTTP.
 - **Three non-`AgentShimError` exceptions escaped `turn()`**, against the
   documented contract that catching `AgentShimError` is enough. Installing MCP
   servers into a read-only workspace raised `PermissionError` from the config

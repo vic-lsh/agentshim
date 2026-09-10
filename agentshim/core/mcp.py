@@ -4,6 +4,11 @@ A CONFIG_FILE provider discovers MCP servers from a JSON file in the
 workspace that the user may also own. Installing merges into that file and
 keeps the original bytes; restoring puts them back, and when the file changed
 during the turn only the entries agentshim added are removed.
+
+The merge is a read-modify-write on a plain JSON file with no lock, so
+concurrent installs into one workspace from separate processes are not
+supported: they will race, and one restore can undo the other's entries. Give
+each concurrent turn its own workspace.
 """
 
 from __future__ import annotations
@@ -11,7 +16,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from ._files import atomic_write, real_path
 from .errors import McpConfigError
@@ -48,13 +53,27 @@ class StdioMcpServer:
             raise ValueError(msg)
 
 
+#: The two remote MCP transports the CLIs distinguish.
+McpTransport = Literal["http", "sse"]
+
+_TRANSPORTS = ("http", "sse")
+
+
 @dataclass(frozen=True)
 class HttpMcpServer:
-    """MCP server reached over HTTP/SSE."""
+    """MCP server reached over streamable HTTP or the older SSE transport.
+
+    ``transport`` is what the server actually speaks, and it has to be said
+    rather than guessed: the two are different wire protocols, and a provider
+    told the wrong one connects and then fails. It defaults to ``"http"``,
+    which is what a current MCP server serves; the CLIs that cannot tell the
+    two apart ignore it.
+    """
 
     name: str
     url: str
     headers: Mapping[str, str] = _NO_ENV
+    transport: McpTransport = "http"
 
     def __post_init__(self) -> None:
         """Reject a spec the provider could never reach.
@@ -67,6 +86,9 @@ class HttpMcpServer:
             raise ValueError(msg)
         if not self.url:
             msg = f"MCP server {self.name!r} must declare a url"
+            raise ValueError(msg)
+        if self.transport not in _TRANSPORTS:
+            msg = f"MCP server {self.name!r} transport must be one of {_TRANSPORTS}"
             raise ValueError(msg)
 
 

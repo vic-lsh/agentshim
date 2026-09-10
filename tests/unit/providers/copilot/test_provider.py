@@ -107,8 +107,16 @@ class TestInstallMcp:
         with_env = _config(list(CopilotProvider().install_mcp(None, [server]).argv))
         assert with_env["mcpServers"]["tool"]["env"] == {"KEY": "val"}
 
-    def test_http_servers_declare_their_transport(self) -> None:
-        server = HttpMcpServer(name="my-srv", url="http://localhost:9000/sse")
+    def test_http_servers_default_to_streamable_http(self) -> None:
+        server = HttpMcpServer(name="my-srv", url="http://localhost:9000/mcp")
+        config = _config(list(CopilotProvider().install_mcp(None, [server]).argv))
+        assert config["mcpServers"]["my-srv"] == {
+            "type": "http",
+            "url": "http://localhost:9000/mcp",
+        }
+
+    def test_an_sse_server_is_declared_as_sse(self) -> None:
+        server = HttpMcpServer(name="my-srv", url="http://localhost:9000/sse", transport="sse")
         config = _config(list(CopilotProvider().install_mcp(None, [server]).argv))
         assert config["mcpServers"]["my-srv"] == {"type": "sse", "url": "http://localhost:9000/sse"}
 

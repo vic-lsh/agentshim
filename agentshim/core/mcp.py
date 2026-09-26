@@ -14,6 +14,7 @@ each concurrent turn its own workspace.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -37,12 +38,18 @@ def _no_env() -> Mapping[str, str]:
 
 @dataclass(frozen=True)
 class StdioMcpServer:
-    """MCP server launched as a subprocess over stdio."""
+    """MCP server launched as a subprocess over stdio.
+
+    ``tool_timeout_s`` is the maximum time one tool call may run. Providers
+    that cannot express a per-server tool timeout reject a non-``None`` value
+    rather than silently dropping it.
+    """
 
     name: str
     command: str
     args: Sequence[str] = ()
     env: Mapping[str, str] = field(default_factory=_no_env)
+    tool_timeout_s: float | None = None
 
     def __post_init__(self) -> None:
         """Reject a spec the provider could never launch.
@@ -56,6 +63,7 @@ class StdioMcpServer:
         if not self.command:
             msg = f"MCP server {self.name!r} must declare a command"
             raise ValueError(msg)
+        _validate_tool_timeout(self.name, self.tool_timeout_s)
 
 
 #: The two remote MCP transports the CLIs distinguish.
@@ -79,6 +87,7 @@ class HttpMcpServer:
     url: str
     headers: Mapping[str, str] = field(default_factory=_no_env)
     transport: McpTransport = "http"
+    tool_timeout_s: float | None = None
 
     def __post_init__(self) -> None:
         """Reject a spec the provider could never reach.
@@ -95,6 +104,16 @@ class HttpMcpServer:
         if self.transport not in _TRANSPORTS:
             msg = f"MCP server {self.name!r} transport must be one of {_TRANSPORTS}"
             raise ValueError(msg)
+        _validate_tool_timeout(self.name, self.tool_timeout_s)
+
+
+def _validate_tool_timeout(name: str, timeout_s: float | None) -> None:
+    """Reject timeout values no provider can apply meaningfully."""
+    if timeout_s is None:
+        return
+    if isinstance(timeout_s, bool) or not math.isfinite(timeout_s) or timeout_s <= 0:
+        msg = f"MCP server {name!r} tool_timeout_s must be a positive finite number"
+        raise ValueError(msg)
 
 
 McpServer = StdioMcpServer | HttpMcpServer

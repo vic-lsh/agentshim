@@ -100,6 +100,13 @@ class TestInstallMcp:
         server = StdioMcpServer(name="tool", command="npx", env={"KEY": "val"})
         assert _flags(server)[-2:] == ["--config", 'mcp_servers.tool.env.KEY="val"']
 
+    def test_a_stdio_tool_timeout_is_an_invocation_scoped_override(self) -> None:
+        server = StdioMcpServer(name="profiler", command="python", tool_timeout_s=1500.0)
+        assert _flags(server)[-2:] == [
+            "--config",
+            "mcp_servers.profiler.tool_timeout_sec=1500.0",
+        ]
+
     def test_quotes_in_a_value_are_toml_escaped(self) -> None:
         server = StdioMcpServer(name="tool", command='py"thon')
         assert 'mcp_servers.tool.command="py\\"thon"' in _flags(server)
@@ -107,6 +114,13 @@ class TestInstallMcp:
     def test_an_http_server_declares_its_url(self) -> None:
         server = HttpMcpServer(name="my-srv", url="http://localhost:9000/sse")
         assert _flags(server) == ["--config", 'mcp_servers.my_srv.url="http://localhost:9000/sse"']
+
+    def test_an_http_tool_timeout_is_an_invocation_scoped_override(self) -> None:
+        server = HttpMcpServer(name="my-srv", url="http://localhost:9000/sse", tool_timeout_s=30.5)
+        assert _flags(server)[-2:] == [
+            "--config",
+            "mcp_servers.my_srv.tool_timeout_sec=30.5",
+        ]
 
     def test_both_transports_render_the_same_url_override(self) -> None:
         """A ``--config`` override has room for the address and nothing else."""

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.2 (unreleased)
+
+- Add optional positive finite `tool_timeout_s` to stdio and HTTP MCP server
+  specs. Codex renders it as an invocation-scoped `tool_timeout_sec` config
+  override; providers that cannot represent it reject the request explicitly.
+
 ## 0.6.1 (2026-09-10)
 
 Additive only: every new field defaults, so a 0.6.0 consumer's existing

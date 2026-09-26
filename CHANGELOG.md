@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.3 (2026-09-26)
 
 - Narrow Codex `auth_files` to `.codex/auth.json`. User `config.toml` is not
   authentication state and need not be copied or mounted into an isolated

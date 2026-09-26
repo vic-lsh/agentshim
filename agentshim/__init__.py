@@ -84,7 +84,7 @@ from .providers.copilot import CopilotProvider
 from .providers.gemini import GeminiProvider
 from .providers.opencode import OpencodeProvider
 
-__version__ = "0.6.0"
+__version__ = "0.6.2"
 
 __all__ = [
     "AgentEvent",

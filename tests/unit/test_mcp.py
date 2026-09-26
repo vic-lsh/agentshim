@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
 from agentshim import (
@@ -12,6 +14,7 @@ from agentshim import (
     FlagsInstallation,
     HttpMcpServer,
     McpConfigError,
+    McpServer,
     NoopInstallation,
     StdioMcpServer,
     install_config_file,
@@ -29,11 +32,45 @@ class TestServerSpecs:
         server = StdioMcpServer(name="tool", command="npx")
         assert server.args == ()
         assert server.env == {}
+        assert server.tool_timeout_s is None
 
     def test_http_defaults(self) -> None:
         server = HttpMcpServer(name="h", url="http://localhost:8080/sse")
         assert server.headers == {}
         assert server.transport == "http"
+        assert server.tool_timeout_s is None
+
+    @pytest.mark.parametrize(
+        "factory",
+        [
+            lambda: StdioMcpServer(name="tool", command="npx", tool_timeout_s=45.5),
+            lambda: HttpMcpServer(name="h", url="http://x", tool_timeout_s=45.5),
+        ],
+    )
+    def test_a_positive_finite_tool_timeout_is_accepted(
+        self, factory: Callable[[], McpServer]
+    ) -> None:
+        assert factory().tool_timeout_s == 45.5
+
+    @pytest.mark.parametrize(
+        "timeout_s", [0.0, -1.0, float("inf"), float("-inf"), float("nan"), True]
+    )
+    @pytest.mark.parametrize(
+        "factory",
+        [
+            lambda timeout: StdioMcpServer(
+                name="tool", command="npx", tool_timeout_s=cast("float", timeout)
+            ),
+            lambda timeout: HttpMcpServer(
+                name="h", url="http://x", tool_timeout_s=cast("float", timeout)
+            ),
+        ],
+    )
+    def test_tool_timeout_must_be_positive_and_finite(
+        self, factory: Callable[[object], McpServer], timeout_s: object
+    ) -> None:
+        with pytest.raises(ValueError, match="positive finite"):
+            factory(timeout_s)
 
     def test_the_sse_transport_can_be_asked_for(self) -> None:
         server = HttpMcpServer(name="h", url="http://localhost:8080/sse", transport="sse")

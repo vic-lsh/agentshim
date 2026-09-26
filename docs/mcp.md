@@ -22,6 +22,14 @@ agent.start_session(cwd="/workspace").turn(
 )
 ```
 
+`StdioMcpServer(..., tool_timeout_s=120.0)` and
+`HttpMcpServer(..., tool_timeout_s=120.0)` request a per-server tool timeout.
+The value is optional and must be positive and finite. Codex applies
+it to that server with an invocation-scoped `--config` override named
+`mcp_servers.<name>.tool_timeout_sec`, so the user's
+`~/.codex/config.toml` is never edited. Providers that cannot express a
+per-server tool timeout raise `ProviderCapabilityError` when one is requested.
+
 `HttpMcpServer(name=..., url=..., headers=..., transport=...)` describes a
 remote server. `transport` is `"http"` (streamable HTTP, the default) or
 `"sse"`; they are different wire protocols, so a CLI told the wrong one

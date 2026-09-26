@@ -20,6 +20,7 @@ from agentshim import (
     HttpMcpServer,
     McpMechanism,
     OutputSchemaStyle,
+    ProviderCapabilityError,
     RawOutput,
     SchemaDialect,
     SessionResumeError,
@@ -317,3 +318,34 @@ class TestInstalledMcpServers:
 
         assert captured["stdio_server"]["command"] == "npx"
         assert captured["http_server"]["url"] == "https://example.com/mcp"
+
+
+class TestMcpToolTimeout:
+    def test_codex_preserves_the_timeout_in_its_invocation(self, tmp_path: Path) -> None:
+        server = StdioMcpServer(name="profiler", command="python", tool_timeout_s=1500.0)
+        captured: dict[str, dict[str, Any]] = {}
+
+        def run(request: CommandRequest) -> FakeRun:
+            captured.update(installed_mcp_servers("codex", request, tmp_path))
+            return scripted_turn("codex", text="ok")
+
+        executor = FakeExecutor(run)
+        CliAgent("codex", executor=executor, env=dict(_ENV)).run(
+            TurnRequest(prompt="profile", cwd=str(tmp_path), mcp_servers=[server])
+        )
+
+        assert captured["profiler"]["tool_timeout_s"] == 1500.0
+
+    @pytest.mark.parametrize("name", [name for name in PROVIDERS if name != "codex"])
+    def test_a_provider_that_cannot_apply_the_timeout_rejects_it(
+        self, name: str, tmp_path: Path
+    ) -> None:
+        server = StdioMcpServer(name="profiler", command="python", tool_timeout_s=1500.0)
+        executor = FakeExecutor(scripted_turn(name, text="unused"))
+
+        with pytest.raises(ProviderCapabilityError, match="per-server MCP tool timeout"):
+            CliAgent(name, executor=executor, env=dict(_ENV)).run(
+                TurnRequest(prompt="profile", cwd=str(tmp_path), mcp_servers=[server])
+            )
+
+        assert executor.requests == []

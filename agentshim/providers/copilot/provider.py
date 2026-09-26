@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from agentshim.core.errors import ProviderCapabilityError
 from agentshim.core.mcp import FlagsInstallation, HttpMcpServer, NoopInstallation
 from agentshim.core.profile import McpMechanism, OutputSchemaStyle, ProviderProfile
 
@@ -134,6 +135,9 @@ class CopilotProvider:
 
 def mcp_entry(server: McpServer) -> dict[str, Any]:
     """Render one server the way ``--additional-mcp-config`` describes it."""
+    if server.tool_timeout_s is not None:
+        msg = "copilot cannot configure a per-server MCP tool timeout"
+        raise ProviderCapabilityError(msg)
     if isinstance(server, HttpMcpServer):
         # Copilot uses the spec's own transport names in ``type``.
         entry: dict[str, Any] = {"type": server.transport, "url": server.url}

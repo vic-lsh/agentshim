@@ -215,7 +215,8 @@ def installed_mcp_servers(
     Each entry is a plain dict in a canonical shape, regardless of how the
     provider itself renders it: ``command``, ``args`` and ``env`` for a
     server started over stdio, ``url`` and ``transport`` for one reached over
-    HTTP.
+    HTTP. Either shape includes ``tool_timeout_s`` when the invocation set
+    one.
 
     Args:
         provider: A registered provider name.

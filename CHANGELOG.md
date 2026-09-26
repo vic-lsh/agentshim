@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Narrow Codex `auth_files` to `.codex/auth.json`. User `config.toml` is not
+  authentication state and need not be copied or mounted into an isolated
+  agent process; per-turn settings continue to use CLI config overrides.
+
 ## 0.6.2 (2026-09-26)
 
 - Add optional positive finite `tool_timeout_s` to stdio and HTTP MCP server

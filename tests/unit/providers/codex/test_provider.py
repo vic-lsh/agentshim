@@ -70,7 +70,8 @@ class TestProfile:
         assert profile.auth_env_vars == ("OPENAI_API_KEY", "OPENAI_BASE_URL")
         assert profile.skill_dirs == (".agents/skills",)
         assert profile.state_root_env == "CODEX_HOME"
-        assert profile.auth_files == (".codex/auth.json", ".codex/config.toml")
+        assert profile.auth_files == (".codex/auth.json",)
+        assert ".codex/config.toml" not in profile.auth_files
         assert profile.mcp_config_file is None
         assert profile.container_env == {}
 

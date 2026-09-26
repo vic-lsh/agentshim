@@ -76,7 +76,10 @@ PROFILE = ProviderProfile(
     # "Layer $CODEX_HOME/<name>.config.toml on top of the base user config";
     # "auth still uses CODEX_HOME").
     state_root_env="CODEX_HOME",
-    auth_files=(".codex/auth.json", ".codex/config.toml"),
+    # Authentication is self-contained in auth.json.  config.toml is user
+    # policy and preferences, so consumers that copy or mount auth state must
+    # not needlessly expose it to an agent process.
+    auth_files=(".codex/auth.json",),
     # CLI_FLAGS: Codex takes MCP servers as --config overrides, never a file.
     mcp_config_file=None,
 )

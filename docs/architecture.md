@@ -222,7 +222,7 @@ class ProviderProfile:
     container_install: tuple[str, ...] # shell commands installing the CLI on Debian
     container_env: Mapping[str, str]   # env a root container run needs beyond auth; default empty
     state_root_env: str | None         # var that relocates state_dirs[0]; None if undocumented
-    auth_files: tuple[str, ...]        # home-relative credential/config files, inside state_dirs
+    auth_files: tuple[str, ...]        # home-relative authentication files, inside state_dirs
     mcp_config_file: str | None        # workspace-relative MCP config path; set iff mcp is CONFIG_FILE
 ```
 
@@ -244,6 +244,9 @@ the workspace-relative path a `CONFIG_FILE` provider writes its MCP config
 to for a turn (`.mcp.json`, `.gemini/settings.json`, `opencode.json`); the
 provider module defines it as the same constant `install_mcp` writes to, so
 the two cannot drift, and it is `None` for `CLI_FLAGS`/`NONE` providers.
+Codex therefore declares only `.codex/auth.json` as authentication state.
+Its user `config.toml` is not required: model, reasoning effort, shell policy,
+output schema, and MCP servers are supplied as invocation-scoped flags.
 
 ### Provider protocol
 
@@ -567,4 +570,3 @@ provider is saying the conversation is gone.
 **Truncation in `ConsoleEventHandler` has no per-tool exceptions.** Giving
 named tools a larger budget is caller policy; a caller who wants it writes
 their own handler.
-

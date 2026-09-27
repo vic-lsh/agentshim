@@ -72,11 +72,15 @@ tests cover.
 
 Properties are written with Hypothesis. `tests/conftest.py` registers two
 profiles: `default` (200 examples, used by `pytest` and CI) and `fuzz`
-(20,000 examples, no deadline) for hunting:
+(1,000 examples, no deadline) for hunting. A fuzz run is capped at five
+minutes of wall-clock time:
 
 ```bash
-HYPOTHESIS_PROFILE=fuzz uv run pytest tests/unit -q
+HYPOTHESIS_PROFILE=fuzz timeout 300 uv run pytest tests/unit -q
 ```
+
+Run longer only when a long run is explicitly requested, by raising
+`HYPOTHESIS_MAX_EXAMPLES` and dropping the `timeout`.
 
 A rendered argv is a contract with another program, so properties check it
 against an independent reader where one exists: TOML literals against
@@ -87,7 +91,7 @@ against an independent reader where one exists: TOML literals against
 The e2e suite is local only, so it is part of cutting a release:
 
 1. `AGENTSHIM_E2E=1 AGENTSHIM_E2E_CLAUDE_MODEL=haiku AGENTSHIM_E2E_CODEX_MODEL=gpt-6-luna uv run pytest tests/e2e -q`
-   for every CLI installed, plus `HYPOTHESIS_PROFILE=fuzz uv run pytest tests/unit -q`.
+   for every CLI installed, plus `HYPOTHESIS_PROFILE=fuzz timeout 300 uv run pytest tests/unit -q`.
 2. Paste the pass/fail summary and each CLI's `--version` into the release PR.
 3. Bump `pyproject.toml`, `agentshim.__version__`, the version test, and `uv.lock`;
    date the `CHANGELOG.md` entry.

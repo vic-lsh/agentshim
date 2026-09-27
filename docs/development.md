@@ -44,6 +44,14 @@ environment, because the CLI default is not usable on every account:
 | --- | --- |
 | `AGENTSHIM_E2E_GEMINI_MODEL` | Gemini model to use. Without it the CLI default is used, which fails with `ModelNotFoundError` on an account that has no access to it. |
 | `AGENTSHIM_E2E_OPENCODE_MODEL` | opencode `provider/model`. Without it the model from your own opencode config is used. |
+| `AGENTSHIM_E2E_CLAUDE_MODEL` | Claude model, e.g. `haiku`, to keep the suite cheap. |
+| `AGENTSHIM_E2E_CODEX_MODEL` | Codex model, e.g. `gpt-6-luna`, to keep the suite cheap. |
+
+Some e2e tests drive a CLI without a model, such as the Codex sandbox
+enforcement matrix, which runs agentshim's rendered overrides through
+`codex sandbox`. They are marked `requires_binary` instead of
+`requires_cli`: no credentials, no cost, deterministic, and they run whenever
+the binary is installed.
 
 ```bash
 AGENTSHIM_E2E=1 AGENTSHIM_E2E_GEMINI_MODEL=gemini-2.5-flash \
@@ -54,6 +62,32 @@ The e2e conftest unsets `CLAUDECODE` for the session. `interactive_env()`
 captures the environment through `bash -i`, which inherits it from an
 enclosing Claude Code session, and a nested run is not the code path these
 tests cover.
+
+## Property Tests
+
+Properties are written with Hypothesis. `tests/conftest.py` registers two
+profiles: `default` (200 examples, used by `pytest` and CI) and `fuzz`
+(20,000 examples, no deadline) for hunting:
+
+```bash
+HYPOTHESIS_PROFILE=fuzz uv run pytest tests/unit -q
+```
+
+A rendered argv is a contract with another program, so properties check it
+against an independent reader where one exists: TOML literals against
+`tomllib`, rendered configs against their `parse_*` inverse.
+
+## Release Checklist
+
+The e2e suite is local only, so it is part of cutting a release:
+
+1. `AGENTSHIM_E2E=1 AGENTSHIM_E2E_CLAUDE_MODEL=haiku AGENTSHIM_E2E_CODEX_MODEL=gpt-6-luna uv run pytest tests/e2e -q`
+   for every CLI installed, plus `HYPOTHESIS_PROFILE=fuzz uv run pytest tests/unit -q`.
+2. Paste the pass/fail summary and each CLI's `--version` into the release PR.
+3. Bump `pyproject.toml`, `agentshim.__version__`, the version test, and `uv.lock`;
+   date the `CHANGELOG.md` entry.
+4. Merge, then publish a GitHub release tagged `vX.Y.Z`; the Publish workflow
+   uploads it to PyPI.
 
 ## Build Package
 

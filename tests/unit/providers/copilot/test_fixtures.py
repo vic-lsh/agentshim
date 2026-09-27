@@ -108,7 +108,9 @@ class TestRecordedToolsAndUsage:
         assert parsed.text == "done"
         assert parsed.usage.tokens.input_tokens == 115
         assert parsed.usage.tokens.output_tokens == 24
-        assert parsed.usage.tokens.cached_input_tokens == 15
+        assert parsed.usage.tokens.cache_read_input_tokens == 10
+        assert parsed.usage.tokens.cache_write_input_tokens == 5
+        assert parsed.usage.tokens.reasoning_output_tokens == 4
         assert parsed.usage.tokens.turns == 1
         assert parsed.usage.tokens.cached_input_tokens <= parsed.usage.tokens.input_tokens
 

@@ -106,13 +106,22 @@ def resume_failure_lines(*, session_id: str | None = None) -> tuple[list[str], l
 
 def _usage_payload(usage: TokenUsage | None) -> dict[str, int]:
     if usage is None:
-        return {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0}
-    # Codex's input_tokens already includes the cached prefix, so the counts
-    # go out exactly as the parser will read them back.
+        return {
+            "input_tokens": 0,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 0,
+            "reasoning_output_tokens": 0,
+        }
+    # Codex nests its counts the way agentshim normalizes them (input includes
+    # cache reads and writes, output includes reasoning), so they go out
+    # exactly as the parser will read them back.
     return {
         "input_tokens": usage.input_tokens,
-        "cached_input_tokens": usage.cached_input_tokens,
+        "cached_input_tokens": usage.cache_read_input_tokens,
+        "cache_write_input_tokens": usage.cache_write_input_tokens,
         "output_tokens": usage.output_tokens,
+        "reasoning_output_tokens": usage.reasoning_output_tokens,
     }
 
 

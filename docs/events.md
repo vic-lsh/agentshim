@@ -67,9 +67,9 @@ code passes it through; one that only reports a boolean failure uses `1`.
 
 Every provider emits at least one `UsageReport` per turn when its CLI reports
 usage, and the last one matches `TurnResult.usage`. `ProviderUsage.tokens`
-obeys `cached_input_tokens <= input_tokens` on every provider: Claude and
-Copilot report cache tokens disjoint from input tokens and their parsers fold
-them in, opencode adds its cache hits back into `input`, and Gemini clamps.
+is the normalized breakdown in [Usage and Pricing](pricing.md): total input
+including cache reads and writes, the two cache classes, output including
+reasoning, and the reasoning part.
 `ProviderUsage.raw` keeps the CLI's own mapping for diagnostics.
 
 Copilot CLI prints no token counts at all, so its counts are zero; see

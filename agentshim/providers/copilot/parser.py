@@ -18,7 +18,7 @@ from agentshim.core.events import (
 )
 from agentshim.core.provider import ParsedTurn
 from agentshim.core.stream import ToolTracker, parse_json_object
-from agentshim.core.usage import ProviderUsage, TokenUsage
+from agentshim.core.usage import ProviderUsage, TokenUsage, normalized_usage
 
 from .events import (
     AssistantIntent,
@@ -50,15 +50,14 @@ def fold_usage(frame: UsageFrame) -> TokenUsage:
 
     Copilot reports cache reads and cache writes disjoint from
     ``inputTokens``, and reasoning tokens disjoint from ``outputTokens``.
-    Folding both in is what makes ``cached_input_tokens <= input_tokens``
-    hold here as it does on every other provider, and keeps the output count
-    comparable with providers that bill reasoning as output.
+    Folding both in makes ``input_tokens`` the total input here as on every
+    other provider, and keeps the output count comparable with providers
+    that bill reasoning as output. Cache reads and writes stay apart.
     """
-    cached = frame.cache_read_tokens + frame.cache_write_tokens
-    return TokenUsage(
-        input_tokens=frame.input_tokens + cached,
+    return normalized_usage(
+        input_tokens=frame.input_tokens + frame.cache_read_tokens + frame.cache_write_tokens,
         output_tokens=frame.output_tokens + frame.reasoning_tokens,
-        cached_input_tokens=cached,
+        cache_read_input_tokens=frame.cache_read_tokens,
         cache_write_input_tokens=frame.cache_write_tokens,
         reasoning_output_tokens=frame.reasoning_tokens,
     )

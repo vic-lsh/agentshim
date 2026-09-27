@@ -13,8 +13,9 @@ to retire a conversation, how to sandbox the host, or how to render events.
 - `CliAgent` / `AgentSession`: one turn at a time, resumable, cancellable
 - typed events (`AssistantText`, `ToolCall`, `ToolResult`, `UsageReport`, ...)
   delivered on the calling thread
-- normalized token accounting where `cached_input_tokens <= input_tokens` on
-  every provider
+- normalized token accounting (total input, cache reads, cache writes,
+  uncached input, output and reasoning) on every provider, plus a static,
+  versioned pricing table (see [Usage and Pricing](pricing.md))
 - declared capabilities on `ProviderProfile`, so no caller probes a provider
   for attributes
 - injectable `CommandExecutor`s for running the CLI in a container or over a

@@ -250,8 +250,9 @@ agent = CliAgent("claude", env={**interactive_env(), "ANTHROPIC_API_KEY": "..."}
 
 ## Token usage
 
-Every provider normalizes its counts into `TokenUsage`, and
-`cached_input_tokens <= input_tokens` holds on all of them. One gap:
+Every provider normalizes its counts into `TokenUsage`; see
+[Usage and Pricing](pricing.md) for the breakdown and how each CLI's fields
+map onto it. One gap:
 **Copilot CLI reports no token counts.** Verified on 1.0.83, a run prints no
 `assistant.usage` frame and no per-message `outputTokens`, so
 `TurnResult.usage.tokens` is all zeros. Its `session.usage_checkpoint` frame

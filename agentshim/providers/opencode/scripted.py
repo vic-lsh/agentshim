@@ -120,7 +120,7 @@ def resume_failure_lines(*, session_id: str | None = None) -> tuple[list[str], l
 def _tokens(usage: TokenUsage | None) -> dict[str, Any]:
     """Render token counts the way a ``step-finish`` part carries them.
 
-    The parser adds the cache hits back into ``input`` and folds
+    The parser adds cache reads and writes back into ``input`` and folds
     ``reasoning`` into the output total, so both are undone here to produce
     the disjoint counts opencode actually prints.
     """
@@ -133,11 +133,11 @@ def _tokens(usage: TokenUsage | None) -> dict[str, Any]:
             "cache": {"read": 0, "write": 0},
         }
     write = usage.cache_write_input_tokens
-    read = max(usage.cached_input_tokens - write, 0)
+    read = usage.cache_read_input_tokens
     reasoning = usage.reasoning_output_tokens
     return {
         "total": usage.input_tokens + usage.output_tokens,
-        "input": max(usage.input_tokens - usage.cached_input_tokens, 0),
+        "input": usage.uncached_input_tokens,
         "output": max(usage.output_tokens - reasoning, 0),
         "reasoning": reasoning,
         "cache": {"read": read, "write": write},

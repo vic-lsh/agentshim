@@ -20,6 +20,7 @@ nav:
   - Executors: executors.md
   - MCP Servers: mcp.md
   - Providers: providers.md
+  - Usage and Pricing: pricing.md
   - Extending: extending.md
   - API Reference: api.md
   - Development: development.md

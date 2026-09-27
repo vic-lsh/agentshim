@@ -36,14 +36,17 @@ class TurnStarted:
 class TurnCompleted:
     """``{"type":"turn.completed","usage":{...}}``: one turn's token counts.
 
-    Codex's ``input_tokens`` already includes ``cached_input_tokens``, so the
-    two are never added together.
+    Codex's ``input_tokens`` already includes ``cached_input_tokens`` (cache
+    reads) and ``cache_write_input_tokens``, and ``output_tokens`` already
+    includes ``reasoning_output_tokens``, so none of them is added together.
     """
 
     input_tokens: int = 0
     cached_input_tokens: int = 0
     output_tokens: int = 0
     usage: Mapping[str, Any] | None = None
+    cache_write_input_tokens: int = 0
+    reasoning_output_tokens: int = 0
 
 
 @dataclass(frozen=True)
@@ -168,6 +171,8 @@ def _turn_completed(usage_raw: object) -> TurnCompleted:
         cached_input_tokens=_int(fields.get("cached_input_tokens")),
         output_tokens=_int(fields.get("output_tokens")),
         usage=usage,
+        cache_write_input_tokens=_int(fields.get("cache_write_input_tokens")),
+        reasoning_output_tokens=_int(fields.get("reasoning_output_tokens")),
     )
 
 

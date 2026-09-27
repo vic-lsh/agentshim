@@ -16,7 +16,8 @@ agentshim/
   core/                provider-agnostic
     turn.py            TurnRequest, TurnResult, OutputSchema
     events.py          event dataclasses, AgentEvent union, handlers
-    usage.py           TokenUsage, ProviderUsage
+    usage.py           TokenUsage, TokenWeights, ProviderUsage
+    pricing.py         ModelPricing, PricingTable, price_for, cost_usd
     errors.py          exception hierarchy
     profile.py         ProviderProfile and capability enums
     provider.py        Provider and StreamParser protocols, McpInstallation,
@@ -159,9 +160,9 @@ the session sees it.
 
 Usage reporting: every provider emits at least one `UsageReport` per turn
 when its CLI reports usage. `ProviderUsage.tokens` obeys
-`cached_input_tokens <= input_tokens` on every provider (Claude and Copilot
-report cache tokens disjoint from input tokens and their parsers fold them
-in). Copilot CLI 1.0.83 reports no token counts at all, so its counts are
+the normalized breakdown in [Usage and Pricing](pricing.md) on every
+provider (Claude, opencode and Copilot report cache tokens disjoint from
+input tokens and their parsers fold them in). Copilot CLI 1.0.83 reports no token counts at all, so its counts are
 zero; the invariant still holds.
 
 Tool results: a tool that failed is reported on `ToolResult.stderr` with a
@@ -169,9 +170,12 @@ nonzero `exit_code` and an empty `stdout`, on every provider.
 
 ### Usage
 
-`TokenUsage` carries `input_tokens`, `output_tokens`, `cached_input_tokens`,
-`cache_write_input_tokens`, `reasoning_output_tokens` and `turns`, and adds
-field-wise so per-turn usages fold into a session total.
+`TokenUsage` carries `input_tokens`, `cache_read_input_tokens`,
+`cache_write_input_tokens`, `cache_write_1h_input_tokens`, `output_tokens`,
+`reasoning_output_tokens`, `turns` and the deprecated `cached_input_tokens`
+alias, derives `uncached_input_tokens`, and adds field-wise so per-turn usages
+fold into a session total. `pricing.py` holds the static price table and
+`cost_usd`.
 `ProviderUsage.raw` holds the last raw provider usage mapping for
 diagnostics. Each provider package normalizes its CLI's counts in a
 `fold_usage` function private to its own `parser.py`; the five signatures

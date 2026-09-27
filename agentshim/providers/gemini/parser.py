@@ -16,7 +16,7 @@ from agentshim.core.events import (
 )
 from agentshim.core.provider import ParsedTurn
 from agentshim.core.stream import ToolTracker, parse_json_object
-from agentshim.core.usage import ProviderUsage, TokenUsage
+from agentshim.core.usage import ProviderUsage, TokenUsage, normalized_usage
 
 from .events import (
     ErrorEvent,
@@ -46,17 +46,18 @@ def fold_usage(stats: Mapping[str, Any] | None, turns: int = 0) -> TokenUsage:
 
     ``StreamJsonFormatter.convertToStreamStats`` reports ``input_tokens`` as
     the prompt total and ``cached`` as the part of it served from the context
-    cache, so the counts are already nested rather than disjoint. The clamp
-    keeps ``cached_input_tokens <= input_tokens`` even if a future build
-    reports them the other way around.
+    cache, so the counts are already nested rather than disjoint; ``cached``
+    is a cache read. The clamp keeps reads within ``input_tokens`` even if a
+    future build reports them the other way around. Gemini reports no cache
+    writes and no reasoning count in these stats, so both stay 0 (its
+    ``output_tokens`` excludes thinking tokens).
     """
     if stats is None:
         return TokenUsage(turns=turns)
-    input_tokens = _int(stats.get("input_tokens"))
-    return TokenUsage(
-        input_tokens=input_tokens,
+    return normalized_usage(
+        input_tokens=_int(stats.get("input_tokens")),
         output_tokens=_int(stats.get("output_tokens")),
-        cached_input_tokens=min(_int(stats.get("cached")), input_tokens),
+        cache_read_input_tokens=_int(stats.get("cached")),
         turns=turns,
     )
 

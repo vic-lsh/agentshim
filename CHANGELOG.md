@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+Additive, with one tightening: a sandboxed Codex turn no longer applies the
+user's exec-policy rules (see Fixed).
+
+### Added
+
+- `CodexSandboxConfig(excluded_commands=[...])` lets named commands run
+  outside Codex's sandbox while everything else stays confined, the Codex
+  counterpart of Claude's `excludedCommands`. Each entry is shell words
+  matched as a command prefix. Codex supports this only as exec-policy
+  `prefix_rule(decision="allow")` rules read from `$CODEX_HOME/rules/`, so
+  `agentshim.providers.codex.install_rules(home, config)` writes them into a
+  dedicated Codex home and the turn runs with `CODEX_HOME` set to it. The
+  provider refuses a missing or relative `CODEX_HOME`, or one the sandbox lets
+  commands write. `render_rules` and `parse_rules` expose the rules file.
+- `ArgvContext.cwd` (default `None`): the turn's cwd, for a provider to
+  validate paths against. It is never rendered into argv.
+
+### Fixed
+
+- Sandboxed Codex turns pass `--ignore-rules`. An `allow` rule in the user's
+  `~/.codex/rules/` (which the TUI writes when a command is approved) used to
+  run its command outside a sandbox agentshim had asked for.
+
+### Documented
+
+- Codex often omits commands its sandbox denied from `--json` output, and
+  exposes them nowhere else in structured form, so no `ToolCall` event is
+  emitted for them.
+
 ## 0.6.6 (2026-09-27)
 
 Additive: every new option defaults to earlier behaviour.

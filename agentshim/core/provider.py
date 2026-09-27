@@ -34,6 +34,9 @@ class ArgvContext:
     schema_path: str | None
     mcp_argv: Sequence[str] = ()
     extra_args: Sequence[str] = ()
+    #: The directory the CLI will run in, or ``None`` for the executor's own.
+    #: Argv never carries it; a provider reads it to validate paths against it.
+    cwd: str | None = None
 
 
 @dataclass(frozen=True)

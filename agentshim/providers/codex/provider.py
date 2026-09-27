@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,7 @@ from agentshim.core.profile import (
 
 from ._toml import toml_array, toml_str, unescape_toml
 from .parser import CodexStreamParser
+from .rules import RULES_FILENAME
 from .sandbox import CodexSandboxConfig, resolve_sandbox, sandbox_overrides
 
 if TYPE_CHECKING:
@@ -90,6 +92,9 @@ PROFILE = ProviderProfile(
 #: Turns off both Codex's sandbox and its approval prompts.
 BYPASS_FLAG = "--dangerously-bypass-approvals-and-sandbox"
 
+#: Keeps user and project ``.rules`` files out of a sandboxed turn.
+IGNORE_RULES_FLAG = "--ignore-rules"
+
 
 class CodexProvider:
     """Codex (``codex exec --json``). ``sandbox`` is a provider option."""
@@ -116,7 +121,7 @@ class CodexProvider:
         argv = [ctx.binary_path, "exec"]
         if ctx.resume_session_id:
             argv += ["resume", ctx.resume_session_id, "-"]
-        argv += self._sandbox_argv()
+        argv += self._sandbox_argv(ctx)
         argv += ["--skip-git-repo-check", "--json"]
         if ctx.model:
             argv += ["--model", ctx.model]
@@ -129,12 +134,24 @@ class CodexProvider:
         argv += list(ctx.extra_args)
         return argv
 
-    def _sandbox_argv(self) -> list[str]:
+    def _sandbox_argv(self, ctx: ArgvContext) -> list[str]:
+        """Render the sandbox, and decide which exec-policy rules may apply.
+
+        Codex runs a command that an ``allow`` rule matches outside its
+        sandbox, and loads rules from ``$CODEX_HOME/rules`` and trusted
+        projects. Without exemptions ``--ignore-rules`` keeps every such file
+        out, the user's own included. With them the rules have to load, so
+        the home they come from is checked instead.
+        """
         if self.sandbox is None:
             return [BYPASS_FLAG]
         argv: list[str] = []
         for key, value in sandbox_overrides(self.sandbox):
             argv += ["--config", f"{key}={value}"]
+        if self.sandbox.excluded_commands:
+            _check_rules_home(self.sandbox, ctx)
+        else:
+            argv.append(IGNORE_RULES_FLAG)
         return argv
 
     def new_parser(
@@ -176,6 +193,50 @@ class CodexProvider:
         return SessionResumeError(
             error.argv, error.returncode, session_id, error.stdout, error.stderr
         )
+
+
+def _check_rules_home(config: CodexSandboxConfig, ctx: ArgvContext) -> None:
+    """Refuse a ``CODEX_HOME`` that cannot hold the exemptions safely.
+
+    The rules are read from ``$CODEX_HOME/rules`` on every turn, so a home the
+    sandbox lets commands write would let the model install a rule exempting
+    anything, and have it apply from the next turn on.
+    """
+    home = ctx.env.get("CODEX_HOME")
+    if not home or not os.path.isabs(home):  # noqa: PTH117 - a str contract, not a Path
+        msg = (
+            "excluded_commands are read from $CODEX_HOME/rules/"
+            f"{RULES_FILENAME}: run the turn with CODEX_HOME set to the absolute "
+            f"path of a dedicated home prepared with install_rules (got {home!r})"
+        )
+        raise ProviderCapabilityError(msg)
+    for directory in _writable_dirs(config, ctx):
+        if _is_within(home, directory) or _is_within(directory, home):
+            msg = (
+                f"CODEX_HOME {home} overlaps {directory}, which the sandbox lets "
+                "commands write, so a command could add rules exempting itself"
+            )
+            raise ProviderCapabilityError(msg)
+
+
+def _writable_dirs(config: CodexSandboxConfig, ctx: ArgvContext) -> list[str]:
+    """The directories *config* lets sandboxed commands write, where known."""
+    if config.mode != "workspace-write":
+        return []
+    dirs = list(config.writable_roots)
+    if ctx.cwd:
+        dirs.append(ctx.cwd)
+    if config.writable_tmp:
+        dirs.append("/tmp")  # noqa: S108 - Codex's own writable /tmp
+        tmpdir = ctx.env.get("TMPDIR")
+        if tmpdir:
+            dirs.append(tmpdir)
+    return dirs
+
+
+def _is_within(path: str, directory: str) -> bool:
+    resolved, parent = os.path.realpath(path), os.path.realpath(directory)
+    return resolved == parent or resolved.startswith(parent.rstrip(os.sep) + os.sep)
 
 
 def _is_missing_rollout(stderr: str) -> bool:
@@ -335,7 +396,10 @@ def parse_sandbox(argv: Sequence[str]) -> CodexSandboxConfig | None:
 
     Returns:
         ``None`` when the turn bypassed Codex's sandbox, else the config it
-        imposed.
+        imposed. ``excluded_commands`` is always empty: exemptions live in the
+        rules file under ``CODEX_HOME``, not in argv (read them back with
+        ``parse_rules``). The absence of ``--ignore-rules`` is the argv's only
+        sign that the turn loaded rules.
 
     Raises:
         ValueError: *argv* neither bypasses the sandbox nor selects a mode.

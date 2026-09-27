@@ -258,6 +258,7 @@ class AgentSession:
                     schema_path=schema_path,
                     mcp_argv=installation.argv,
                     extra_args=req.extra_args,
+                    cwd=cwd,
                 )
             )
             command = CommandRequest(argv=argv, stdin=req.prompt, cwd=cwd, env=env, timeout=timeout)

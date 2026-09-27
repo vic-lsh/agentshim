@@ -8,18 +8,21 @@ a config nothing changes from earlier releases.
 
 from __future__ import annotations
 
+import shlex
 import sys
 from dataclasses import replace
 
 import pytest
-from agentshim import ArgvContext
+from agentshim import ArgvContext, CliAgent, ProviderCapabilityError
 from agentshim.providers.codex import (
     BYPASS_FLAG,
+    IGNORE_RULES_FLAG,
     SANDBOX_MODES,
     CodexProvider,
     CodexSandboxConfig,
     parse_sandbox,
 )
+from agentshim.testing import FakeExecutor, scripted_turn
 from hypothesis import assume, example, given
 from hypothesis import strategies as st
 
@@ -66,9 +69,34 @@ configs = st.one_of(
     ),
 )
 
+#: Shell words with the characters that could break out of a rule's string
+#: literal or a naive split: quotes, backslashes, ``$``, spaces, non-BMP.
+_words = st.text(
+    alphabet=st.one_of(
+        st.characters(exclude_categories=["Cs", "Cc"]),
+        st.sampled_from(['"', "\\", "'", "$", " ", "(", ")", "]", ",", "\U0001f600"]),
+    ),
+    min_size=1,
+    max_size=10,
+)
+#: ``excluded_commands`` entries, quoted with ``shlex.join`` so they split back.
+excluded_commands = st.lists(
+    st.lists(_words, min_size=1, max_size=4).map(shlex.join), min_size=1, max_size=3
+).map(tuple)
+exempting = st.builds(
+    CodexSandboxConfig,
+    mode=st.sampled_from(["read-only", "workspace-write"]),
+    excluded_commands=excluded_commands,
+)
+
+#: A Codex home outside every directory the strategies make writable.
+_HOME = "/srv/agent/codex-home"
+
 #: Caller extras that do not themselves configure the sandbox.
 _extra_args = st.lists(
-    st.text(min_size=1, max_size=20).filter(lambda a: a not in {"--config", BYPASS_FLAG}),
+    st.text(min_size=1, max_size=20).filter(
+        lambda a: a not in {"--config", BYPASS_FLAG, IGNORE_RULES_FLAG}
+    ),
     max_size=3,
 )
 contexts = st.builds(
@@ -101,7 +129,7 @@ def _without_sandbox(argv: list[str]) -> list[str]:
         if skip:
             skip = False
             continue
-        if arg == BYPASS_FLAG:
+        if arg in {BYPASS_FLAG, IGNORE_RULES_FLAG}:
             continue
         if arg == "--config" and index + 1 < len(argv):
             key = argv[index + 1].partition("=")[0]
@@ -122,6 +150,7 @@ class TestConfigValidation:
         assert config.writable_roots == ()
         assert config.network_access is False
         assert config.writable_tmp is True
+        assert config.excluded_commands == ()
 
     @given(st.text().filter(lambda m: m not in SANDBOX_MODES))
     def test_an_unknown_mode_is_rejected(self, mode: str) -> None:
@@ -186,6 +215,55 @@ class TestConfigValidation:
         assert from_list == from_tuple
         assert hash(from_list) == hash(from_tuple)
         assert isinstance(from_list.writable_roots, tuple)
+
+    def test_a_bare_command_string_is_not_iterated_into_commands(self) -> None:
+        """``"sdo detector check"`` would otherwise exempt ``s``, ``d``, ``o``..."""
+        with pytest.raises(TypeError, match="sequence of commands"):
+            CodexSandboxConfig(excluded_commands="sdo detector check")
+
+    def test_a_set_of_commands_is_rejected_because_its_order_is_arbitrary(self) -> None:
+        with pytest.raises(TypeError, match="sequence of commands"):
+            CodexSandboxConfig(excluded_commands={"a", "b"})  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("command", [1, None, b"sdo", ["sdo", "check"]])
+    def test_a_non_string_command_is_rejected(self, command: object) -> None:
+        with pytest.raises(TypeError, match="must be str"):
+            CodexSandboxConfig(excluded_commands=[command])  # type: ignore[list-item]
+
+    @given(_words, st.sampled_from(["\x00", "\n", "\r", "\t", "\x1b", "\x7f"]))
+    def test_a_control_character_is_rejected(self, word: str, control: str) -> None:
+        """A newline would be a second command on the same line, not a word."""
+        with pytest.raises(ValueError, match="control character"):
+            CodexSandboxConfig(excluded_commands=[f"sdo {word}{control}"])
+
+    @pytest.mark.parametrize("surrogate", [chr(0xD800), chr(0xDFFF)])
+    def test_a_command_that_cannot_be_encoded_is_rejected(self, surrogate: str) -> None:
+        with pytest.raises(ValueError, match="UTF-8"):
+            CodexSandboxConfig(excluded_commands=[f"sdo {surrogate}"])
+
+    @pytest.mark.parametrize("command", ["sdo 'detector", 'sdo "check', "sdo \\"])
+    def test_a_command_that_does_not_split_into_words_is_rejected(self, command: str) -> None:
+        with pytest.raises(ValueError, match="not valid shell words"):
+            CodexSandboxConfig(excluded_commands=[command])
+
+    @pytest.mark.parametrize("command", ["", "   ", "''", "sdo ''"])
+    def test_an_empty_command_or_word_is_rejected(self, command: str) -> None:
+        """An empty prefix would exempt every command."""
+        with pytest.raises(ValueError, match="non-empty words"):
+            CodexSandboxConfig(excluded_commands=[command])
+
+    @given(excluded_commands)
+    def test_exemptions_are_rejected_without_a_sandbox(self, commands: tuple[str, ...]) -> None:
+        with pytest.raises(ValueError, match="danger-full-access has none"):
+            CodexSandboxConfig(mode="danger-full-access", excluded_commands=commands)
+
+    @given(st.sampled_from(["read-only", "workspace-write"]), excluded_commands)
+    def test_exemptions_are_accepted_on_both_sandboxed_modes(
+        self, mode: str, commands: tuple[str, ...]
+    ) -> None:
+        config = CodexSandboxConfig(mode=mode, excluded_commands=list(commands))  # type: ignore[arg-type]
+        assert config.excluded_commands == commands
+        assert hash(config) == hash(replace(config, excluded_commands=commands))
 
     def test_the_config_is_immutable(self) -> None:
         config = CodexSandboxConfig()
@@ -330,3 +408,134 @@ class TestParseSandbox:
         )
         assume("--config" in argv)
         assert parse_sandbox(argv) == config
+
+
+# -- exec-policy rules ------------------------------------------------------
+
+
+def _ctx(
+    env: dict[str, str] | None = None, *, cwd: str | None = None, resume: str | None = None
+) -> ArgvContext:
+    return ArgvContext(
+        "/bin/codex",
+        None,
+        {"CODEX_HOME": _HOME} if env is None else env,
+        resume,
+        None,
+        None,
+        None,
+        cwd=cwd,
+    )
+
+
+class TestRulesIsolation:
+    @given(configs, contexts)
+    def test_a_sandboxed_turn_without_exemptions_ignores_every_rules_file(
+        self, config: CodexSandboxConfig, ctx: ArgvContext
+    ) -> None:
+        """A ``prefix_rule`` in the user's ``~/.codex/rules`` would run outside the sandbox."""
+        assert CodexProvider(sandbox=config).build_argv(ctx).count(IGNORE_RULES_FLAG) == 1
+
+    @given(contexts)
+    def test_the_bypass_leaves_rules_alone(self, ctx: ArgvContext) -> None:
+        assert IGNORE_RULES_FLAG not in CodexProvider().build_argv(ctx)
+
+    @given(exempting, st.one_of(st.none(), st.uuids().map(str)))
+    def test_exemptions_load_rules_on_fresh_and_resumed_turns_alike(
+        self, config: CodexSandboxConfig, resume: str | None
+    ) -> None:
+        provider = CodexProvider(sandbox=config)
+        fresh = provider.build_argv(_ctx())
+        resumed = provider.build_argv(_ctx(resume=resume or "t"))
+        assert IGNORE_RULES_FLAG not in fresh
+        assert IGNORE_RULES_FLAG not in resumed
+        assert _overrides(fresh) == _overrides(resumed)
+
+    @given(exempting)
+    def test_the_rest_of_the_sandbox_is_rendered_unchanged(
+        self, config: CodexSandboxConfig
+    ) -> None:
+        """Exemptions add rules; they never loosen the ``--config`` sandbox."""
+        exempt = CodexProvider(sandbox=config).build_argv(_ctx())
+        plain = CodexProvider(sandbox=replace(config, excluded_commands=())).build_argv(_ctx())
+        assert [a for a in plain if a != IGNORE_RULES_FLAG] == exempt
+        assert parse_sandbox(exempt) == replace(config, excluded_commands=())
+
+
+class TestRulesHome:
+    @pytest.mark.parametrize("env", [{}, {"CODEX_HOME": ""}, {"CODEX_HOME": "codex-home"}])
+    def test_exemptions_need_an_absolute_codex_home(self, env: dict[str, str]) -> None:
+        """Without one Codex reads ``~/.codex/rules``, where the rules are not."""
+        provider = CodexProvider(sandbox=CodexSandboxConfig(excluded_commands=["sdo check"]))
+        with pytest.raises(ProviderCapabilityError, match="CODEX_HOME"):
+            provider.build_argv(_ctx(env))
+
+    @pytest.mark.parametrize(
+        ("home", "cwd", "roots", "tmp", "env"),
+        [
+            ("/work/.codex-home", "/work", [], False, {}),
+            ("/work", "/work", [], False, {}),
+            ("/data/cache/home", None, ["/data/cache"], False, {}),
+            ("/data/home", None, ["/data/home/rules"], False, {}),
+            ("/tmp/codex-home", None, [], True, {}),  # noqa: S108 - Codex's own /tmp
+            ("/scratch/t/home", None, [], True, {"TMPDIR": "/scratch/t"}),
+            ("/work/sub/../.codex-home", "/work", [], False, {}),
+        ],
+    )
+    def test_a_home_the_sandbox_can_write_is_refused(
+        self,
+        home: str,
+        cwd: str | None,
+        roots: list[str],
+        tmp: bool,  # noqa: FBT001 - a parametrized value
+        env: dict[str, str],
+    ) -> None:
+        """A command could write its own ``allow`` rule there and escape on the next turn."""
+        config = CodexSandboxConfig(
+            writable_roots=roots, writable_tmp=tmp, excluded_commands=["sdo check"]
+        )
+        with pytest.raises(ProviderCapabilityError, match="lets commands write"):
+            CodexProvider(sandbox=config).build_argv(_ctx({"CODEX_HOME": home, **env}, cwd=cwd))
+
+    @pytest.mark.parametrize(
+        ("home", "cwd", "roots", "tmp"),
+        [
+            ("/srv/codex-home", "/work", ["/data"], True),
+            ("/work-home", "/work", [], False),
+        ],
+    )
+    def test_a_home_outside_every_writable_dir_is_accepted(
+        self,
+        home: str,
+        cwd: str,
+        roots: list[str],
+        tmp: bool,  # noqa: FBT001 - a parametrized value
+    ) -> None:
+        config = CodexSandboxConfig(
+            writable_roots=roots, writable_tmp=tmp, excluded_commands=["sdo check"]
+        )
+        argv = CodexProvider(sandbox=config).build_argv(_ctx({"CODEX_HOME": home}, cwd=cwd))
+        assert IGNORE_RULES_FLAG not in argv
+
+    def test_read_only_writes_nothing_so_any_home_is_safe(self) -> None:
+        config = CodexSandboxConfig(mode="read-only", excluded_commands=["sdo check"])
+        argv = CodexProvider(sandbox=config).build_argv(
+            _ctx({"CODEX_HOME": "/work/.codex-home"}, cwd="/work")
+        )
+        assert IGNORE_RULES_FLAG not in argv
+
+    def test_a_session_passes_its_cwd_to_the_check(self) -> None:
+        """The turn's cwd is the workspace Codex lets commands write."""
+        config = CodexSandboxConfig(excluded_commands=["sdo detector check"])
+        executor = FakeExecutor(scripted_turn("codex", text="ok"))
+        agent = CliAgent(
+            CodexProvider(sandbox=config),
+            executor=executor,
+            env={"PATH": "/usr/bin", "CODEX_HOME": "/work/.codex-home"},
+        )
+        with pytest.raises(ProviderCapabilityError, match="lets commands write"):
+            agent.run("hi", cwd="/work")
+        assert executor.requests == []
+
+        agent.run("hi", cwd="/elsewhere")
+        assert IGNORE_RULES_FLAG not in executor.requests[-1].argv

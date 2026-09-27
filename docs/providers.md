@@ -72,6 +72,89 @@ an approval no one will give. The config is validated on construction:
 `parse_sandbox(argv)` in `agentshim.providers.codex` recovers the config a
 turn ran with, for tests.
 
+A sandboxed turn also passes `--ignore-rules`. Codex runs any command that an
+exec-policy `prefix_rule(..., decision="allow")` matches outside its sandbox,
+and without the flag it would load such rules from the user's
+`~/.codex/rules/` (where approving a command in the TUI saves them) and from
+trusted projects.
+
+### Exempting one command
+
+Some commands need access the sandbox withholds from everything else, such
+as a gateway that talks to the Docker socket. `excluded_commands` is the
+Codex counterpart of Claude Code's `excludedCommands`:
+
+```python
+from pathlib import Path
+
+from agentshim import CliAgent, CodexProvider, CodexSandboxConfig, interactive_env
+from agentshim.providers.codex import install_rules
+
+sandbox = CodexSandboxConfig(
+    mode="workspace-write",
+    excluded_commands=["sdo detector check"],
+)
+home = Path("/var/lib/myapp/codex-home")  # dedicated; not in the workspace or /tmp
+install_rules(home, sandbox)              # writes home/rules/agentshim.rules
+# Codex also needs credentials in that home: copy auth.json (see
+# PROFILE.auth_files) or pass OPENAI_API_KEY.
+agent = CliAgent(
+    CodexProvider(sandbox=sandbox),
+    env={**interactive_env(), "CODEX_HOME": str(home)},
+)
+```
+
+Each entry is shell words. A command the model runs is exempt when its words
+start with an entry's words: `sdo detector check --all` is exempt,
+`sdo detector` and `/usr/bin/sdo detector check` are not. Codex matches the
+command line the model wrote, and anything else on that line (`&&`, `|`,
+`;`, `$(...)`) keeps the whole line in the sandbox, exempt part included.
+Every other command stays confined exactly as the rest of the config says.
+Exemptions apply to `read-only` and `workspace-write`; `danger-full-access`
+rejects them.
+
+How it works, and what it costs:
+
+- Codex has no per-command sandbox setting and no `--config` key for rules:
+  exemptions exist only as exec-policy `allow` rules in `.rules` files, and
+  an `allow` rule runs the command with **no sandbox at all**. An exempt
+  command can write anywhere and reach any socket or host the user can, and
+  the model chooses its remaining arguments. Exempt only commands that are
+  safe with any arguments. Codex offers no narrower mechanism: network access
+  (`network_access`) and write access (`writable_roots`) apply to every
+  command in the session.
+- The rules come from `$CODEX_HOME/rules/`, so the turn needs a dedicated
+  Codex home. `install_rules` writes `rules/agentshim.rules` atomically and
+  refuses a home whose `rules/` holds any other `.rules` file. Every Codex
+  process that uses the home and does not pass `--ignore-rules` applies the
+  exemption, and resumed turns must use the same home, since it also holds
+  the session rollouts.
+- The provider refuses the turn (`ProviderCapabilityError`) unless
+  `CODEX_HOME` is set, absolute, and outside every directory the sandbox lets
+  commands write: the turn's `cwd`, `writable_roots`, and `/tmp` and
+  `$TMPDIR` when `writable_tmp` is on. A command able to write the home could
+  add a rule exempting itself.
+- Keep the home out of the system temp dir even with `writable_tmp=False`:
+  Codex refuses to create its sandbox helper under it, and then every
+  sandboxed command fails to start.
+- Trusted projects' `.codex/rules/` still load. A fresh home trusts no
+  project; do not mark the workspace trusted in its `config.toml`.
+
+### Denied commands in the event stream
+
+Codex 0.157 does not always report a command its sandbox refused. When the
+sandbox denies a write or a socket, `codex exec --json` often emits no
+`command_execution` item for it, so no `ToolCall` or `ToolResult` event
+reaches agentshim; a command that merely fails for another reason is
+reported. Nothing else carries the denial in structured form: stderr is
+silent, and the session rollout under `$CODEX_HOME/sessions/` holds only the
+model's own tool call (for current models, JavaScript source passed to a
+code-mode `exec` tool) and its free-text output, with no command record and
+no denial flag. agentshim therefore cannot surface these attempts. Do not
+treat the absence of a `ToolCall` as proof that a command was not attempted;
+to audit, check the effect (the file or socket the command would have
+touched), as the e2e suite does.
+
 **Claude Code** sandboxes only the Bash tool's subprocesses; see
 `SandboxConfig` above.
 

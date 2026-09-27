@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+A tightening of the Codex (`STRICT`) schema check: schemas it now rejects
+were already rejected by the API, after a full model turn.
+
+### Fixed
+
+- A Codex output schema is checked against OpenAI's strict structured-output
+  rules before the CLI starts. `turn()` raises `SchemaDialectError`, naming
+  each offending node by JSON pointer, when an object leaves a property out
+  of `required` (declare it required and nullable instead), lists a
+  `required` name missing from `properties`, omits `properties` (`{}` is
+  fine) or `additionalProperties: false` (including on a nullable
+  `["object", "null"]` object), uses `anyOf` at
+  the root, or has a `$ref` that resolves to nothing. Codex used to fail such
+  a turn with `invalid_json_schema` only after the model ran. The Claude
+  (`OPEN`) dialect is unchanged.
+- A `$ref` of `"#"` (root recursion) is accepted as local in both dialects.
+- Problem pointers escape `/` and `~` in property names (RFC 6901), and
+  `enum`, `const` and `required` values are no longer inspected as schemas.
+- `normalize` closes a nullable object node too, and gives an object with
+  no `properties` an empty one, so its output passes the `STRICT` check.
+
 ## 0.6.7 (2026-09-27)
 
 Additive, with one tightening: a sandboxed Codex turn no longer applies the

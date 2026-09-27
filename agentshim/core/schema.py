@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from ._files import atomic_write
@@ -64,133 +65,202 @@ _METADATA_KEYWORDS = frozenset({"$schema", "$id", "title", "description", "examp
 # ``--output-schema`` subset does not, so ``STRICT`` keeps reporting them.
 _OPEN_DIALECT_TOLERATES = frozenset({"$schema", "$id"})
 
+# Keywords whose values are data, never subschemas. ``required`` is a list of
+# field names and ``enum``/``const`` hold instance values, so a name such as
+# ``"$ref"`` inside them must not be read as a keyword.
+_NON_SCHEMA_KEYWORDS = frozenset({"required", "enum", "const"})
+
 
 def dialect_problems(schema: Mapping[str, Any], dialect: SchemaDialect) -> list[str]:
     """Return every reason *schema* is not expressible in *dialect*.
 
     An empty list means the provider will accept it. The list is returned
     rather than raised so a caller can decide between failing and falling
-    back to a prompt-level schema instruction.
+    back to a prompt-level schema instruction. Each problem starts with the
+    JSON pointer of the offending node.
+
+    ``STRICT`` is OpenAI's strict structured-output subset, which Codex sends
+    with ``strict: true``: every object declares ``properties``, sets
+    ``additionalProperties: false`` and lists exactly its ``properties`` in
+    ``required`` (an optional value is
+    expressed as nullable instead), the root is not an ``anyOf``, and every
+    ``$ref`` resolves inside the document.
     """
-    problems: list[str] = []
+    root = dict(schema)
+    walk = _Walk(root=root, dialect=dialect, problems=[])
     if schema.get("type") != "object":
-        problems.append("# root must be a schema with type 'object'")
-    _visit_for_problems(dict(schema), "#", dialect, problems)
-    return problems
+        walk.problems.append("# root must be a schema with type 'object'")
+    if dialect is SchemaDialect.STRICT and "anyOf" in schema:
+        walk.problems.append("# root must not use 'anyOf'")
+    walk.visit(root, "#")
+    return walk.problems
 
 
-def _visit_for_problems(
-    node: object,
-    location: str,
-    dialect: SchemaDialect,
-    problems: list[str],
-) -> None:
-    """Walk one schema node, appending a problem for every unsupported construct.
+def _pointer_token(name: str) -> str:
+    """Escape a field name as one JSON pointer reference token (RFC 6901)."""
+    return name.replace("~", "~0").replace("/", "~1")
+
+
+def _is_object_node(mapping: dict[str, Any]) -> bool:
+    """Say whether a node describes an object, nullable or not."""
+    if mapping.get("properties") is not None:
+        return True
+    declared = mapping.get("type")
+    if isinstance(declared, list):
+        return "object" in cast("list[object]", declared)
+    return declared == "object"
+
+
+@dataclass
+class _Walk:
+    """One pass of ``dialect_problems`` over a schema document.
 
     Traversal is by JSON pointer so each problem names the offending node.
-    A ``$ref`` node terminates the walk: its siblings are annotations the
-    strict subset ignores, and the target is checked where it is defined.
     """
-    if isinstance(node, list):
-        for index, value in enumerate(cast("list[object]", node)):
-            _visit_for_problems(value, f"{location}/{index}", dialect, problems)
-        return
-    if not isinstance(node, dict):
-        return
-    mapping = cast("dict[str, Any]", node)
 
-    reference = mapping.get("$ref")
-    if reference is not None:
-        _check_local_ref(reference, location, problems)
-        return
+    root: dict[str, Any]
+    dialect: SchemaDialect
+    problems: list[str]
 
-    if not _check_properties_shape(mapping, location, problems):
-        return
-    _check_closed_object(mapping, location, dialect, problems)
-    _visit_members(mapping, location, dialect, problems)
+    def visit(self, node: object, location: str) -> None:
+        """Walk one schema node, appending a problem for every unsupported construct.
 
+        A ``$ref`` node terminates the walk: its siblings are annotations the
+        strict subset ignores, and the target is checked where it is defined,
+        since every local target is inside the document this walk covers.
+        """
+        if isinstance(node, list):
+            for index, value in enumerate(cast("list[object]", node)):
+                self.visit(value, f"{location}/{index}")
+            return
+        if not isinstance(node, dict):
+            return
+        mapping = cast("dict[str, Any]", node)
 
-def _check_local_ref(reference: object, location: str, problems: list[str]) -> None:
-    """Reject a ``$ref`` the CLI would have to fetch or resolve externally."""
-    if not isinstance(reference, str) or not reference.startswith("#/"):
-        problems.append(f"{location} uses a non-local $ref")
+        reference = mapping.get("$ref")
+        if reference is not None:
+            self._check_ref(reference, location)
+            return
 
+        if not self._check_properties_shape(mapping, location):
+            return
+        if self.dialect is SchemaDialect.STRICT and _is_object_node(mapping):
+            self._check_closed_object(mapping, location)
+            self._check_all_required(mapping, location)
+        self._visit_members(mapping, location)
 
-def _check_properties_shape(mapping: dict[str, Any], location: str, problems: list[str]) -> bool:
-    """Check that ``properties``, if present, is an object.
+    def _check_ref(self, reference: object, location: str) -> None:
+        """Reject a ``$ref`` the CLI would have to fetch, or one that dangles."""
+        if not isinstance(reference, str) or not (reference == "#" or reference.startswith("#/")):
+            self.problems.append(f"{location} uses a non-local $ref")
+            return
+        if self.dialect is SchemaDialect.STRICT and not _resolves(self.root, reference):
+            self.problems.append(f"{location} has a $ref {reference!r} that resolves to nothing")
 
-    Returns ``False`` when it is not, in which case the caller stops: nothing
-    below a malformed ``properties`` can be read as a schema, and descending
-    would only report the same defect once per child.
-    """
-    properties = mapping.get("properties")
-    if properties is not None and not isinstance(properties, dict):
-        problems.append(f"{location}/properties must be an object")
-        return False
-    return True
+    def _check_properties_shape(self, mapping: dict[str, Any], location: str) -> bool:
+        """Check that ``properties``, if present, is an object.
 
+        Returns ``False`` when it is not, in which case the caller stops:
+        nothing below a malformed ``properties`` can be read as a schema, and
+        descending would only report the same defect once per child.
+        """
+        properties = mapping.get("properties")
+        if properties is not None and not isinstance(properties, dict):
+            self.problems.append(f"{location}/properties must be an object")
+            return False
+        return True
 
-def _check_closed_object(
-    mapping: dict[str, Any],
-    location: str,
-    dialect: SchemaDialect,
-    problems: list[str],
-) -> None:
-    """Require an object node to forbid undeclared keys, in the strict dialect.
+    def _check_closed_object(self, mapping: dict[str, Any], location: str) -> None:
+        """Require an object node to declare ``properties`` and close itself.
 
-    A node counts as an object if it declares ``properties`` or says so with
-    ``type``. Looser dialects accept an open object, so nothing is reported.
-    """
-    if dialect is not SchemaDialect.STRICT:
-        return
-    if mapping.get("properties") is None and mapping.get("type") != "object":
-        return
-    additional = mapping.get("additionalProperties")
-    if additional not in (None, False):
-        problems.append(f"{location} allows arbitrary object keys")
+        Strict mode needs ``additionalProperties`` present, not merely not
+        ``true``: an absent one is an open object in JSON Schema. It also
+        refuses an object with no ``properties`` at all, even an empty one.
+        """
+        if "properties" not in mapping:
+            self.problems.append(f"{location} must declare properties (use {{}} for none)")
+        if "additionalProperties" not in mapping:
+            self.problems.append(f"{location} must set additionalProperties: false")
+        elif mapping["additionalProperties"] is not False:
+            self.problems.append(f"{location} allows arbitrary object keys")
 
+    def _check_all_required(self, mapping: dict[str, Any], location: str) -> None:
+        """Require ``required`` to list exactly the declared properties.
 
-def _visit_members(
-    mapping: dict[str, Any],
-    location: str,
-    dialect: SchemaDialect,
-    problems: list[str],
-) -> None:
-    """Check every entry of a schema node, keyword or subschema.
+        Strict mode has no optional properties: a value that may be absent is
+        declared required and nullable, e.g. ``{"type": ["string", "null"]}``.
+        """
+        properties = cast("dict[str, Any]", mapping.get("properties") or {})
+        required = mapping.get("required", [])
+        if not isinstance(required, list) or not all(
+            isinstance(name, str) for name in cast("list[object]", required)
+        ):
+            self.problems.append(f"{location}/required must be an array of property names")
+            return
+        listed = set(cast("list[str]", required))
+        for name in properties:
+            if name not in listed:
+                self.problems.append(
+                    f"{location}/properties/{_pointer_token(name)} is optional; strict mode "
+                    "requires every property in 'required' (make it nullable instead)"
+                )
+        for name in cast("list[str]", required):
+            if name not in properties:
+                self.problems.append(
+                    f"{location}/required names {name!r}, which is not in 'properties'"
+                )
 
-    Only keys reached here are matched against ``UNSUPPORTED_KEYWORDS``, which
-    is what keeps a property named ``if`` from being read as the ``if`` keyword.
-    """
-    for key, value in mapping.items():
-        if key in _SUBSCHEMA_MAPS:
-            _visit_subschema_map(value, f"{location}/{key}", dialect, problems)
-        elif key in UNSUPPORTED_KEYWORDS:
-            if dialect is not SchemaDialect.STRICT and key in _OPEN_DIALECT_TOLERATES:
+    def _visit_members(self, mapping: dict[str, Any], location: str) -> None:
+        """Check every entry of a schema node, keyword or subschema.
+
+        Only keys reached here are matched against ``UNSUPPORTED_KEYWORDS``,
+        which is what keeps a property named ``if`` from being read as the
+        ``if`` keyword.
+        """
+        for key, value in mapping.items():
+            if key in _SUBSCHEMA_MAPS:
+                self._visit_subschema_map(value, f"{location}/{key}")
+            elif key in UNSUPPORTED_KEYWORDS:
+                if self.dialect is not SchemaDialect.STRICT and key in _OPEN_DIALECT_TOLERATES:
+                    continue
+                self.problems.append(f"{location} uses unsupported keyword {key!r}")
+            elif key in _METADATA_KEYWORDS or key in _NON_SCHEMA_KEYWORDS:
+                # Annotations or plain values: nothing below them is a schema.
                 continue
-            problems.append(f"{location} uses unsupported keyword {key!r}")
-        elif key in _METADATA_KEYWORDS:
-            # Annotations, not constraints: nothing below them is a schema.
-            continue
+            else:
+                self.visit(value, f"{location}/{key}")
+
+    def _visit_subschema_map(self, value: object, location: str) -> None:
+        """Walk a map of named subschemas such as ``properties`` or ``$defs``.
+
+        The names are user-chosen field names, so they are traversed as data
+        and never inspected as schema keywords.
+        """
+        if not isinstance(value, dict):
+            self.problems.append(f"{location} must be an object")
+            return
+        for name, subschema in cast("dict[str, Any]", value).items():
+            self.visit(subschema, f"{location}/{_pointer_token(name)}")
+
+
+def _resolves(root: dict[str, Any], reference: str) -> bool:
+    """Say whether a local ``$ref`` names a schema inside *root*."""
+    node: object = root
+    for raw in reference[2:].split("/") if reference != "#" else []:
+        token = raw.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict):
+            mapping = cast("dict[str, object]", node)
+            if token not in mapping:
+                return False
+            node = mapping[token]
+        elif isinstance(node, list):
+            items = cast("list[object]", node)
+            if not token.isdigit() or int(token) >= len(items):
+                return False
+            node = items[int(token)]
         else:
-            _visit_for_problems(value, f"{location}/{key}", dialect, problems)
-
-
-def _visit_subschema_map(
-    value: object,
-    location: str,
-    dialect: SchemaDialect,
-    problems: list[str],
-) -> None:
-    """Walk a map of named subschemas such as ``properties`` or ``$defs``.
-
-    The names are user-chosen field names, so they are traversed as data and
-    never inspected as schema keywords.
-    """
-    if not isinstance(value, dict):
-        problems.append(f"{location} must be an object")
-        return
-    for name, subschema in cast("dict[str, Any]", value).items():
-        _visit_for_problems(subschema, f"{location}/{name}", dialect, problems)
+            return False
+    return isinstance(node, dict)
 
 
 def normalize(schema: Mapping[str, Any], dialect: SchemaDialect) -> dict[str, Any]:
@@ -227,8 +297,9 @@ def _normalized(node: object, dialect: SchemaDialect) -> object:
     if isinstance(properties, dict):
         _close_object(mapping, dialect)
         mapping["required"] = list(cast("dict[str, Any]", properties))
-    elif mapping.get("type") == "object":
+    elif _is_object_node(mapping):
         _close_object(mapping, dialect)
+        mapping["properties"] = {}
         mapping["required"] = []
 
     for key, value in list(mapping.items()):

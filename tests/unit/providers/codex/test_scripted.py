@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from agentshim import (
     AssistantText,
     CliAgent,
     Lifecycle,
     OutputSchema,
+    SchemaDialectError,
     SessionStarted,
     TokenUsage,
     ToolCall,
@@ -24,6 +26,15 @@ _SCHEMA = {
     "type": "object",
     "properties": {"answer": {"type": "integer"}},
     "required": ["answer"],
+    "additionalProperties": False,
+}
+
+# ``no_change_reason`` is optional, which OpenAI strict structured outputs
+# reject with ``invalid_json_schema``.
+_OPTIONAL_SCHEMA = {
+    "type": "object",
+    "properties": {"changed": {"type": "boolean"}, "no_change_reason": {"type": "string"}},
+    "required": ["changed"],
     "additionalProperties": False,
 }
 
@@ -109,3 +120,29 @@ class TestScriptedTurn:
 
     def test_a_nonzero_return_code_is_scripted(self) -> None:
         assert scripted_turn("codex", text="done", returncode=2).returncode == 2
+
+
+class TestStrictOutputSchema:
+    def test_an_optional_property_fails_before_the_cli_starts(self, tmp_path: Path) -> None:
+        executor = FakeExecutor(scripted_turn("codex", text="done"))
+        request = TurnRequest(
+            prompt="go", output_schema=OutputSchema(schema=_OPTIONAL_SCHEMA, host_dir=tmp_path)
+        )
+
+        with pytest.raises(SchemaDialectError, match="#/properties/no_change_reason") as excinfo:
+            _agent(executor).start_session(cwd=str(tmp_path)).turn(request)
+
+        assert len(excinfo.value.problems) == 1
+        assert executor.requests == []
+        assert list(tmp_path.iterdir()) == []
+
+    def test_claude_keeps_accepting_an_optional_property(self, tmp_path: Path) -> None:
+        executor = FakeExecutor(scripted_turn("claude", text="done"))
+        agent = CliAgent("claude", executor=executor, env=dict(_ENV))
+        request = TurnRequest(
+            prompt="go", output_schema=OutputSchema(schema=_OPTIONAL_SCHEMA, host_dir=tmp_path)
+        )
+
+        agent.start_session(cwd=str(tmp_path)).turn(request)
+
+        assert len(executor.requests) == 1

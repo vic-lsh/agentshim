@@ -5,7 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from agentshim import AgentEventHandler, CliAgent, OutputSchema, ToolCall, TurnRequest
+from agentshim import (
+    AgentEventHandler,
+    CliAgent,
+    OutputSchema,
+    SchemaDialect,
+    ToolCall,
+    TurnRequest,
+    dialect_problems,
+)
 from agentshim.testing import RecordingEventHandler
 
 from tests.e2e.conftest import CODEX_MODEL_VAR, model_from_env, requires_cli
@@ -52,6 +60,46 @@ def test_a_native_output_schema_returns_structured_output(tmp_path: Path) -> Non
         )
     )
     assert result.structured_output == {"answer": 4}
+
+
+def test_a_schema_the_strict_check_accepts_is_accepted_live(tmp_path: Path) -> None:
+    """Nested, nullable, ``anyOf`` and ``$defs`` forms pass Codex strict mode."""
+    schema = {
+        "type": "object",
+        "properties": {
+            "changed": {"type": "boolean"},
+            "no_change_reason": {"type": ["string", "null"]},
+            "items": {"type": "array", "items": {"$ref": "#/$defs/Item"}},
+            "note": {"anyOf": [{"$ref": "#/$defs/Item"}, {"type": "null"}]},
+        },
+        "required": ["changed", "no_change_reason", "items", "note"],
+        "additionalProperties": False,
+        "$defs": {
+            "Item": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "count": {"type": "integer"}},
+                "required": ["name", "count"],
+                "additionalProperties": False,
+            }
+        },
+    }
+    assert dialect_problems(schema, SchemaDialect.STRICT) == []
+    result = (
+        _agent()
+        .start_session(cwd=str(tmp_path))
+        .turn(
+            TurnRequest(
+                prompt=(
+                    "Reply with changed=false, no_change_reason='none needed', "
+                    "items=[{name:'a', count:1}], note=null."
+                ),
+                output_schema=OutputSchema(schema=schema, host_dir=tmp_path),
+            )
+        )
+    )
+    assert isinstance(result.structured_output, dict)
+    assert result.structured_output["changed"] is False
+    assert result.structured_output["items"] == [{"name": "a", "count": 1}]
 
 
 def test_a_tool_call_is_reported(tmp_path: Path) -> None:

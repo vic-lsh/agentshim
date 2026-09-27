@@ -226,9 +226,17 @@ class ProviderProfile:
     mcp_config_file: str | None        # workspace-relative MCP config path; set iff mcp is CONFIG_FILE
 ```
 
-`STRICT` is Codex's `--output-schema` subset: every object declares its
-properties and forbids undeclared keys. `OPEN` accepts schema-valued or
-`true` `additionalProperties`.
+`STRICT` is Codex's `--output-schema` subset. Codex sends the schema
+verbatim as a Responses API `json_schema` format with `strict: true`, so the
+subset is OpenAI's strict structured outputs: every object (including a
+nullable one, `"type": ["object", "null"]`) declares `properties` (`{}` for
+none) and sets `additionalProperties: false`, `required` lists exactly the
+keys of `properties` (an optional value is declared required and nullable
+instead), the root is an object and not an `anyOf`, and every `$ref`
+resolves inside the document. The check recurses through `properties`,
+`items`, `anyOf`, `$defs` and `definitions`; a `$ref` target is checked where
+it is defined. `OPEN` (Claude Code) keeps optional properties and accepts
+schema-valued, `true` or absent `additionalProperties`.
 
 The last four fields are additive (0.6.1): every one defaults, so an
 existing keyword-built `ProviderProfile` keeps working unchanged.

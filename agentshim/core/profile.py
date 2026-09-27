@@ -34,9 +34,12 @@ class OutputSchemaStyle(Enum):
 class SchemaDialect(Enum):
     """Which JSON Schema subset a provider accepts.
 
-    ``STRICT`` is Codex's ``--output-schema`` subset: every object declares
-    its properties and forbids undeclared keys. ``OPEN`` also accepts a
-    schema-valued or ``true`` ``additionalProperties``.
+    ``STRICT`` is Codex's ``--output-schema`` subset, which is OpenAI's strict
+    structured outputs: every object declares ``properties``, sets
+    ``additionalProperties: false`` and lists every property in ``required`` (optional values are made
+    nullable instead), the root is not an ``anyOf``, and every ``$ref``
+    resolves. ``OPEN`` also accepts optional properties and a schema-valued,
+    ``true`` or absent ``additionalProperties``.
     """
 
     STRICT = "strict"

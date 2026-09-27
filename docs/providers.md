@@ -75,6 +75,35 @@ turn ran with, for tests.
 **Claude Code** sandboxes only the Bash tool's subprocesses; see
 `SandboxConfig` above.
 
+## Claude Code hooks
+
+A policy the sandbox cannot express, such as refusing one executable in
+Bash, goes in a hook. `ClaudeProvider(hooks=...)` adds them to the settings
+agentshim already passes with `--settings`, after its own read-confinement
+hook, so neither replaces the other. Passing a second `--settings` through
+`extra_args` would compete with agentshim's.
+
+```python
+import sys
+
+from agentshim import ClaudeHook, ClaudeProvider, CliAgent
+
+deny_go = ClaudeHook(
+    event="PreToolUse",
+    matcher="Bash",
+    command=[sys.executable, "/opt/hooks/deny_executables.py", "go"],
+    timeout_s=10,
+)
+agent = CliAgent(ClaudeProvider(hooks=[deny_go]))
+```
+
+`command` is an argv, not a shell string. Claude Code runs hooks through a
+shell, and agentshim quotes each element with `shlex.join`, so every
+argument arrives literally. Use an absolute executable: the agent's PATH is
+not yours. Invalid hooks (a non-PascalCase event, an empty or bare-string
+command, a NUL byte, a non-positive timeout) raise on construction. Hooks
+apply to every turn, including resumed ones.
+
 ## Capabilities
 
 Everything a caller needs to know before running a turn is declared on

@@ -78,7 +78,7 @@ from .execution import (
     TransformingExecutor,
 )
 from .providers import get_provider, provider_names
-from .providers.claude import ClaudeProvider, SandboxConfig
+from .providers.claude import ClaudeHook, ClaudeProvider, SandboxConfig
 from .providers.codex import CodexProvider, CodexSandboxConfig
 from .providers.copilot import CopilotProvider
 from .providers.gemini import GeminiProvider
@@ -94,6 +94,7 @@ __all__ = [
     "ArgvContext",
     "AssistantText",
     "CallbackCommandStreamSink",
+    "ClaudeHook",
     "ClaudeProvider",
     "CliAgent",
     "CliCheckError",

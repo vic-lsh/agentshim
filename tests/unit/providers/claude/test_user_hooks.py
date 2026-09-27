@@ -29,7 +29,7 @@ from hypothesis import strategies as st
 #: Arguments with everything a shell would otherwise interpret.
 _args = st.text(
     alphabet=st.one_of(
-        st.characters(exclude_characters="\x00"),
+        st.characters(exclude_characters="\x00", exclude_categories=["Cs"]),
         st.sampled_from(list("$`\"'\\;&|<>(){}*?~!# \t\n")),
     ),
     max_size=16,
@@ -134,6 +134,12 @@ class TestHookValidation:
         """A NUL cannot reach a process through argv, so the hook could never run as written."""
         with pytest.raises(ValueError, match="NUL"):
             ClaudeHook(event="PreToolUse", command=["/bin/hook", arg[:at] + "\x00" + arg[at:]])
+
+    @pytest.mark.parametrize("surrogate", [chr(0xD800), chr(0xDC80), chr(0xDFFF)])
+    def test_an_argument_that_cannot_be_encoded_is_rejected(self, surrogate: str) -> None:
+        """A lone surrogate cannot reach a process through argv; fail here, not at launch."""
+        with pytest.raises(ValueError, match="UTF-8"):
+            ClaudeHook(event="PreToolUse", command=["/bin/hook", f"x{surrogate}"])
 
     @pytest.mark.parametrize("matcher", ["", 3])
     def test_an_empty_or_non_string_matcher_is_rejected(self, matcher: object) -> None:

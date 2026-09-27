@@ -88,6 +88,11 @@ def _as_argv(value: object) -> tuple[str, ...]:
         if "\x00" in arg:
             msg = f"command element contains a NUL byte: {arg!r}"
             raise ValueError(msg)
+        try:
+            arg.encode("utf-8")
+        except UnicodeEncodeError:
+            msg = f"command element is not valid UTF-8 text: {arg!r}"
+            raise ValueError(msg) from None
     return cast("tuple[str, ...]", argv)
 
 

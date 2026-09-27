@@ -26,6 +26,55 @@ provider = ClaudeProvider(sandbox=SandboxConfig(allowed_domains=["github.com"]))
 agent = CliAgent(provider, env={**interactive_env(), **provider.sandbox_env})
 ```
 
+## Sandboxes
+
+The two sandboxing providers confine different things, so each has its own
+option rather than a shared abstraction.
+
+**Codex** sandboxes every command the model runs at the OS level. By default
+agentshim bypasses it (`--dangerously-bypass-approvals-and-sandbox`), for a
+caller that already isolates the whole process. `CodexSandboxConfig` keeps it
+on:
+
+```python
+from agentshim import CliAgent, CodexProvider, CodexSandboxConfig
+
+# Read the repository, write nothing, no network.
+reviewer = CliAgent(CodexProvider(sandbox=CodexSandboxConfig(mode="read-only")))
+
+# Write the workspace and one cache directory; reach a local Docker socket.
+builder = CliAgent(
+    CodexProvider(
+        sandbox=CodexSandboxConfig(
+            mode="workspace-write",
+            writable_roots=["/home/me/.cache/go-build"],
+            network_access=True,
+            writable_tmp=False,
+        )
+    )
+)
+```
+
+| mode | workspace | `writable_roots` | `/tmp`, `$TMPDIR` | network |
+|---|---|---|---|---|
+| `read-only` | read | n/a | read | no |
+| `workspace-write` | write | write | write unless `writable_tmp=False` | only with `network_access=True` |
+| `danger-full-access` | write | n/a | write | yes |
+
+Every setting is passed as a `--config` override, which `codex exec resume`
+accepts where it rejects `--sandbox`, so a resumed turn keeps the sandbox.
+`workspace-write` renders every key even at its default, so the user's
+`~/.codex/config.toml` cannot widen it, and every sandboxed turn pins
+`approval_policy="never"` so a refused command fails instead of waiting for
+an approval no one will give. The config is validated on construction:
+`writable_roots` must be absolute, and options that only apply to
+`workspace-write` are rejected on the other modes rather than ignored.
+`parse_sandbox(argv)` in `agentshim.providers.codex` recovers the config a
+turn ran with, for tests.
+
+**Claude Code** sandboxes only the Bash tool's subprocesses; see
+`SandboxConfig` above.
+
 ## Capabilities
 
 Everything a caller needs to know before running a turn is declared on

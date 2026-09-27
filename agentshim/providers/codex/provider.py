@@ -14,7 +14,9 @@ from agentshim.core.profile import (
     SchemaDialect,
 )
 
+from ._toml import toml_array, toml_str, unescape_toml
 from .parser import CodexStreamParser
+from .sandbox import CodexSandboxConfig, resolve_sandbox, sandbox_overrides
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -85,10 +87,23 @@ PROFILE = ProviderProfile(
 )
 
 
+#: Turns off both Codex's sandbox and its approval prompts.
+BYPASS_FLAG = "--dangerously-bypass-approvals-and-sandbox"
+
+
 class CodexProvider:
-    """Codex (``codex exec --json``)."""
+    """Codex (``codex exec --json``). ``sandbox`` is a provider option."""
 
     profile = PROFILE
+
+    def __init__(self, *, sandbox: CodexSandboxConfig | None = None) -> None:
+        """Fix the sandbox for every turn this provider runs.
+
+        ``None``, the default, bypasses Codex's sandbox and approvals, for a
+        caller that isolates the whole process itself. A
+        ``CodexSandboxConfig`` keeps the CLI's own sandbox on instead.
+        """
+        self.sandbox: CodexSandboxConfig | None = resolve_sandbox(sandbox)
 
     def build_argv(self, ctx: ArgvContext) -> list[str]:
         """Build the ``codex exec`` command line for one turn.
@@ -101,16 +116,25 @@ class CodexProvider:
         argv = [ctx.binary_path, "exec"]
         if ctx.resume_session_id:
             argv += ["resume", ctx.resume_session_id, "-"]
-        argv += ["--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "--json"]
+        argv += self._sandbox_argv()
+        argv += ["--skip-git-repo-check", "--json"]
         if ctx.model:
             argv += ["--model", ctx.model]
         argv += _shell_path_config(ctx.env)
         if ctx.reasoning_effort:
-            argv += ["--config", f"model_reasoning_effort={_toml_str(ctx.reasoning_effort)}"]
+            argv += ["--config", f"model_reasoning_effort={toml_str(ctx.reasoning_effort)}"]
         argv += list(ctx.mcp_argv)
         if ctx.schema_path:
             argv += ["--output-schema", ctx.schema_path]
         argv += list(ctx.extra_args)
+        return argv
+
+    def _sandbox_argv(self) -> list[str]:
+        if self.sandbox is None:
+            return [BYPASS_FLAG]
+        argv: list[str] = []
+        for key, value in sandbox_overrides(self.sandbox):
+            argv += ["--config", f"{key}={value}"]
         return argv
 
     def new_parser(
@@ -173,7 +197,7 @@ def _shell_path_config(env: Mapping[str, str]) -> list[str]:
     path = env.get("PATH")
     if not path:
         return []
-    return ["--config", f"shell_environment_policy.set.PATH={_toml_str(path)}"]
+    return ["--config", f"shell_environment_policy.set.PATH={toml_str(path)}"]
 
 
 def _server_flags(server: McpServer) -> list[str]:
@@ -191,21 +215,21 @@ def _server_flags(server: McpServer) -> list[str]:
         # Codex works the transport out from the endpoint itself.
         flags = [
             "--config",
-            f"{prefix}.url={_toml_str(server.url)}",
+            f"{prefix}.url={toml_str(server.url)}",
             "--config",
             f"{prefix}.required=true",
         ]
         return flags + _timeout_flags(prefix, server)
     flags = [
         "--config",
-        f"{prefix}.command={_toml_str(server.command)}",
+        f"{prefix}.command={toml_str(server.command)}",
         "--config",
-        f"{prefix}.args={_toml_array(list(server.args))}",
+        f"{prefix}.args={toml_array(list(server.args))}",
         "--config",
         f"{prefix}.required=true",
     ]
     for env_key, env_value in server.env.items():
-        flags += ["--config", f"{prefix}.env.{env_key}={_toml_str(env_value)}"]
+        flags += ["--config", f"{prefix}.env.{env_key}={toml_str(env_value)}"]
     return flags + _timeout_flags(prefix, server)
 
 
@@ -217,17 +241,6 @@ def _timeout_flags(prefix: str, server: McpServer) -> list[str]:
     if server.tool_timeout_s is not None:
         flags += ["--config", f"{prefix}.tool_timeout_sec={server.tool_timeout_s}"]
     return flags
-
-
-def _toml_str(value: str) -> str:
-    """Quote *value* as a TOML basic string literal."""
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
-
-
-def _toml_array(values: Sequence[str]) -> str:
-    """Render a sequence of strings as a TOML inline array."""
-    return "[" + ",".join(_toml_str(value) for value in values) + "]"
 
 
 _CONFIG_OVERRIDE_RE = re.compile(r"^mcp_servers\.([^.=]+)\.(.+)$")
@@ -264,14 +277,8 @@ def parse_mcp_servers(argv: Sequence[str]) -> dict[str, dict[str, Any]]:
 
 def _mcp_config_overrides(argv: Sequence[str]) -> list[tuple[str, str, str]]:
     """Pull every ``mcp_servers.<key>.<field>=<value>`` override out of *argv*."""
-    args = list(argv)
     overrides: list[tuple[str, str, str]] = []
-    for index, arg in enumerate(args):
-        if arg != "--config" or index + 1 >= len(args):
-            continue
-        path, sep, raw_value = args[index + 1].partition("=")
-        if not sep:
-            continue
+    for path, raw_value in _config_overrides(argv):
         match = _CONFIG_OVERRIDE_RE.match(path)
         if match is not None:
             key, field = match.groups()
@@ -282,43 +289,79 @@ def _mcp_config_overrides(argv: Sequence[str]) -> list[tuple[str, str, str]]:
 def _apply_mcp_override(entry: dict[str, Any], field: str, raw_value: str) -> None:
     """Fold one dotted-path override into the entry being rebuilt for it."""
     if field == "command":
-        entry["command"] = _parse_toml_str(raw_value)
+        entry["command"] = _parsetoml_str(raw_value)
     elif field == "args":
-        entry["args"] = _parse_toml_array(raw_value)
+        entry["args"] = _parsetoml_array(raw_value)
     elif field == "url":
-        entry["url"] = _parse_toml_str(raw_value)
+        entry["url"] = _parsetoml_str(raw_value)
         entry["transport"] = "http"
     elif field == "tool_timeout_sec":
         entry["tool_timeout_s"] = float(raw_value)
     elif field == "startup_timeout_sec":
         entry["startup_timeout_s"] = float(raw_value)
     elif field.startswith("env."):
-        entry.setdefault("env", {})[field.removeprefix("env.")] = _parse_toml_str(raw_value)
+        entry.setdefault("env", {})[field.removeprefix("env.")] = _parsetoml_str(raw_value)
 
 
-def _parse_toml_str(literal: str) -> str:
-    """Reverse ``_toml_str``: unescape one TOML basic string literal."""
+def _parsetoml_str(literal: str) -> str:
+    """Reverse ``toml_str``: unescape one TOML basic string literal."""
     match = _TOML_STRING_RE.fullmatch(literal)
     if match is None:
         return literal
-    return _unescape_toml(match.group(1))
+    return unescape_toml(match.group(1))
 
 
-def _parse_toml_array(literal: str) -> list[str]:
-    """Reverse ``_toml_array``: unescape every string in a TOML inline array."""
-    return [_unescape_toml(inner) for inner in _TOML_STRING_RE.findall(literal)]
+def _parsetoml_array(literal: str) -> list[str]:
+    """Reverse ``toml_array``: unescape every string in a TOML inline array."""
+    return [unescape_toml(inner) for inner in _TOML_STRING_RE.findall(literal)]
 
 
-def _unescape_toml(escaped: str) -> str:
-    """Undo the backslash-escaping ``_toml_str`` applies to a string body."""
-    result: list[str] = []
-    index = 0
-    while index < len(escaped):
-        char = escaped[index]
-        if char == "\\" and index + 1 < len(escaped):
-            result.append(escaped[index + 1])
-            index += 2
-        else:
-            result.append(char)
-            index += 1
-    return "".join(result)
+_SANDBOX_KEYS = {
+    "sandbox_mode",
+    "sandbox_workspace_write.writable_roots",
+    "sandbox_workspace_write.network_access",
+    "sandbox_workspace_write.exclude_slash_tmp",
+}
+
+
+def parse_sandbox(argv: Sequence[str]) -> CodexSandboxConfig | None:
+    """Recover the sandbox rendered into *argv* by ``CodexProvider``.
+
+    The inverse of ``CodexProvider._sandbox_argv``, kept next to it so the
+    two cannot drift.
+
+    Args:
+        argv: The argv a turn actually ran, as recorded on a ``CommandRequest``.
+
+    Returns:
+        ``None`` when the turn bypassed Codex's sandbox, else the config it
+        imposed.
+
+    Raises:
+        ValueError: *argv* neither bypasses the sandbox nor selects a mode.
+    """
+    if BYPASS_FLAG in argv:
+        return None
+    overrides = {key: value for key, value in _config_overrides(argv) if key in _SANDBOX_KEYS}
+    if "sandbox_mode" not in overrides:
+        msg = f"argv neither bypasses nor selects a Codex sandbox: {list(argv)!r}"
+        raise ValueError(msg)
+    prefix = "sandbox_workspace_write"
+    return CodexSandboxConfig(
+        mode=_parsetoml_str(overrides["sandbox_mode"]),  # pyright: ignore[reportArgumentType]
+        writable_roots=_parsetoml_array(overrides.get(f"{prefix}.writable_roots", "[]")),
+        network_access=overrides.get(f"{prefix}.network_access") == "true",
+        writable_tmp=overrides.get(f"{prefix}.exclude_slash_tmp", "false") == "false",
+    )
+
+
+def _config_overrides(argv: Sequence[str]) -> list[tuple[str, str]]:
+    """Pull every ``--config key=value`` pair out of *argv*, in order."""
+    args = list(argv)
+    pairs: list[tuple[str, str]] = []
+    for index, arg in enumerate(args[:-1]):
+        if arg == "--config":
+            key, sep, value = args[index + 1].partition("=")
+            if sep:
+                pairs.append((key, value))
+    return pairs

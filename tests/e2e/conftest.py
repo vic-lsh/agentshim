@@ -3,8 +3,8 @@
 They are skipped unless ``AGENTSHIM_E2E=1`` and the binary is on PATH, so a
 normal ``pytest`` run needs no credentials and makes no network calls.
 
-Two providers take their model from the environment, because the CLI default
-is not usable on every account:
+Every provider takes an optional model from the environment. Two need one,
+because the CLI default is not usable on every account:
 
 - ``AGENTSHIM_E2E_GEMINI_MODEL`` picks a Gemini model the account is
   entitled to. Without it the CLI's own default is used, which fails with
@@ -12,7 +12,13 @@ is not usable on every account:
 - ``AGENTSHIM_E2E_OPENCODE_MODEL`` picks an opencode ``provider/model``.
   Without it the model from the user's own opencode config is used.
 
-Both are optional; unset means "let the CLI choose".
+``AGENTSHIM_E2E_CLAUDE_MODEL`` and ``AGENTSHIM_E2E_CODEX_MODEL`` exist to keep
+the suite cheap (``haiku``, ``gpt-6-luna``). All are optional; unset means
+"let the CLI choose".
+
+Tests marked ``requires_binary`` drive a CLI without a model (for example
+``codex sandbox``): they need no credentials, cost nothing, and run whenever
+the binary is installed, with or without ``AGENTSHIM_E2E``.
 """
 
 from __future__ import annotations
@@ -27,6 +33,8 @@ import pytest
 #: tests cover, so it is dropped before any environment is captured.
 _NESTED_CLAUDE_VAR = "CLAUDECODE"
 
+CLAUDE_MODEL_VAR = "AGENTSHIM_E2E_CLAUDE_MODEL"
+CODEX_MODEL_VAR = "AGENTSHIM_E2E_CODEX_MODEL"
 GEMINI_MODEL_VAR = "AGENTSHIM_E2E_GEMINI_MODEL"
 OPENCODE_MODEL_VAR = "AGENTSHIM_E2E_OPENCODE_MODEL"
 
@@ -36,6 +44,11 @@ def requires_cli(binary: str) -> pytest.MarkDecorator:
     enabled = os.environ.get("AGENTSHIM_E2E") == "1"
     reason = "set AGENTSHIM_E2E=1" if not enabled else f"{binary} is not on PATH"
     return pytest.mark.skipif(not enabled or shutil.which(binary) is None, reason=reason)
+
+
+def requires_binary(binary: str) -> pytest.MarkDecorator:
+    """Skip the test unless *binary* is installed; no model, no credentials."""
+    return pytest.mark.skipif(shutil.which(binary) is None, reason=f"{binary} is not on PATH")
 
 
 def model_from_env(variable: str) -> str | None:

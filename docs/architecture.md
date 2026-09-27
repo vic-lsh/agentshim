@@ -375,6 +375,16 @@ Codex always passes `--skip-git-repo-check` and, when the env has a `PATH`,
 the launcher's PATH. `codex exec resume <id>` also needs the literal `-`
 positional right after the thread id: without it the CLI ignores stdin.
 
+Codex's own sandbox is a `CodexProvider` option. Without one, argv carries
+`--dangerously-bypass-approvals-and-sandbox`, as in every earlier release.
+With one, it carries `--config` overrides instead (`sandbox_mode`,
+`approval_policy`, and for `workspace-write` all four
+`sandbox_workspace_write.*` keys), because `exec resume` has no `--sandbox`
+flag. `parse_sandbox` inverts that rendering and lives next to it, like
+`parse_mcp_servers`. Every value goes through `providers/codex/_toml.py`,
+whose encoder escapes control characters: Codex keeps an override that fails
+to parse as TOML as a raw string, so a bad literal changes type silently.
+
 Claude's optional settings-file sandbox (`providers/claude/sandbox.py`) is a
 provider option, not a portable constructor argument. Its read-confinement
 hook is invoked through `sys.executable`.

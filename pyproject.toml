@@ -17,10 +17,12 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.168.1",
     "import-linter>=2.0",
     "pyright>=1.1.408",
     "pytest>=8.0.0",
     "ruff==0.15.12",
+    "tomli>=2 ; python_full_version < '3.11'",
 ]
 docs = [
     "mkdocs>=1.6.1",

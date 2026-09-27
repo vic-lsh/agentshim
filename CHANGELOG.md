@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+Additive: every new option defaults to earlier behaviour.
+
+### Added
+
+- `CodexProvider(sandbox=CodexSandboxConfig(...))` keeps Codex's own OS
+  sandbox on instead of bypassing it. `mode` is `read-only`,
+  `workspace-write` (default) or `danger-full-access`; `workspace-write` also
+  takes absolute `writable_roots`, `network_access` and `writable_tmp`. The
+  config is rendered as `--config` overrides so resumed turns keep it, pins
+  every `workspace-write` key so user config cannot widen it, and pins
+  `approval_policy="never"`. Invalid combinations raise on construction.
+  Without a config the argv is unchanged.
+- `agentshim.providers.codex.parse_sandbox(argv)` inverts that rendering.
+- Hypothesis property tests, with a `fuzz` profile (`HYPOTHESIS_PROFILE=fuzz`).
+- Cheap-model e2e knobs `AGENTSHIM_E2E_CLAUDE_MODEL` and
+  `AGENTSHIM_E2E_CODEX_MODEL`, and a credential-free Codex sandbox
+  enforcement matrix that runs whenever `codex` is installed.
+
+### Fixed
+
+- Codex `--config` string values escape control characters. A newline or
+  other control character in an MCP command, argument, env value or `PATH`
+  used to produce invalid TOML, which Codex silently keeps as a raw string.
+
 ## 0.6.5 (2026-09-27)
 
 - Mark invocation-scoped Codex MCP servers as required so slow servers remain

@@ -7,13 +7,17 @@ from pathlib import Path
 import pytest
 from agentshim import CliAgent, OutputSchema, TurnRequest
 
-from tests.e2e.conftest import requires_cli
+from tests.e2e.conftest import CLAUDE_MODEL_VAR, model_from_env, requires_cli
 
 pytestmark = [pytest.mark.e2e, requires_cli("claude")]
 
 
+def _agent() -> CliAgent:
+    return CliAgent("claude", model=model_from_env(CLAUDE_MODEL_VAR))
+
+
 def test_a_single_turn_answers_and_reports_usage() -> None:
-    result = CliAgent("claude").run("Reply with exactly: pong")
+    result = _agent().run("Reply with exactly: pong")
     assert "pong" in result.text.lower()
     assert result.session_id is not None
     assert result.usage.tokens.input_tokens > 0
@@ -21,7 +25,7 @@ def test_a_single_turn_answers_and_reports_usage() -> None:
 
 
 def test_a_second_turn_resumes_the_first() -> None:
-    session = CliAgent("claude").start_session()
+    session = _agent().start_session()
     session.turn("Remember the word 'juniper'. Reply with 'ok'.")
     assert session.session_id is not None
     second = session.turn("What word did I ask you to remember? Reply with just the word.")
@@ -37,7 +41,7 @@ def test_a_native_output_schema_returns_structured_output(tmp_path: Path) -> Non
         "additionalProperties": False,
     }
     result = (
-        CliAgent("claude")
+        _agent()
         .start_session(cwd=str(tmp_path))
         .turn(
             TurnRequest(

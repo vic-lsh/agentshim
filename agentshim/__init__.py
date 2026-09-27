@@ -79,7 +79,7 @@ from .execution import (
 )
 from .providers import get_provider, provider_names
 from .providers.claude import ClaudeProvider, SandboxConfig
-from .providers.codex import CodexProvider
+from .providers.codex import CodexProvider, CodexSandboxConfig
 from .providers.copilot import CopilotProvider
 from .providers.gemini import GeminiProvider
 from .providers.opencode import OpencodeProvider
@@ -101,6 +101,7 @@ __all__ = [
     "CliNotFoundError",
     "CliTimeoutError",
     "CodexProvider",
+    "CodexSandboxConfig",
     "CommandExecutor",
     "CommandHandle",
     "CommandRequest",

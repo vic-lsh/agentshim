@@ -41,7 +41,7 @@ _WW_KEYS = {
 #: backslashes, control characters, spaces, non-BMP code points.
 _segments = st.text(
     alphabet=st.one_of(
-        st.characters(exclude_characters="\x00/"),
+        st.characters(exclude_characters="\x00/", exclude_categories=["Cs"]),
         st.sampled_from(['"', "\\", "\n", "\t", " ", "'", "$", "\x7f", "\U0001f600"]),
     ),
     min_size=1,
@@ -138,6 +138,12 @@ class TestConfigValidation:
     def test_a_nul_byte_in_a_root_is_rejected(self, root: str, at: int) -> None:
         with pytest.raises(ValueError, match="NUL"):
             CodexSandboxConfig(writable_roots=[root[:at] + "\x00" + root[at:]])
+
+    @pytest.mark.parametrize("surrogate", [chr(0xD800), chr(0xDC80), chr(0xDFFF)])
+    def test_a_root_that_cannot_be_encoded_is_rejected(self, surrogate: str) -> None:
+        """It could reach neither TOML nor argv; fail here, not at launch."""
+        with pytest.raises(ValueError, match="UTF-8"):
+            CodexSandboxConfig(writable_roots=[f"/data/{surrogate}"])
 
     def test_a_bare_string_is_not_iterated_into_roots(self) -> None:
         with pytest.raises(TypeError, match="sequence of paths"):

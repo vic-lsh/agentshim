@@ -105,9 +105,21 @@ def _check_root(root: object) -> None:
     if "\x00" in root:
         msg = f"writable_roots entry contains a NUL byte: {root!r}"
         raise ValueError(msg)
+    if not _is_utf8(root):
+        msg = f"writable_roots entry is not valid UTF-8 text: {root!r}"
+        raise ValueError(msg)
     if not os.path.isabs(root):  # noqa: PTH117 - a str contract, not a Path
         msg = f"writable_roots entries must be absolute; got {root!r}"
         raise ValueError(msg)
+
+
+def _is_utf8(text: str) -> bool:
+    """TOML and argv both need text that encodes; a lone surrogate does not."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def resolve_sandbox(value: object) -> CodexSandboxConfig | None:

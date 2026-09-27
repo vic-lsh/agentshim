@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.4 (2026-09-27)
 
 - Add optional positive finite `startup_timeout_s` to stdio and HTTP MCP
   server specs. Codex renders it as an invocation-scoped

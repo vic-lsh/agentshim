@@ -108,6 +108,13 @@ class TestInstallMcp:
             "mcp_servers.profiler.tool_timeout_sec=1500.0",
         ]
 
+    def test_a_stdio_startup_timeout_is_an_invocation_scoped_override(self) -> None:
+        server = StdioMcpServer(name="evaluation", command="python", startup_timeout_s=30.0)
+        assert _flags(server)[-2:] == [
+            "--config",
+            "mcp_servers.evaluation.startup_timeout_sec=30.0",
+        ]
+
     def test_quotes_in_a_value_are_toml_escaped(self) -> None:
         server = StdioMcpServer(name="tool", command='py"thon')
         assert 'mcp_servers.tool.command="py\\"thon"' in _flags(server)

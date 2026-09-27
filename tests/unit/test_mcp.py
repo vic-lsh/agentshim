@@ -32,13 +32,27 @@ class TestServerSpecs:
         server = StdioMcpServer(name="tool", command="npx")
         assert server.args == ()
         assert server.env == {}
+        assert server.startup_timeout_s is None
         assert server.tool_timeout_s is None
 
     def test_http_defaults(self) -> None:
         server = HttpMcpServer(name="h", url="http://localhost:8080/sse")
         assert server.headers == {}
         assert server.transport == "http"
+        assert server.startup_timeout_s is None
         assert server.tool_timeout_s is None
+
+    @pytest.mark.parametrize(
+        "factory",
+        [
+            lambda: StdioMcpServer(name="tool", command="npx", startup_timeout_s=45.5),
+            lambda: HttpMcpServer(name="h", url="http://x", startup_timeout_s=45.5),
+        ],
+    )
+    def test_a_positive_finite_startup_timeout_is_accepted(
+        self, factory: Callable[[], McpServer]
+    ) -> None:
+        assert factory().startup_timeout_s == 45.5
 
     @pytest.mark.parametrize(
         "factory",
@@ -71,6 +85,17 @@ class TestServerSpecs:
     ) -> None:
         with pytest.raises(ValueError, match="positive finite"):
             factory(timeout_s)
+
+    @pytest.mark.parametrize(
+        "timeout_s", [0.0, -1.0, float("inf"), float("-inf"), float("nan"), True]
+    )
+    def test_startup_timeout_must_be_positive_and_finite(self, timeout_s: object) -> None:
+        with pytest.raises(ValueError, match="startup_timeout_s must be a positive finite"):
+            StdioMcpServer(
+                name="tool",
+                command="npx",
+                startup_timeout_s=cast("float", timeout_s),
+            )
 
     def test_the_sse_transport_can_be_asked_for(self) -> None:
         server = HttpMcpServer(name="h", url="http://localhost:8080/sse", transport="sse")

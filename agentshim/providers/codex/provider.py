@@ -190,7 +190,7 @@ def _server_flags(server: McpServer) -> list[str]:
         # A ``--config`` override carries the address and nothing else, so
         # Codex works the transport out from the endpoint itself.
         flags = ["--config", f"{prefix}.url={_toml_str(server.url)}"]
-        return flags + _tool_timeout_flags(prefix, server.tool_timeout_s)
+        return flags + _timeout_flags(prefix, server)
     flags = [
         "--config",
         f"{prefix}.command={_toml_str(server.command)}",
@@ -199,14 +199,17 @@ def _server_flags(server: McpServer) -> list[str]:
     ]
     for env_key, env_value in server.env.items():
         flags += ["--config", f"{prefix}.env.{env_key}={_toml_str(env_value)}"]
-    return flags + _tool_timeout_flags(prefix, server.tool_timeout_s)
+    return flags + _timeout_flags(prefix, server)
 
 
-def _tool_timeout_flags(prefix: str, timeout_s: float | None) -> list[str]:
-    """Render Codex's per-server tool timeout as an invocation override."""
-    if timeout_s is None:
-        return []
-    return ["--config", f"{prefix}.tool_timeout_sec={timeout_s}"]
+def _timeout_flags(prefix: str, server: McpServer) -> list[str]:
+    """Render Codex's per-server timeouts as invocation overrides."""
+    flags: list[str] = []
+    if server.startup_timeout_s is not None:
+        flags += ["--config", f"{prefix}.startup_timeout_sec={server.startup_timeout_s}"]
+    if server.tool_timeout_s is not None:
+        flags += ["--config", f"{prefix}.tool_timeout_sec={server.tool_timeout_s}"]
+    return flags
 
 
 def _toml_str(value: str) -> str:
@@ -280,6 +283,8 @@ def _apply_mcp_override(entry: dict[str, Any], field: str, raw_value: str) -> No
         entry["transport"] = "http"
     elif field == "tool_timeout_sec":
         entry["tool_timeout_s"] = float(raw_value)
+    elif field == "startup_timeout_sec":
+        entry["startup_timeout_s"] = float(raw_value)
     elif field.startswith("env."):
         entry.setdefault("env", {})[field.removeprefix("env.")] = _parse_toml_str(raw_value)
 

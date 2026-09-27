@@ -154,6 +154,9 @@ def mcp_entry(server: McpServer) -> dict[str, Any]:
     ``trust: true`` skips Gemini's per-tool approval prompt for servers the
     caller installed on purpose.
     """
+    if server.startup_timeout_s is not None:
+        msg = "gemini cannot configure a per-server MCP startup timeout"
+        raise ProviderCapabilityError(msg)
     if server.tool_timeout_s is not None:
         msg = "gemini cannot configure a per-server MCP tool timeout"
         raise ProviderCapabilityError(msg)

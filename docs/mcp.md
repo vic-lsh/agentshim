@@ -30,6 +30,10 @@ it to that server with an invocation-scoped `--config` override named
 `~/.codex/config.toml` is never edited. Providers that cannot express a
 per-server tool timeout raise `ProviderCapabilityError` when one is requested.
 
+`startup_timeout_s` similarly bounds server initialization and the initial
+tool listing. Codex receives it through the invocation-scoped
+`mcp_servers.<name>.startup_timeout_sec` override, without editing user config.
+
 `HttpMcpServer(name=..., url=..., headers=..., transport=...)` describes a
 remote server. `transport` is `"http"` (streamable HTTP, the default) or
 `"sse"`; they are different wire protocols, so a CLI told the wrong one

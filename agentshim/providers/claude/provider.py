@@ -162,6 +162,9 @@ def _resumed_session_id(argv: Sequence[str]) -> str | None:
 
 def mcp_entry(server: McpServer) -> dict[str, Any]:
     """Render one server the way ``.mcp.json`` describes it."""
+    if server.startup_timeout_s is not None:
+        msg = "claude cannot configure a per-server MCP startup timeout"
+        raise ProviderCapabilityError(msg)
     if server.tool_timeout_s is not None:
         msg = "claude cannot configure a per-server MCP tool timeout"
         raise ProviderCapabilityError(msg)

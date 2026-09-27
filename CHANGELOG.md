@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.5 (2026-09-27)
+
+- Mark invocation-scoped Codex MCP servers as required so slow servers remain
+  in the initial tool catalog and honor their configured startup timeout.
+
 ## 0.6.4 (2026-09-27)
 
 - Add optional positive finite `startup_timeout_s` to stdio and HTTP MCP

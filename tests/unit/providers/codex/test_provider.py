@@ -91,6 +91,8 @@ class TestInstallMcp:
             'mcp_servers.vibesys_issues.command="python"',
             "--config",
             'mcp_servers.vibesys_issues.args=["-m","board.mcp","issues.json"]',
+            "--config",
+            "mcp_servers.vibesys_issues.required=true",
         ]
 
     def test_a_dash_in_the_name_becomes_a_snake_case_table_key(self) -> None:
@@ -121,7 +123,12 @@ class TestInstallMcp:
 
     def test_an_http_server_declares_its_url(self) -> None:
         server = HttpMcpServer(name="my-srv", url="http://localhost:9000/sse")
-        assert _flags(server) == ["--config", 'mcp_servers.my_srv.url="http://localhost:9000/sse"']
+        assert _flags(server) == [
+            "--config",
+            'mcp_servers.my_srv.url="http://localhost:9000/sse"',
+            "--config",
+            "mcp_servers.my_srv.required=true",
+        ]
 
     def test_an_http_tool_timeout_is_an_invocation_scoped_override(self) -> None:
         server = HttpMcpServer(name="my-srv", url="http://localhost:9000/sse", tool_timeout_s=30.5)
@@ -133,7 +140,12 @@ class TestInstallMcp:
     def test_both_transports_render_the_same_url_override(self) -> None:
         """A ``--config`` override has room for the address and nothing else."""
         sse = HttpMcpServer(name="my-srv", url="http://localhost:9000/sse", transport="sse")
-        assert _flags(sse) == ["--config", 'mcp_servers.my_srv.url="http://localhost:9000/sse"']
+        assert _flags(sse) == [
+            "--config",
+            'mcp_servers.my_srv.url="http://localhost:9000/sse"',
+            "--config",
+            "mcp_servers.my_srv.required=true",
+        ]
 
     def test_http_headers_are_refused_rather_than_dropped(self) -> None:
         server = HttpMcpServer(

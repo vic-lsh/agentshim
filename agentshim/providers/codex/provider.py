@@ -189,13 +189,20 @@ def _server_flags(server: McpServer) -> list[str]:
             raise ProviderCapabilityError(_HTTP_HEADERS_UNSUPPORTED)
         # A ``--config`` override carries the address and nothing else, so
         # Codex works the transport out from the endpoint itself.
-        flags = ["--config", f"{prefix}.url={_toml_str(server.url)}"]
+        flags = [
+            "--config",
+            f"{prefix}.url={_toml_str(server.url)}",
+            "--config",
+            f"{prefix}.required=true",
+        ]
         return flags + _timeout_flags(prefix, server)
     flags = [
         "--config",
         f"{prefix}.command={_toml_str(server.command)}",
         "--config",
         f"{prefix}.args={_toml_array(list(server.args))}",
+        "--config",
+        f"{prefix}.required=true",
     ]
     for env_key, env_value in server.env.items():
         flags += ["--config", f"{prefix}.env.{env_key}={_toml_str(env_value)}"]

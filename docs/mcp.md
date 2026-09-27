@@ -33,6 +33,9 @@ per-server tool timeout raise `ProviderCapabilityError` when one is requested.
 `startup_timeout_s` similarly bounds server initialization and the initial
 tool listing. Codex receives it through the invocation-scoped
 `mcp_servers.<name>.startup_timeout_sec` override, without editing user config.
+AgentShim also marks each per-turn Codex server as required, so Codex waits for
+its configured startup timeout instead of applying the shared optional-server
+catalog grace period.
 
 `HttpMcpServer(name=..., url=..., headers=..., transport=...)` describes a
 remote server. `transport` is `"http"` (streamable HTTP, the default) or

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.8 (2026-09-27)
 
 A tightening of the Codex (`STRICT`) schema check: schemas it now rejects
 were already rejected by the API, after a full model turn.

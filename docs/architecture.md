@@ -278,6 +278,7 @@ class ArgvContext:
     schema_path: str | None          # CLI-visible path for FILE_PATH providers
     mcp_argv: Sequence[str]
     extra_args: Sequence[str]
+    cwd: str | None                  # the turn's cwd, for validating paths; never rendered
 ```
 
 The prompt is always delivered on stdin and never appears in argv (an
@@ -384,6 +385,18 @@ flag. `parse_sandbox` inverts that rendering and lives next to it, like
 `parse_mcp_servers`. Every value goes through `providers/codex/_toml.py`,
 whose encoder escapes control characters: Codex keeps an override that fails
 to parse as TOML as a raw string, so a bad literal changes type silently.
+
+A sandboxed turn also passes `--ignore-rules`: an exec-policy `allow` rule
+runs its command outside the sandbox, so a rule in the user's
+`~/.codex/rules` would otherwise widen it. `excluded_commands` is the one
+case that needs rules to load. Codex reads them only from `.rules` files
+(`$CODEX_HOME/rules/`, trusted projects), never from `--config`, so
+`providers/codex/rules.py` renders them and `install_rules` writes them into a
+caller-dedicated `CODEX_HOME`. The provider then omits `--ignore-rules` and
+refuses the turn unless `CODEX_HOME` is absolute and outside every directory
+the sandbox lets commands write (the turn's `cwd`, `writable_roots`, and the
+temp dirs when writable): a writable home would let a command add a rule
+exempting itself. That check is why `ArgvContext` carries `cwd`.
 
 Claude's optional settings-file sandbox (`providers/claude/sandbox.py`) is a
 provider option, not a portable constructor argument. Its read-confinement

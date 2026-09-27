@@ -10,7 +10,11 @@ Every setting is rendered as a ``--config`` override rather than ``--sandbox``,
 because ``codex exec resume`` accepts ``--config`` but not ``--sandbox``: one
 rendering serves fresh and resumed turns alike. For ``workspace-write`` every
 key is emitted explicitly, even at its default, so a user's
-``~/.codex/config.toml`` cannot widen the sandbox a caller asked for.
+``~/.codex/config.toml`` cannot widen the sandbox a caller asked for, and
+``--ignore-rules`` keeps its exec-policy ``.rules`` files from exempting
+commands. ``excluded_commands`` is the one exception: Codex reads exemptions
+only from rules files, so they go in a dedicated ``CODEX_HOME`` (see
+``rules.py``).
 
 See https://developers.openai.com/codex/security.
 """
@@ -18,6 +22,7 @@ See https://developers.openai.com/codex/security.
 from __future__ import annotations
 
 import os
+import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Literal, cast, get_args
@@ -30,9 +35,15 @@ SandboxMode = Literal["read-only", "workspace-write", "danger-full-access"]
 SANDBOX_MODES: tuple[SandboxMode, ...] = get_args(SandboxMode)
 
 _WORKSPACE_WRITE: SandboxMode = "workspace-write"
+_FIRST_PRINTABLE = 0x20
+_DEL = 0x7F
 
 
 def _roots() -> tuple[str, ...]:
+    return ()
+
+
+def _commands() -> tuple[str, ...]:
     return ()
 
 
@@ -53,12 +64,25 @@ class CodexSandboxConfig:
             ones such as the Docker socket. ``workspace-write`` only.
         writable_tmp: Keep ``/tmp`` and ``$TMPDIR`` writable, which is Codex's
             own default. ``workspace-write`` only.
+        excluded_commands: Commands that run outside the sandbox, each written
+            as shell words, e.g. ``"sdo detector check"``. An exempt command
+            runs with no confinement at all: it can write anywhere and reach
+            any socket the user can, so exempt only commands you trust with
+            whatever arguments the model adds. A command the model
+            runs is exempt when its words start with one of these, so
+            ``sdo detector check --all`` is exempt and ``sdo detector`` is not.
+            Anything else on the same command line (``&&``, ``|``, ``;``,
+            ``$(...)``) keeps the whole line sandboxed. ``read-only`` and
+            ``workspace-write`` only. Rendered as Codex exec-policy rules,
+            which must be installed in a dedicated ``CODEX_HOME`` with
+            ``install_rules``; see ``agentshim.providers.codex.rules``.
     """
 
     mode: SandboxMode = _WORKSPACE_WRITE
     writable_roots: Sequence[str] = field(default_factory=_roots)
     network_access: bool = False
     writable_tmp: bool = True
+    excluded_commands: Sequence[str] = field(default_factory=_commands)
 
     def __post_init__(self) -> None:
         """Reject a config Codex would reject or silently ignore."""
@@ -76,6 +100,10 @@ class CodexSandboxConfig:
                 "writable_roots, network_access and writable_tmp only apply to "
                 f"workspace-write; {self.mode} would ignore them"
             )
+            raise ValueError(msg)
+        object.__setattr__(self, "excluded_commands", _as_commands(self.excluded_commands))
+        if self.mode == "danger-full-access" and self.excluded_commands:
+            msg = "excluded_commands needs a sandbox to exempt from; danger-full-access has none"
             raise ValueError(msg)
 
     def _widens_workspace_write(self) -> bool:
@@ -110,6 +138,37 @@ def _check_root(root: object) -> None:
         raise ValueError(msg)
     if not os.path.isabs(root):  # noqa: PTH117 - a str contract, not a Path
         msg = f"writable_roots entries must be absolute; got {root!r}"
+        raise ValueError(msg)
+
+
+def _as_commands(value: object) -> tuple[str, ...]:
+    """Validate ``excluded_commands`` and freeze it into a tuple."""
+    if isinstance(value, str) or not isinstance(value, Sequence):
+        msg = f"excluded_commands must be a sequence of commands, not {type(value).__name__}"
+        raise TypeError(msg)
+    commands = tuple(cast("Sequence[object]", value))
+    for command in commands:
+        _check_command(command)
+    return cast("tuple[str, ...]", commands)
+
+
+def _check_command(command: object) -> None:
+    if not isinstance(command, str):
+        msg = f"excluded_commands entries must be str, got {type(command).__name__}"
+        raise TypeError(msg)
+    if any(ord(char) < _FIRST_PRINTABLE or ord(char) == _DEL for char in command):
+        msg = f"excluded_commands entry contains a control character: {command!r}"
+        raise ValueError(msg)
+    if not _is_utf8(command):
+        msg = f"excluded_commands entry is not valid UTF-8 text: {command!r}"
+        raise ValueError(msg)
+    try:
+        words = shlex.split(command)
+    except ValueError as exc:
+        msg = f"excluded_commands entry is not valid shell words ({exc}): {command!r}"
+        raise ValueError(msg) from exc
+    if not words or not all(words):
+        msg = f"excluded_commands entry must be non-empty words: {command!r}"
         raise ValueError(msg)
 
 

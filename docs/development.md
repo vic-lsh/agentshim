@@ -53,6 +53,11 @@ enforcement matrix, which runs agentshim's rendered overrides through
 `requires_cli`: no credentials, no cost, deterministic, and they run whenever
 the binary is installed.
 
+The Codex `excluded_commands` turns run with a throwaway `CODEX_HOME` under
+`~/.cache/` rather than the system temp dir, where Codex will not create its
+sandbox helper. They copy `auth.json` from your own Codex home (`$CODEX_HOME`
+or `~/.codex`) into it and delete the directory afterwards.
+
 ```bash
 AGENTSHIM_E2E=1 AGENTSHIM_E2E_GEMINI_MODEL=gemini-2.5-flash \
   uv run pytest tests/e2e/test_gemini_e2e.py -q

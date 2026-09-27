@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.7 (2026-09-27)
 
 Additive, with one tightening: a sandboxed Codex turn no longer applies the
 user's exec-policy rules (see Fixed).

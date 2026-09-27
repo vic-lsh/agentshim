@@ -15,6 +15,11 @@ Additive: every new option defaults to earlier behaviour.
   `approval_policy="never"`. Invalid combinations raise on construction.
   Without a config the argv is unchanged.
 - `agentshim.providers.codex.parse_sandbox(argv)` inverts that rendering.
+- `ClaudeProvider(hooks=[ClaudeHook(event, command, matcher, timeout_s)])`
+  adds caller hooks to the turn's inline settings, after agentshim's own
+  read-confinement hook. `command` is an argv quoted with `shlex.join`. Hooks
+  work with or without a sandbox. `build_settings` now takes
+  `SandboxConfig | None` and a keyword `hooks`; existing calls are unchanged.
 - Hypothesis property tests, with a `fuzz` profile (`HYPOTHESIS_PROFILE=fuzz`).
 - Cheap-model e2e knobs `AGENTSHIM_E2E_CLAUDE_MODEL` and
   `AGENTSHIM_E2E_CODEX_MODEL`, and a credential-free Codex sandbox

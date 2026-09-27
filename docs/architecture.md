@@ -387,7 +387,10 @@ to parse as TOML as a raw string, so a bad literal changes type silently.
 
 Claude's optional settings-file sandbox (`providers/claude/sandbox.py`) is a
 provider option, not a portable constructor argument. Its read-confinement
-hook is invoked through `sys.executable`.
+hook is invoked through `sys.executable`. Caller hooks (`ClaudeHook`,
+`providers/claude/user_hooks.py`) are the other Claude option; `build_settings`
+merges both into the one `--settings` object, agentshim's hook first on each
+event, and emits no `--settings` when there is neither.
 
 MCP config-file installation merges servers into the provider's JSON file,
 keeps the original bytes, and restores on `restore()`. If the file changed

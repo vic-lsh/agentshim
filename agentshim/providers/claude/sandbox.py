@@ -16,7 +16,14 @@ import shlex
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from .user_hooks import merge_hooks, render_hooks
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from .user_hooks import ClaudeHook
 
 # ``absolute()`` rather than ``resolve()``: the hook path is only handed back to
 # the interpreter, and an install reached through a symlinked tree should keep
@@ -94,8 +101,33 @@ def resolve_sandbox(value: object) -> SandboxConfig | None:
     raise TypeError(msg)
 
 
-def build_settings(config: SandboxConfig) -> dict[str, Any]:
-    """Build the ``settings.json`` payload that enables the sandbox."""
+def build_settings(
+    config: SandboxConfig | None, *, hooks: Sequence[ClaudeHook] = ()
+) -> dict[str, Any]:
+    """Build the inline ``settings.json`` payload for a turn.
+
+    Args:
+        config: The sandbox to enable, or ``None`` for no ``sandbox`` block.
+        hooks: Caller hooks, appended after agentshim's own read-confinement
+            hook on the same event, so neither replaces the other.
+
+    Returns:
+        The settings object; empty when there is nothing to set.
+    """
+    settings: dict[str, Any] = {}
+    own_hooks: dict[str, list[dict[str, Any]]] = {}
+    if config is not None:
+        settings["sandbox"] = _sandbox_block(config)
+        if config.confine_native_reads_to:
+            own_hooks = _confine_reads_hook(config.confine_native_reads_to)
+    merged = merge_hooks(own_hooks, render_hooks(hooks))
+    if merged:
+        settings["hooks"] = merged
+    return settings
+
+
+def _sandbox_block(config: SandboxConfig) -> dict[str, Any]:
+    """Build the ``sandbox`` key of the settings object."""
     sandbox: dict[str, Any] = {
         "enabled": True,
         "failIfUnavailable": config.fail_if_unavailable,
@@ -121,11 +153,7 @@ def build_settings(config: SandboxConfig) -> dict[str, Any]:
         sandbox["network"] = {"allowedDomains": list(config.allowed_domains)}
 
     sandbox.update(config.extra_settings)
-
-    settings: dict[str, Any] = {"sandbox": sandbox}
-    if config.confine_native_reads_to:
-        settings["hooks"] = _confine_reads_hook(config.confine_native_reads_to)
-    return settings
+    return sandbox
 
 
 def _confine_reads_hook(roots: list[str]) -> dict[str, Any]:

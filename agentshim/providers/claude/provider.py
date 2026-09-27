@@ -11,6 +11,7 @@ from agentshim.core.profile import McpMechanism, OutputSchemaStyle, ProviderProf
 
 from .parser import ClaudeStreamParser
 from .sandbox import SANDBOX_ENV, SandboxConfig, build_settings, resolve_sandbox
+from .user_hooks import ClaudeHook, resolve_hooks
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -66,17 +67,24 @@ PROFILE = ProviderProfile(
 
 
 class ClaudeProvider:
-    """Claude Code. ``sandbox`` is a provider option, not a portable one."""
+    """Claude Code. ``sandbox`` and ``hooks`` are provider options, not portable ones."""
 
     profile = PROFILE
 
-    def __init__(self, *, sandbox: bool | SandboxConfig | None = None) -> None:
-        """Fix the sandbox option for every turn this provider runs.
+    def __init__(
+        self,
+        *,
+        sandbox: bool | SandboxConfig | None = None,
+        hooks: Sequence[ClaudeHook] = (),
+    ) -> None:
+        """Fix the sandbox and hooks for every turn this provider runs.
 
-        ``True`` takes the default config; ``None`` and ``False`` both mean
-        unsandboxed.
+        ``sandbox=True`` takes the default config; ``None`` and ``False`` both
+        mean unsandboxed. ``hooks`` are added to the settings Claude Code
+        loads for the turn, after agentshim's own read-confinement hook.
         """
         self.sandbox: SandboxConfig | None = resolve_sandbox(sandbox)
+        self.hooks: tuple[ClaudeHook, ...] = resolve_hooks(hooks)
 
     @property
     def sandbox_env(self) -> dict[str, str]:
@@ -106,8 +114,9 @@ class ClaudeProvider:
             argv += ["--effort", ctx.reasoning_effort]
         if ctx.schema_inline:
             argv += ["--json-schema", ctx.schema_inline]
-        if self.sandbox is not None:
-            argv += ["--settings", json.dumps(build_settings(self.sandbox))]
+        settings = build_settings(self.sandbox, hooks=self.hooks)
+        if settings:
+            argv += ["--settings", json.dumps(settings)]
         argv += list(ctx.mcp_argv)
         argv += list(ctx.extra_args)
         return argv

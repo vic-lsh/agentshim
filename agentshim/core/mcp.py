@@ -40,15 +40,16 @@ def _no_env() -> Mapping[str, str]:
 class StdioMcpServer:
     """MCP server launched as a subprocess over stdio.
 
-    ``tool_timeout_s`` is the maximum time one tool call may run. Providers
-    that cannot express a per-server tool timeout reject a non-``None`` value
-    rather than silently dropping it.
+    ``startup_timeout_s`` bounds initialization and the first tool listing;
+    ``tool_timeout_s`` bounds one tool call. Providers that cannot express a
+    requested per-server timeout reject it rather than silently dropping it.
     """
 
     name: str
     command: str
     args: Sequence[str] = ()
     env: Mapping[str, str] = field(default_factory=_no_env)
+    startup_timeout_s: float | None = None
     tool_timeout_s: float | None = None
 
     def __post_init__(self) -> None:
@@ -63,7 +64,8 @@ class StdioMcpServer:
         if not self.command:
             msg = f"MCP server {self.name!r} must declare a command"
             raise ValueError(msg)
-        _validate_tool_timeout(self.name, self.tool_timeout_s)
+        _validate_timeout(self.name, "startup_timeout_s", self.startup_timeout_s)
+        _validate_timeout(self.name, "tool_timeout_s", self.tool_timeout_s)
 
 
 #: The two remote MCP transports the CLIs distinguish.
@@ -87,6 +89,7 @@ class HttpMcpServer:
     url: str
     headers: Mapping[str, str] = field(default_factory=_no_env)
     transport: McpTransport = "http"
+    startup_timeout_s: float | None = None
     tool_timeout_s: float | None = None
 
     def __post_init__(self) -> None:
@@ -104,15 +107,16 @@ class HttpMcpServer:
         if self.transport not in _TRANSPORTS:
             msg = f"MCP server {self.name!r} transport must be one of {_TRANSPORTS}"
             raise ValueError(msg)
-        _validate_tool_timeout(self.name, self.tool_timeout_s)
+        _validate_timeout(self.name, "startup_timeout_s", self.startup_timeout_s)
+        _validate_timeout(self.name, "tool_timeout_s", self.tool_timeout_s)
 
 
-def _validate_tool_timeout(name: str, timeout_s: float | None) -> None:
+def _validate_timeout(name: str, field_name: str, timeout_s: float | None) -> None:
     """Reject timeout values no provider can apply meaningfully."""
     if timeout_s is None:
         return
     if isinstance(timeout_s, bool) or not math.isfinite(timeout_s) or timeout_s <= 0:
-        msg = f"MCP server {name!r} tool_timeout_s must be a positive finite number"
+        msg = f"MCP server {name!r} {field_name} must be a positive finite number"
         raise ValueError(msg)
 
 

@@ -159,6 +159,9 @@ def mcp_entry(server: McpServer) -> dict[str, Any]:
     non-interactive ``run`` mode auto-answers permission prompts, so no
     extra ``permission`` block is needed.
     """
+    if server.startup_timeout_s is not None:
+        msg = "opencode cannot configure a per-server MCP startup timeout"
+        raise ProviderCapabilityError(msg)
     if server.tool_timeout_s is not None:
         msg = "opencode cannot configure a per-server MCP tool timeout"
         raise ProviderCapabilityError(msg)

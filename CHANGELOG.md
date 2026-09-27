@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.6 (2026-09-27)
 
 Additive: every new option defaults to earlier behaviour.
 

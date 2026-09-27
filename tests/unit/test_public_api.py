@@ -26,7 +26,7 @@ def test_testing_module_exports() -> None:
 
 
 def test_version_is_reported() -> None:
-    assert agentshim.__version__ == "0.6.5"
+    assert agentshim.__version__ == "0.6.6"
 
 
 def test_core_and_execution_do_not_import_providers_at_module_level() -> None:

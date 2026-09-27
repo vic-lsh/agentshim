@@ -102,7 +102,7 @@ def resume_failure_lines(*, session_id: str | None = None) -> tuple[list[str], l
     return [], stderr, 1
 
 
-def _usage_payload(usage: TokenUsage | None) -> dict[str, int]:
+def _usage_payload(usage: TokenUsage | None) -> dict[str, Any]:
     if usage is None:
         return {
             "input_tokens": 0,
@@ -112,13 +112,17 @@ def _usage_payload(usage: TokenUsage | None) -> dict[str, int]:
         }
     # The parser folds cache tokens into input_tokens, so undo that here to
     # produce the disjoint counts Claude actually prints.
-    cached = usage.cached_input_tokens
     created = usage.cache_write_input_tokens
+    created_1h = usage.cache_write_1h_input_tokens
     return {
-        "input_tokens": max(usage.input_tokens - cached, 0),
+        "input_tokens": usage.uncached_input_tokens,
         "output_tokens": usage.output_tokens,
         "cache_creation_input_tokens": created,
-        "cache_read_input_tokens": max(cached - created, 0),
+        "cache_read_input_tokens": usage.cache_read_input_tokens,
+        "cache_creation": {
+            "ephemeral_5m_input_tokens": created - created_1h,
+            "ephemeral_1h_input_tokens": created_1h,
+        },
     }
 
 

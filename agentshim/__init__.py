@@ -29,11 +29,13 @@ from .core import (
     McpMechanism,
     McpServer,
     McpTransport,
+    ModelPricing,
     NoopInstallation,
     NullEventHandler,
     OutputSchema,
     OutputSchemaStyle,
     ParsedTurn,
+    PricingTable,
     Provider,
     ProviderCapabilityError,
     ProviderError,
@@ -51,6 +53,7 @@ from .core import (
     StdioMcpServer,
     StreamParser,
     TokenUsage,
+    TokenWeights,
     ToolCall,
     ToolResult,
     ToolTracker,
@@ -59,12 +62,16 @@ from .core import (
     UsageReport,
     compact_json,
     compose_event_handlers,
+    cost_usd,
+    default_pricing,
     dialect_problems,
     install_config_file,
     interactive_env,
     materialize,
     normalize,
+    normalized_usage,
     parse_json_object,
+    price_for,
 )
 from .execution import (
     CallbackCommandStreamSink,
@@ -84,7 +91,7 @@ from .providers.copilot import CopilotProvider
 from .providers.gemini import GeminiProvider
 from .providers.opencode import OpencodeProvider
 
-__version__ = "0.6.8"
+__version__ = "0.7.0"
 
 __all__ = [
     "AgentEvent",
@@ -123,6 +130,7 @@ __all__ = [
     "McpMechanism",
     "McpServer",
     "McpTransport",
+    "ModelPricing",
     "NoopInstallation",
     "NullEventHandler",
     "NullSink",
@@ -130,6 +138,7 @@ __all__ = [
     "OutputSchema",
     "OutputSchemaStyle",
     "ParsedTurn",
+    "PricingTable",
     "Provider",
     "ProviderCapabilityError",
     "ProviderError",
@@ -148,6 +157,7 @@ __all__ = [
     "StdioMcpServer",
     "StreamParser",
     "TokenUsage",
+    "TokenWeights",
     "ToolCall",
     "ToolResult",
     "ToolTracker",
@@ -158,12 +168,16 @@ __all__ = [
     "__version__",
     "compact_json",
     "compose_event_handlers",
+    "cost_usd",
+    "default_pricing",
     "dialect_problems",
     "get_provider",
     "install_config_file",
     "interactive_env",
     "materialize",
     "normalize",
+    "normalized_usage",
     "parse_json_object",
+    "price_for",
     "provider_names",
 ]

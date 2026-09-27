@@ -125,14 +125,13 @@ def resume_failure_lines(*, session_id: str | None = None) -> tuple[list[str], l
 
 def _usage_payload(usage: TokenUsage) -> dict[str, Any]:
     """Undo the parser's folding to print the disjoint counts Copilot reports."""
-    cached = usage.cached_input_tokens
     written = usage.cache_write_input_tokens
     reasoning = usage.reasoning_output_tokens
     return {
         "model": "gpt-5",
-        "inputTokens": max(usage.input_tokens - cached, 0),
+        "inputTokens": usage.uncached_input_tokens,
         "outputTokens": max(usage.output_tokens - reasoning, 0),
-        "cacheReadTokens": max(cached - written, 0),
+        "cacheReadTokens": usage.cache_read_input_tokens,
         "cacheWriteTokens": written,
         "reasoningTokens": reasoning,
     }

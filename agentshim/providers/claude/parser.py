@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from agentshim.core.events import (
     AssistantText,
@@ -18,7 +18,7 @@ from agentshim.core.events import (
 )
 from agentshim.core.provider import ParsedTurn
 from agentshim.core.stream import ToolTracker, parse_json_object
-from agentshim.core.usage import ProviderUsage, TokenUsage
+from agentshim.core.usage import ProviderUsage, TokenUsage, normalized_usage
 
 from .events import (
     AssistantMessage,
@@ -41,21 +41,29 @@ PROVIDER_NAME = "claude"
 def fold_usage(usage: Mapping[str, Any] | None, turns: int = 0) -> TokenUsage:
     """Normalize Claude's usage mapping to the shared token counts.
 
-    Anthropic reports ``cache_creation_input_tokens`` and
-    ``cache_read_input_tokens`` as disjoint from ``input_tokens``; folding
-    them in is what makes ``cached_input_tokens <= input_tokens`` hold on
-    every provider.
+    Anthropic reports ``cache_creation_input_tokens`` (cache writes) and
+    ``cache_read_input_tokens`` disjoint from ``input_tokens`` (uncached
+    input); both are folded in so ``input_tokens`` is the total, as on every
+    provider. The ``cache_creation`` breakdown gives the one-hour-TTL writes,
+    which are billed above five-minute writes. Claude bills thinking as
+    output and does not report it apart, so ``reasoning_output_tokens`` is 0.
     """
     if usage is None:
         return TokenUsage(turns=turns)
     created = _int(usage.get("cache_creation_input_tokens"))
     read = _int(usage.get("cache_read_input_tokens"))
-    cached = created + read
-    return TokenUsage(
-        input_tokens=_int(usage.get("input_tokens")) + cached,
+    breakdown = usage.get("cache_creation")
+    created_1h = (
+        _int(cast("Mapping[str, Any]", breakdown).get("ephemeral_1h_input_tokens"))
+        if isinstance(breakdown, dict)
+        else 0
+    )
+    return normalized_usage(
+        input_tokens=_int(usage.get("input_tokens")) + read + created,
         output_tokens=_int(usage.get("output_tokens")),
-        cached_input_tokens=cached,
+        cache_read_input_tokens=read,
         cache_write_input_tokens=created,
+        cache_write_1h_input_tokens=created_1h,
         turns=turns,
     )
 

@@ -17,7 +17,7 @@ from agentshim.core.events import (
 )
 from agentshim.core.provider import ParsedTurn
 from agentshim.core.stream import ToolTracker, parse_json_object
-from agentshim.core.usage import ProviderUsage, TokenUsage
+from agentshim.core.usage import ProviderUsage, TokenUsage, normalized_usage
 
 from .events import (
     ErrorEvent,
@@ -46,9 +46,10 @@ FAILED_TOOL_STATE = "error"
 def fold_usage(tokens: Mapping[str, Any] | None, turns: int = 1) -> TokenUsage:
     """Normalize one ``step-finish`` token block to the shared counts.
 
-    opencode reports ``input`` as the tokens that were not served from the
-    context cache, so the cache hits are added back in to make
-    ``cached_input_tokens <= input_tokens`` hold. ``reasoning`` is part of
+    opencode reports ``input`` as the tokens neither read from nor written
+    to the context cache, so cache reads and writes are both added back in to
+    make ``input_tokens`` the total. Reads and writes stay apart: a write is
+    billed above base input, a read far below it. ``reasoning`` is part of
     the generated output, so it is both added to ``output_tokens`` and
     reported on its own.
     """
@@ -56,12 +57,12 @@ def fold_usage(tokens: Mapping[str, Any] | None, turns: int = 1) -> TokenUsage:
         return TokenUsage(turns=turns)
     cache = _cache(tokens.get("cache"))
     write = _int(cache.get("write"))
-    cached = _int(cache.get("read")) + write
+    read = _int(cache.get("read"))
     reasoning = _int(tokens.get("reasoning"))
-    return TokenUsage(
-        input_tokens=_int(tokens.get("input")) + cached,
+    return normalized_usage(
+        input_tokens=_int(tokens.get("input")) + read + write,
         output_tokens=_int(tokens.get("output")) + reasoning,
-        cached_input_tokens=cached,
+        cache_read_input_tokens=read,
         cache_write_input_tokens=write,
         reasoning_output_tokens=reasoning,
         turns=turns,

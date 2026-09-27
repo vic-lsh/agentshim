@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.7.0 (2026-09-27)
+
+First-class cache accounting and a static pricing table. Additive except one
+change of meaning: `cached_input_tokens` now counts cache reads only (see
+Changed).
+
+### Added
+
+- `TokenUsage.cache_read_input_tokens` (input served from the prompt cache),
+  `cache_write_1h_input_tokens` (the one-hour-TTL part of cache writes, from
+  Claude's `cache_creation` breakdown) and the derived
+  `uncached_input_tokens` (`input - cache_read - cache_write`). `to_dict()`
+  gains the three keys; no key was removed.
+- Codex turns now report `cache_write_input_tokens` and
+  `reasoning_output_tokens` from `turn.completed` (both used to be dropped).
+- `TokenUsage` checks its invariants on construction:
+  `cache_read + cache_write <= input`, `cache_write_1h <= cache_write`,
+  `reasoning <= output`, no negative counts. Parsers build it through the new
+  `normalized_usage`, which clamps a CLI's inconsistent counts instead.
+- `TokenUsage.from_dict` reads a `to_dict()` mapping back, including one
+  written before 0.7.0.
+- `TokenWeights` and `TokenUsage.weighted_total(weights)`: a total weighted by
+  token class (uncached input, cache reads, 5m and 1h cache writes, output,
+  reasoning), each token weighted once.
+- A static, versioned pricing table (`agentshim.core.pricing`):
+  `ModelPricing`, `PricingTable`, `default_pricing()`,
+  `price_for(provider, model, table=None)` (`None` for an unknown model, never
+  zero), `cost_usd(usage, pricing)` and `ModelPricing.relative_weights()`.
+  It covers OpenAI GPT-6 (astra, sol, luna), GPT-5.6, GPT-5.5 and earlier
+  GPT-5 models, and Claude Fable 5.1, Fable 5, Opus 5.5, Opus 5, Opus 4.8,
+  Sonnet 5, Sonnet 4.6 and Haiku 4.5, each with its official source URL and
+  check date (all 2026-09-27). Callers override or extend it with
+  `PricingTable.with_entries` or `PricingTable.from_dict`. Holding prices in
+  agentshim is a user-directed decision; see `docs/pricing.md`.
+- Recorded Codex, Claude (5m and 1h cache writes), opencode and Gemini
+  streams under `tests/fixtures/`, with tests pinning each provider's mapping.
+  The Claude Haiku 4.5 recording's `total_cost_usd` is reproduced exactly by
+  the table.
+
+### Changed
+
+- `cached_input_tokens` is a deprecated alias of `cache_read_input_tokens`.
+  On Claude, opencode and Copilot it used to be reads plus writes; it is now
+  reads only, since a cache write is billed above base input and a read far
+  below it. Codex and Gemini report no writes in their cached count, so their
+  value is unchanged. Constructing with `cached_input_tokens=` still works.
+
+### Documented
+
+- Claude's `result.usage` covers the main conversation only; a Task
+  subagent's tokens appear only in `modelUsage` and `total_cost_usd`.
+
 ## 0.6.8 (2026-09-27)
 
 A tightening of the Codex (`STRICT`) schema check: schemas it now rejects

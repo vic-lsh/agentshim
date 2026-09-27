@@ -19,7 +19,7 @@ from agentshim.core.events import (
 )
 from agentshim.core.provider import ParsedTurn
 from agentshim.core.stream import ToolTracker, parse_json_object
-from agentshim.core.usage import ProviderUsage, TokenUsage
+from agentshim.core.usage import ProviderUsage, TokenUsage, normalized_usage
 
 from .events import (
     CommandItem,
@@ -54,14 +54,17 @@ FAILED_ITEM_STATUS = "failed"
 def fold_usage(frame: TurnCompleted, previous: TokenUsage) -> TokenUsage:
     """Add one ``turn.completed`` frame's counts to the running total.
 
-    Codex's ``input_tokens`` already includes ``cached_input_tokens``, so
-    unlike Claude nothing is folded in: adding them would double-count the
-    cached prefix and break ``cached_input_tokens <= input_tokens``.
+    Codex's counts are already nested the way agentshim normalizes them:
+    ``input_tokens`` includes cache reads (``cached_input_tokens``) and cache
+    writes, and ``output_tokens`` includes ``reasoning_output_tokens``. So
+    unlike Claude nothing is folded in; adding them would double-count.
     """
-    return previous + TokenUsage(
+    return previous + normalized_usage(
         input_tokens=frame.input_tokens,
         output_tokens=frame.output_tokens,
-        cached_input_tokens=frame.cached_input_tokens,
+        cache_read_input_tokens=frame.cached_input_tokens,
+        cache_write_input_tokens=frame.cache_write_input_tokens,
+        reasoning_output_tokens=frame.reasoning_output_tokens,
         turns=1,
     )
 

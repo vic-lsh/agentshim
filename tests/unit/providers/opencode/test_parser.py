@@ -239,8 +239,10 @@ class TestUsage:
         tokens = parsed.usage.tokens
         assert tokens.input_tokens == 150
         assert tokens.output_tokens == 40
-        assert tokens.cached_input_tokens == 50
+        assert tokens.cache_read_input_tokens == 40
+        assert tokens.cached_input_tokens == 40
         assert tokens.cache_write_input_tokens == 10
+        assert tokens.uncached_input_tokens == 100
         assert tokens.reasoning_output_tokens == 10
         assert tokens.turns == 1
         assert tokens.cached_input_tokens <= tokens.input_tokens

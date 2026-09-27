@@ -50,7 +50,8 @@ class StreamParser(Protocol):
 Use `parse_json_object(line)`, which returns `None` for blank lines, invalid
 JSON, and valid JSON that is not an object; emit `RawOutput` for those rather
 than raising. Use `ToolTracker` to pair result frames back to their calls.
-Normalize usage so `cached_input_tokens <= input_tokens` holds. Report a
+Normalize usage with `normalized_usage` into the breakdown in
+[Usage and Pricing](pricing.md). Report a
 failed tool on `ToolResult.stderr` with a nonzero `exit_code`, never on
 `stdout`.
 

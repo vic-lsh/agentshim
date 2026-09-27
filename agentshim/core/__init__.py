@@ -50,12 +50,13 @@ from .mcp import (
     StdioMcpServer,
     install_config_file,
 )
+from .pricing import ModelPricing, PricingTable, cost_usd, default_pricing, price_for
 from .profile import McpMechanism, OutputSchemaStyle, ProviderProfile, SchemaDialect
 from .provider import ArgvContext, McpInstallation, ParsedTurn, Provider, StreamParser
 from .schema import compact_json, dialect_problems, materialize, normalize
 from .stream import ToolTracker, parse_json_object
 from .turn import OutputSchema, TurnRequest, TurnResult
-from .usage import ProviderUsage, TokenUsage
+from .usage import ProviderUsage, TokenUsage, TokenWeights, normalized_usage
 
 __all__ = [
     "AgentEvent",
@@ -79,11 +80,13 @@ __all__ = [
     "McpMechanism",
     "McpServer",
     "McpTransport",
+    "ModelPricing",
     "NoopInstallation",
     "NullEventHandler",
     "OutputSchema",
     "OutputSchemaStyle",
     "ParsedTurn",
+    "PricingTable",
     "Provider",
     "ProviderCapabilityError",
     "ProviderError",
@@ -101,6 +104,7 @@ __all__ = [
     "StdioMcpServer",
     "StreamParser",
     "TokenUsage",
+    "TokenWeights",
     "ToolCall",
     "ToolResult",
     "ToolTracker",
@@ -109,10 +113,14 @@ __all__ = [
     "UsageReport",
     "compact_json",
     "compose_event_handlers",
+    "cost_usd",
+    "default_pricing",
     "dialect_problems",
     "install_config_file",
     "interactive_env",
     "materialize",
     "normalize",
+    "normalized_usage",
     "parse_json_object",
+    "price_for",
 ]

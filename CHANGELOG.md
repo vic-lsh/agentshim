@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.13.0 (2026-10-03)
 
 A session can leave out the user's own CLI configuration. Additive.
 
@@ -16,7 +16,8 @@ A session can leave out the user's own CLI configuration. Additive.
   opencode refuse it.
 - `ProviderProfile.config_home_files` and `prepare_config_home`, which build
   that dedicated home holding only the login and return the environment that
-  points the CLI at it.
+  points the CLI at it. The login is a symlink to the user's own `auth.json`,
+  so a refresh token Codex rotates in either home stays valid in both.
 
 ## 0.12.0 (2026-10-03)
 

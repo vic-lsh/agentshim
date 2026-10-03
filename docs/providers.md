@@ -289,10 +289,14 @@ the skill and MCP scopes. Verified against Claude Code 2.1.288 and Codex
   returns `{}` for it. Built-in skills stay.
 - Codex reads `AGENTS.md`, `hooks.json` and `memories/` from `$CODEX_HOME`
   with no flag to skip them, so the scope needs a state root of its own.
-  `prepare_config_home(profile, home, env)` copies `profile.config_home_files`
-  (`auth.json`) from the state root `env` selects into `home` and returns
-  `{"CODEX_HOME": home}` to merge into the agent's environment. Call it again
-  before a later session to pick up a refreshed login. The home also keeps
+  `prepare_config_home(profile, home, env)` links `profile.config_home_files`
+  (`auth.json`) from the state root `env` selects into `home` as symlinks and
+  returns `{"CODEX_HOME": home}` to merge into the agent's environment. A link,
+  not a copy: Codex rotates the OAuth refresh token on every refresh and
+  rejects a reused one, and it saves `auth.json` by truncating and writing in
+  place, which follows the link. Both homes therefore always hold the current
+  login, whichever refreshed it. A sandbox around the CLI must expose the
+  link's target read-write. The home also keeps
   Codex's conversations, so reuse it for every session that must resume
   another. `build_argv` refuses the scope when `CODEX_HOME` is unset,
   relative, or the user's own `~/.codex`. `--ignore-user-config` also means a

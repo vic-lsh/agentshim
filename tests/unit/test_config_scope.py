@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -40,6 +41,23 @@ def _isolated_env(provider: str, tmp_path: Path) -> dict[str, str]:
     env = {"PATH": _PATH, "HOME": str(tmp_path / "user")}
     profile = get_provider(provider).profile
     return {**env, **prepare_config_home(profile, tmp_path / "run-home", env)}
+
+
+def _codex_save_auth(codex_home: Path, refresh_token: str) -> None:
+    """Save a login the way Codex 0.156 does: ``O_TRUNC`` and write in place.
+
+    ``FileAuthStorage::save`` in codex-rs ``login/src/auth/storage.rs`` opens
+    ``$CODEX_HOME/auth.json`` with ``truncate(true).write(true).create(true)``
+    rather than renaming a temporary file over it, so it follows a symlink.
+    """
+    payload = json.dumps({"tokens": {"refresh_token": refresh_token}}).encode()
+    descriptor = os.open(codex_home / "auth.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(payload)
+
+
+def _saved_token(codex_home: Path) -> str:
+    return json.loads((codex_home / "auth.json").read_text())["tokens"]["refresh_token"]
 
 
 class TestPolicy:
@@ -121,6 +139,35 @@ class TestCodex:
         assert overrides == {"CODEX_HOME": str(home)}
         assert sorted(p.name for p in home.rglob("*")) == ["auth.json"]
         assert (home / "auth.json").read_text() == (user_home / "auth.json").read_text()
+
+    @settings(suppress_health_check=[HealthCheck.function_scoped_fixture], max_examples=25)
+    @given(refreshes=st.lists(st.sampled_from(["run", "operator"]), max_size=6))
+    def test_a_rotated_login_reaches_both_homes(
+        self, tmp_path_factory: pytest.TempPathFactory, refreshes: list[str]
+    ) -> None:
+        # Codex rotates the refresh token on every refresh and the old one is
+        # rejected, so whichever home refreshes, both must read the new one.
+        root = tmp_path_factory.mktemp("case")
+        user_home = root / "user" / ".codex"
+        user_home.mkdir(parents=True)
+        _codex_save_auth(user_home, "token-0")
+        home = root / "run-home"
+        prepare_config_home(get_provider("codex").profile, home, {"HOME": str(root / "user")})
+        for generation, who in enumerate(refreshes, start=1):
+            _codex_save_auth(home if who == "run" else user_home, f"token-{generation}")
+            assert (home / "auth.json").read_text() == (user_home / "auth.json").read_text()
+        assert _saved_token(user_home) == f"token-{len(refreshes)}"
+
+    def test_a_copy_from_an_older_home_becomes_the_link(self, tmp_path: Path) -> None:
+        user_home = tmp_path / "user" / ".codex"
+        user_home.mkdir(parents=True)
+        _codex_save_auth(user_home, "fresh")
+        home = tmp_path / "run-home"
+        home.mkdir()
+        _codex_save_auth(home, "stale")
+        prepare_config_home(get_provider("codex").profile, home, {"HOME": str(tmp_path / "user")})
+        assert (home / "auth.json").resolve() == (user_home / "auth.json").resolve()
+        assert _saved_token(home) == _saved_token(user_home)
 
     def test_the_users_own_root_cannot_be_the_home(self, tmp_path: Path) -> None:
         env = {"HOME": str(tmp_path)}

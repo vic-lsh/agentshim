@@ -6,12 +6,19 @@ with no flag to skip them. The only way to keep them out is to run the CLI
 against another state root that holds nothing but the credentials. That root
 is the caller's to own, because the CLI keeps its conversations there too: a
 session resumes only from the home it started in.
+
+The credentials are linked, not copied. Codex rotates its OAuth refresh token
+on refresh (the server rejects a reused one with ``refresh_token_reused``) and
+saves ``auth.json`` by opening it with ``O_TRUNC`` and writing in place
+(codex-rs ``login/src/auth/storage.rs``, ``FileAuthStorage::save``), which
+follows a symlink. A copy would strand one of the two logins after the first
+refresh; a link keeps a single file that every process rereads before it
+refreshes (``AuthManager::refresh_token``'s guarded reload).
 """
 
 from __future__ import annotations
 
 import os
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -41,10 +48,12 @@ def prepare_config_home(
 ) -> dict[str, str]:
     """Make *home* a state root holding only the credentials, and point at it.
 
-    Copies each of ``profile.config_home_files`` that exists in the state
-    root *env* selects into *home* (overwriting a stale copy, so a refreshed
-    login carries over) and returns the environment overrides that make the
-    CLI use *home*. Everything else in *home* (conversations, caches) is the
+    Links each of ``profile.config_home_files`` that exists in the state root
+    *env* selects into *home* as a symlink to that file's real path (replacing
+    whatever was there, such as a copy from an older agentshim), so a token
+    the CLI refreshes in either home is the one both read next. Returns the
+    environment overrides that make the CLI use *home*. A sandbox that runs
+    the CLI must expose the link's target read-write. Everything else in *home* (conversations, caches) is the
     CLI's own and is left alone. A provider with no ``config_home_files``
     isolates by flags alone: nothing is written and the result is empty.
 
@@ -66,6 +75,16 @@ def prepare_config_home(
     for name in profile.config_home_files:
         origin = None if source is None else source / name
         if origin is not None and origin.is_file():
-            shutil.copyfile(origin, home / name)
-            (home / name).chmod(0o600)
+            _link(home / name, real_path(origin))
     return {profile.state_root_env: str(home)}
+
+
+def _link(link: Path, target: Path) -> None:
+    """Point *link* at *target*, atomically replacing any file already there."""
+    if link.is_symlink() and link.readlink() == target:
+        return
+    link.parent.mkdir(parents=True, exist_ok=True)
+    staged = link.with_name(f".{link.name}.{os.getpid()}.link")
+    staged.unlink(missing_ok=True)
+    staged.symlink_to(target)
+    staged.replace(link)

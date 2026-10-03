@@ -71,7 +71,9 @@ RESUME_FLAGS = {
 RAISES_SESSION_RESUME_ERROR = frozenset({"claude", "codex", "gemini", "opencode"})
 
 #: Fields a profile may legitimately leave empty.
-_MAY_BE_EMPTY = frozenset({"darwin_state_dirs", "auth_env_vars"})
+#: ``config_home_files`` is empty for a provider that isolates user
+#: configuration by flags, or cannot isolate it at all.
+_MAY_BE_EMPTY = frozenset({"darwin_state_dirs", "auth_env_vars", "config_home_files"})
 
 #: Fields a profile may legitimately leave unset: not every provider's CLI
 #: documents a state-relocation variable, and only CONFIG_FILE providers

@@ -38,7 +38,13 @@ class TestProfile:
     def test_every_profile_field_is_populated(self) -> None:
         profile = OpencodeProvider().profile
         # opencode documents no variable that relocates its XDG state dirs.
-        optional = {"schema_dialect", "darwin_state_dirs", "auth_env_vars", "state_root_env"}
+        optional = {
+            "schema_dialect",
+            "darwin_state_dirs",
+            "auth_env_vars",
+            "state_root_env",
+            "config_home_files",
+        }
         for field in fields(ProviderProfile):
             value = getattr(profile, field.name)
             if field.name in optional:

@@ -24,6 +24,7 @@ from agentshim.core.errors import (
 )
 from agentshim.core.events import RunFinished, RunStarted, compose_event_handlers
 from agentshim.core.profile import (
+    ConfigScope,
     McpMechanism,
     McpScope,
     OutputSchemaStyle,
@@ -114,7 +115,7 @@ class CliAgent:
         self.executor.check_binary(self.binary_path, self.env, timeout=check_timeout)
         self.log(f"{self.profile.display_name} ready at {self.binary_path}")
 
-    def start_session(
+    def start_session(  # noqa: PLR0913 - one keyword per independent session option
         self,
         *,
         cwd: str | None = None,
@@ -122,11 +123,12 @@ class CliAgent:
         session_id: str | None = None,
         skill_scope: SkillScope = SkillScope.ALL,
         mcp_scope: McpScope = McpScope.ALL,
+        config_scope: ConfigScope = ConfigScope.ALL,
     ) -> AgentSession:
         """Open a conversation whose turns resume one another.
 
-        ``skill_scope`` and ``mcp_scope`` are fixed for the conversation (see
-        ``AgentSession``).
+        ``skill_scope``, ``mcp_scope`` and ``config_scope`` are fixed for the
+        conversation (see ``AgentSession``).
         """
         return AgentSession(
             self,
@@ -135,9 +137,10 @@ class CliAgent:
             session_id=session_id,
             skill_scope=skill_scope,
             mcp_scope=mcp_scope,
+            config_scope=config_scope,
         )
 
-    def run(
+    def run(  # noqa: PLR0913 - one keyword per independent session option
         self,
         request: TurnRequest | str,
         *,
@@ -145,10 +148,15 @@ class CliAgent:
         timeout: float | None = None,
         skill_scope: SkillScope = SkillScope.ALL,
         mcp_scope: McpScope = McpScope.ALL,
+        config_scope: ConfigScope = ConfigScope.ALL,
     ) -> TurnResult:
         """Run one turn in a throwaway session."""
         session = self.start_session(
-            cwd=cwd, timeout=timeout, skill_scope=skill_scope, mcp_scope=mcp_scope
+            cwd=cwd,
+            timeout=timeout,
+            skill_scope=skill_scope,
+            mcp_scope=mcp_scope,
+            config_scope=config_scope,
         )
         return session.turn(request)
 
@@ -169,6 +177,7 @@ class AgentSession:
         session_id: str | None = None,
         skill_scope: SkillScope = SkillScope.ALL,
         mcp_scope: McpScope = McpScope.ALL,
+        config_scope: ConfigScope = ConfigScope.ALL,
     ) -> None:
         """Bind a conversation to one agent, with per-turn defaults.
 
@@ -183,6 +192,11 @@ class AgentSession:
         limits which MCP servers every turn's CLI may connect to
         (``McpScope.SESSION``: only those in ``TurnRequest.mcp_servers``) and
         is checked against ``profile.mcp_scopes`` the same way.
+        ``config_scope`` limits which of the user's own CLI configuration
+        (settings, hooks, global instructions, memory) every turn loads, and
+        is checked against ``profile.config_scopes``; a provider with
+        ``profile.config_home_files`` additionally needs its state root
+        pointed at a home from ``prepare_config_home``.
         """
         if skill_scope not in agent.profile.skill_scopes:
             msg = f"{agent.profile.name} cannot limit skills to scope {skill_scope.value!r}"
@@ -190,7 +204,11 @@ class AgentSession:
         if mcp_scope not in agent.profile.mcp_scopes:
             msg = f"{agent.profile.name} cannot limit MCP servers to scope {mcp_scope.value!r}"
             raise ProviderCapabilityError(msg)
+        if config_scope not in agent.profile.config_scopes:
+            msg = f"{agent.profile.name} cannot limit user configuration to scope {config_scope.value!r}"
+            raise ProviderCapabilityError(msg)
         self.skill_scope = skill_scope
+        self.config_scope = config_scope
         self.mcp_scope = mcp_scope
         self._agent = agent
         self._cwd = cwd
@@ -302,6 +320,7 @@ class AgentSession:
                     cwd=cwd,
                     skill_scope=self.skill_scope,
                     mcp_scope=self.mcp_scope,
+                    config_scope=self.config_scope,
                     mcp_servers=tuple(req.mcp_servers),
                 )
             )

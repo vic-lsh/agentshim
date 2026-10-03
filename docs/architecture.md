@@ -522,7 +522,11 @@ Splitting the two lets the caller decide: `dialect_problems` reports,
 
 `normalize` also drops the document metadata (`$schema`, `$id`, `title`,
 `description`, `examples`) that a generator emits and Codex's subset refuses,
-so a normalized schema passes `dialect_problems` in either dialect. The
+so a normalized schema passes `dialect_problems` in either dialect unless it
+holds an open map (`additionalProperties` a schema or `true`). `normalize`
+keeps an open map open, since closing it would change what the schema
+accepts, so `dialect_problems(normalize(s, d), d)` is the check for whether a
+generated schema can go native. The
 `OPEN` dialect does not report `$schema` or `$id` at all: a CLI that accepts
 open-ended schemas ignores them.
 

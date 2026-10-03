@@ -29,6 +29,15 @@ new `TurnResult` field sees no change, but an exhaustive match over
   e2e suite, `tests/e2e/test_skills_e2e.py`, with a positive and a negative
   turn per provider.
 
+### Fixed
+
+- `normalize(schema, SchemaDialect.STRICT)` no longer closes an open map
+  (`additionalProperties` a schema or `true`), which silently turned
+  `dict[str, float]` into an object that can only be empty. The map is kept
+  and `dialect_problems` on the normalized schema reports it, so
+  `dialect_problems(normalize(s, d), d) == []` is the check for whether a
+  generated schema can go native.
+
 ## 0.7.0 (2026-09-27)
 
 First-class cache accounting and a static pricing table. Additive except one

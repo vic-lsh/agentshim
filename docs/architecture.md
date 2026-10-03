@@ -276,9 +276,8 @@ class McpInstallation(Protocol):
 class Provider(Protocol):
     profile: ProviderProfile
     def build_argv(self, ctx: ArgvContext) -> list[str]: ...
-    def new_parser(self, emit: Callable[[AgentEvent], None], *, expect_structured: bool,
-                   previous_usage: ProviderUsage | None = None,
-                   resumed: bool = False) -> StreamParser: ...
+    def new_parser(self, emit: Callable[[AgentEvent], None], *,
+                   expect_structured: bool) -> StreamParser: ...
     def install_mcp(self, workspace: Path | None, servers: Sequence[McpServer]) -> McpInstallation: ...
     def classify_exit(self, error: CliExitError, *, resumed: bool) -> AgentShimError: ...
 
@@ -299,9 +298,14 @@ class ArgvContext:
 The prompt is always delivered on stdin and never appears in argv (an
 agent's own `pkill -f` must not be able to match the CLI by prompt text).
 
-Custom providers must accept `previous_usage` and `resumed` in `new_parser`.
-Providers that report per-invocation counts can ignore both arguments; a
-cumulative provider uses the previous raw report as its baseline.
+Custom providers keep the original `new_parser(emit, *, expect_structured)`
+signature. A parser that needs invocation context may implement the optional,
+runtime-checkable `ContextualStreamParser` protocol with
+`configure(context: ParserContext) -> None`. The session calls it before
+streaming, passing `ParserContext(previous_usage=..., resumed=...)`. Parsers
+without this method continue working unchanged. Codex uses the previous raw
+report as a fixed baseline; without one on resume, it marks the increment
+unknown and retains the raw total for the next invocation.
 
 ### Agent and session
 

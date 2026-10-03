@@ -267,12 +267,17 @@ class ProviderUsage:
 
     ``raw`` keeps the last usage mapping the CLI printed so a caller can
     diagnose a normalization gap without re-parsing the stream.
+    ``increment_known=False`` means the invocation's token increment could
+    not be reconstructed (for example, a Codex resume without a baseline).
+    Its token counts are zero placeholders, with ``turns`` still counted;
+    callers must check this marker before pricing or budgeting the counts.
     """
 
     tokens: TokenUsage = field(default_factory=TokenUsage)
     total_cost_usd: float | None = None
     provider: str = ""
     raw: Mapping[str, Any] | None = None
+    increment_known: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         """Flatten the normalized counts, cost, and provider name into one mapping.
@@ -284,4 +289,5 @@ class ProviderUsage:
             **self.tokens.to_dict(),
             "total_cost_usd": self.total_cost_usd,
             "provider": self.provider,
+            "increment_known": self.increment_known,
         }

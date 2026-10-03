@@ -35,7 +35,6 @@ if TYPE_CHECKING:
     from agentshim.core.events import AgentEvent
     from agentshim.core.mcp import McpServer
     from agentshim.core.provider import ArgvContext, McpInstallation
-    from agentshim.core.usage import ProviderUsage
 
 #: The CLI release the container recipe installs, matching the host pin.
 CLI_VERSION = "0.144.4"
@@ -187,15 +186,11 @@ class CodexProvider:
         emit: Callable[[AgentEvent], None],
         *,
         expect_structured: bool,
-        previous_usage: ProviderUsage | None = None,
-        resumed: bool = False,
     ) -> CodexStreamParser:
         """Build a stream parser for one run."""
         return CodexStreamParser(
             emit,
             expect_structured=expect_structured,
-            previous_usage=previous_usage,
-            resumed=resumed,
         )
 
     def install_mcp(self, workspace: Path | None, servers: Sequence[McpServer]) -> McpInstallation:

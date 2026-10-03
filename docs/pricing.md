@@ -33,7 +33,12 @@ How each CLI's report maps onto it:
 
 Codex's five fields are cumulative thread totals, including on resume.
 The parser subtracts the previous raw report to produce per-invocation counts;
-`ProviderUsage.raw` retains the cumulative report. See
+`ProviderUsage.raw` retains the cumulative report. A resume without a baseline
+returns normally with `increment_known=False` and zero token placeholders
+(completion frames still count in `turns`). Check this marker before pricing
+or applying token budgets; the unknown invocation is not known to be free.
+The retained raw total supplies the next invocation's baseline. The marker is
+included in `ProviderUsage.to_dict()`. See
 [provider behavior](providers.md#token-usage) for checkpointed resumes.
 
 Known gaps: Claude's `result.usage` covers the main conversation only, so

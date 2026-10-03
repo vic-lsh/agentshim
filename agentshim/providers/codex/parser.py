@@ -6,7 +6,6 @@ import json
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from agentshim.core.errors import ProviderCapabilityError
 from agentshim.core.events import (
     AssistantText,
     Lifecycle,
@@ -19,7 +18,7 @@ from agentshim.core.events import (
     ToolResult,
     UsageReport,
 )
-from agentshim.core.provider import ParsedTurn
+from agentshim.core.provider import ParsedTurn, ParserContext
 from agentshim.core.stream import ToolTracker, parse_json_object
 from agentshim.core.usage import ProviderUsage, TokenUsage, normalized_usage
 
@@ -102,22 +101,29 @@ class CodexStreamParser:
         # Codex has no terminal result frame: the last agent_message is the
         # answer, and with a schema it is the structured payload verbatim.
         self._final_text: str | None = None
-        baseline = None
-        if (
-            previous_usage is not None
-            and previous_usage.provider == PROVIDER_NAME
-            and previous_usage.raw is not None
-        ):
-            baseline = parse_frame({"type": "turn.completed", "usage": dict(previous_usage.raw)})
-        self._baseline = baseline if isinstance(baseline, TurnCompleted) else TurnCompleted()
-        self._baseline_known = not resumed or (
-            isinstance(baseline, TurnCompleted) and baseline.usage is not None
-        )
+        self.configure(ParserContext(previous_usage=previous_usage, resumed=resumed))
         self._completed_turns = 0
         self._tokens = TokenUsage()
-        self._usage = ProviderUsage(provider=PROVIDER_NAME)
         self._error: str | None = None
         self._stderr: list[str] = []
+
+    def configure(self, context: ParserContext) -> None:
+        """Set the fixed starting baseline before streaming this invocation."""
+        baseline = None
+        if (
+            context.previous_usage is not None
+            and context.previous_usage.provider == PROVIDER_NAME
+            and context.previous_usage.raw is not None
+        ):
+            baseline = parse_frame(
+                {"type": "turn.completed", "usage": dict(context.previous_usage.raw)}
+            )
+        self._baseline = baseline if isinstance(baseline, TurnCompleted) else TurnCompleted()
+        self._baseline_known = not context.resumed or (
+            isinstance(baseline, TurnCompleted) and baseline.usage is not None
+        )
+
+        self._usage = ProviderUsage(provider=PROVIDER_NAME, increment_known=self._baseline_known)
 
     def feed_stdout(self, line: str) -> None:
         """Parse one stdout line, emitting whatever events it carries."""
@@ -180,15 +186,7 @@ class CodexStreamParser:
 
     def _turn_completed(self, frame: TurnCompleted) -> None:
         self._completed_turns += 1
-        if frame.usage is not None and not self._baseline_known:
-            # Keep the total for recovery, but never expose it as this run's usage.
-            self._usage = ProviderUsage(provider=PROVIDER_NAME, raw=frame.usage)
-            msg = (
-                "Codex resume usage needs the previous thread total; pass previous_usage "
-                "from the last TurnResult.usage to start_session() or adopt()"
-            )
-            raise ProviderCapabilityError(msg)
-        if frame.usage is not None:
+        if frame.usage is not None and self._baseline_known:
             delta = fold_usage(frame, self._baseline)
             self._tokens = replace(delta, turns=self._completed_turns)
         else:
@@ -198,6 +196,7 @@ class CodexStreamParser:
             total_cost_usd=None,
             provider=PROVIDER_NAME,
             raw=frame.usage if frame.usage is not None else self._usage.raw,
+            increment_known=self._baseline_known,
         )
         if frame.usage is None:
             self._emit(Lifecycle("turn_completed", ""))

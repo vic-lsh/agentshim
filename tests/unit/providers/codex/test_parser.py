@@ -5,11 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import pytest
 from agentshim import (
     AssistantText,
     Lifecycle,
-    ProviderCapabilityError,
     ProviderError,
     ProviderUsage,
     RawOutput,
@@ -447,6 +445,7 @@ def test_invocation_increments_sum_to_the_final_thread_total(
                 )
             )
         previous = parser.finish().usage
+        assert previous.increment_known
         summed += previous.tokens
     assert summed == total
 
@@ -490,12 +489,17 @@ def test_resume_subtracts_each_raw_count_before_normalizing() -> None:
 def test_resume_without_a_baseline_never_reports_the_thread_total_as_usage() -> None:
     events: list[AgentEvent] = []
     parser = CodexStreamParser(events.append, resumed=True)
-    with pytest.raises(ProviderCapabilityError, match="previous thread total"):
-        parser.feed_stdout(_usage_line(100, 50, 10))
-    assert not any(isinstance(event, UsageReport) for event in events)
-    assert parser.finish().usage.tokens == TokenUsage()
+    parser.feed_stdout(_usage_line(100, 50, 10))
+    # Repeated snapshots must remain unknown throughout this invocation.
+    parser.feed_stdout(_usage_line(120, 60, 15))
+    reports = [event for event in events if isinstance(event, UsageReport)]
+    assert len(reports) == 2
+    assert all(not event.usage.increment_known for event in reports)
+    assert all(event.usage.tokens.input_tokens == 0 for event in reports)
+    assert not parser.finish().usage.increment_known
+    assert parser.finish().usage.tokens == TokenUsage(turns=2)
     assert parser.finish().usage.raw == {
-        "input_tokens": 100,
-        "cached_input_tokens": 50,
-        "output_tokens": 10,
+        "input_tokens": 120,
+        "cached_input_tokens": 60,
+        "output_tokens": 15,
     }

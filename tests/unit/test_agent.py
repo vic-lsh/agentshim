@@ -46,6 +46,7 @@ from agentshim import (
     UsageReport,
 )
 from agentshim.providers.claude import ClaudeProvider
+from agentshim.providers.claude.parser import ClaudeStreamParser
 from agentshim.testing import (
     FakeCommandHandle,
     FakeExecutor,
@@ -949,8 +950,43 @@ def test_codex_usage_is_retained_when_a_completed_invocation_exits_nonzero() -> 
 
 
 def test_codex_an_unknown_external_baseline_is_reported_and_the_new_total_is_retained() -> None:
-    session = _codex_usage_agent(("a", 200), ("a", 230)).start_session(session_id="a")
-    with pytest.raises(ProviderCapabilityError, match="previous thread total"):
-        session.turn("hi")
-    assert session.last_result is None
-    assert session.turn("continue").usage.tokens.input_tokens == 30
+    recorder = RecordingEventHandler()
+    runs = [
+        scripted_turn("codex", session_id="a", text="Hello.", usage=TokenUsage(input_tokens=n))
+        for n in (200, 230)
+    ]
+    session = CliAgent(
+        "codex", executor=FakeExecutor(runs), env=_ENV, event_handler=recorder
+    ).start_session(session_id="a")
+    result = session.turn("hi")
+    assert result.text == "Hello."
+    assert result.exit_code == 0
+    assert result.resumed
+    assert session.last_result is result
+    assert not result.usage.increment_known
+    assert result.usage.tokens == TokenUsage(turns=1)
+    assert result.usage.raw is not None
+    assert result.usage.raw["input_tokens"] == 200
+    reports = [event for event in recorder.events if isinstance(event, UsageReport)]
+    assert len(reports) == 1
+    assert reports[0].usage == result.usage
+    recovered = session.turn("continue")
+    assert recovered.usage.increment_known
+    assert recovered.usage.tokens.input_tokens == 30
+
+
+class _LegacyCustomProvider(ClaudeProvider):
+    def new_parser(
+        self, emit: Callable[[AgentEvent], None], *, expect_structured: bool
+    ) -> ClaudeStreamParser:
+        """A custom factory using the original signature, without context."""
+        return ClaudeStreamParser(emit, expect_structured=expect_structured)
+
+
+def test_custom_provider_with_the_original_factory_signature_can_resume() -> None:
+    runs = [scripted_turn("claude", session_id="a") for _ in range(2)]
+    session = CliAgent(
+        _LegacyCustomProvider(), executor=FakeExecutor(runs), env=_ENV
+    ).start_session()
+    assert not session.turn("hi").resumed
+    assert session.turn("continue").resumed

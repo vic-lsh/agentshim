@@ -31,7 +31,7 @@ from agentshim.core.profile import (
     SchemaDialect,
     SkillScope,
 )
-from agentshim.core.provider import ArgvContext
+from agentshim.core.provider import ArgvContext, ContextualStreamParser, ParserContext
 from agentshim.core.schema import compact_json, dialect_problems, materialize
 from agentshim.core.skills import SkillTracker
 from agentshim.core.turn import TurnRequest, TurnResult, coerce_request
@@ -366,9 +366,16 @@ class AgentSession:
         parser = agent.provider.new_parser(
             emit,
             expect_structured=expect_structured,
-            previous_usage=self._usage_by_session.get(self.session_id) if self.session_id else None,
-            resumed=resumed,
         )
+        if isinstance(parser, ContextualStreamParser):
+            parser.configure(
+                ParserContext(
+                    previous_usage=(
+                        self._usage_by_session.get(self.session_id) if self.session_id else None
+                    ),
+                    resumed=resumed,
+                )
+            )
         emit(RunStarted(tuple(argv)))
         started = time.monotonic()
         try:

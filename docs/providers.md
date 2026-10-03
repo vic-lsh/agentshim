@@ -358,11 +358,15 @@ session = agent.start_session(session_id=saved_id, previous_usage=saved_usage)
 Checkpoint `saved_usage.provider` and `saved_usage.raw` along with the id.
 `ProviderUsage.to_dict()` omits `raw`, so its output alone is insufficient.
 Reconstruct a checkpoint with `ProviderUsage(provider="codex", raw=saved_raw)`.
-If a resumed invocation completes with usage but no baseline, the parser raises
-`ProviderCapabilityError` instead of reporting the thread total as this run's
-usage. Earlier CLI failures retain their original classification. The session
-keeps the newly observed total for subsequent invocations, but the unknown
-increment cannot be recovered from that frame alone. Changes to the same
+If a resumed invocation has no baseline, it returns its result normally with
+`ProviderUsage.increment_known=False` on both `TurnResult.usage` and
+`UsageReport`. Token counts are zero placeholders, while `tokens.turns` still
+counts completion frames. Check `increment_known` before pricing or budgeting;
+these placeholders do not mean the invocation was free. The cumulative total
+remains in `raw`, never in the increment. The session retains that total as the
+next invocation's baseline, so subsequent increments are known. The missing
+increment cannot be recovered from that frame alone. CLI failures retain their
+original classification. Changes to the same
 thread outside the session must be accompanied by an updated baseline.
 Missing reports cannot account for tokens consumed before a failed invocation
 ends; those tokens appear in the next observed total. Inconsistent or decreasing

@@ -65,7 +65,15 @@ from .profile import (
     SkillScope,
     SkillSignal,
 )
-from .provider import ArgvContext, McpInstallation, ParsedTurn, Provider, StreamParser
+from .provider import (
+    ArgvContext,
+    ContextualStreamParser,
+    McpInstallation,
+    ParsedTurn,
+    ParserContext,
+    Provider,
+    StreamParser,
+)
 from .schema import compact_json, dialect_problems, materialize, normalize
 from .skills import SkillSummary, SkillTracker
 from .stream import ToolTracker, parse_json_object
@@ -86,6 +94,7 @@ __all__ = [
     "ConfigFileInstallation",
     "ConfigScope",
     "ConsoleEventHandler",
+    "ContextualStreamParser",
     "EventHandlerBase",
     "FailureKind",
     "FlagsInstallation",
@@ -103,6 +112,7 @@ __all__ = [
     "OutputSchema",
     "OutputSchemaStyle",
     "ParsedTurn",
+    "ParserContext",
     "PricingTable",
     "Provider",
     "ProviderCapabilityError",

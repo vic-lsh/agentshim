@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.10.0 (2026-10-03)
+
+MCP isolation. Additive: the default scope keeps today's behaviour. Adds a
+runtime dependency on `tomli` for Python 3.10 only (Codex config parsing).
+
+### Added
+
+- `McpScope` (`ALL`, `SESSION`) and `start_session(mcp_scope=...)` /
+  `run(mcp_scope=...)`. `SESSION` connects the CLI only to the servers in
+  `TurnRequest.mcp_servers`; a turn given none sees no MCP server. It is a
+  separate option from `SkillScope` because a provider may enforce one and not
+  the other; each is refused independently.
+- `ProviderProfile.mcp_scopes` declares the scopes a provider enforces;
+  asking for another raises `ProviderCapabilityError` from `start_session`.
+- `ArgvContext.mcp_scope` and `ArgvContext.mcp_servers` carry the scope and
+  the turn's servers to `build_argv`.
+- Claude Code: `SESSION` passes `--strict-mcp-config` plus the turn's servers
+  inline as `--mcp-config`. This drops user and project (`.mcp.json`) servers,
+  plugin servers and claude.ai account connectors.
+- Codex: `SESSION` sets `enabled = false` on every `mcp_servers` entry found
+  in `$CODEX_HOME/config.toml`, `/etc/codex/config.toml` and
+  `<cwd>/.codex/config.toml` that the turn was not given, and sets
+  `features.plugins=false` and `features.apps=false` (plugin servers and the
+  account's ChatGPT apps).
+- Gemini, opencode and Copilot support `ALL` only.
+- Live e2e: a server seeded into the CLI's default configuration is reachable
+  under `ALL` and not under `SESSION` (`tests/e2e/test_mcp_scope_e2e.py`).
+
+### Changed
+
+- `parse_mcp_servers` ignores `enabled=false` overrides: they disable a
+  configured server and do not define one.
+
 ## 0.9.0 (2026-10-03)
 
 Skill isolation. Additive: the default scope keeps today's behaviour.

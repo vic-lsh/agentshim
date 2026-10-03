@@ -55,6 +55,7 @@ from .mcp import (
 from .pricing import ModelPricing, PricingTable, cost_usd, default_pricing, price_for
 from .profile import (
     McpMechanism,
+    McpScope,
     OutputSchemaStyle,
     ProviderProfile,
     SchemaDialect,
@@ -88,6 +89,7 @@ __all__ = [
     "McpConfigError",
     "McpInstallation",
     "McpMechanism",
+    "McpScope",
     "McpServer",
     "McpTransport",
     "ModelPricing",

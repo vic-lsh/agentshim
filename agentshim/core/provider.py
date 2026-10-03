@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
-from .profile import SkillScope
+from .profile import McpScope, SkillScope
 from .usage import ProviderUsage
 
 if TYPE_CHECKING:
@@ -41,6 +41,13 @@ class ArgvContext:
     #: Which skills the CLI may discover; the session has already checked
     #: that the provider's profile supports it.
     skill_scope: SkillScope = SkillScope.ALL
+    #: Which MCP servers the CLI may connect to; the session has already
+    #: checked that the provider's profile supports it.
+    mcp_scope: McpScope = McpScope.ALL
+    #: The servers the turn was given (the ones ``install_mcp`` installed).
+    #: A provider enforcing ``McpScope.SESSION`` renders them itself when its
+    #: installed config file is not enough to exclude the user's own.
+    mcp_servers: Sequence[McpServer] = ()
 
 
 @dataclass(frozen=True)

@@ -49,6 +49,11 @@ from .core import (
     SchemaDialectError,
     SessionResumeError,
     SessionStarted,
+    SkillInvoked,
+    SkillsDiscovered,
+    SkillSignal,
+    SkillSummary,
+    SkillTracker,
     Stderr,
     StdioMcpServer,
     StreamParser,
@@ -91,7 +96,7 @@ from .providers.copilot import CopilotProvider
 from .providers.gemini import GeminiProvider
 from .providers.opencode import OpencodeProvider
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "AgentEvent",
@@ -153,6 +158,11 @@ __all__ = [
     "SchemaDialectError",
     "SessionResumeError",
     "SessionStarted",
+    "SkillInvoked",
+    "SkillSignal",
+    "SkillSummary",
+    "SkillTracker",
+    "SkillsDiscovered",
     "Stderr",
     "StdioMcpServer",
     "StreamParser",

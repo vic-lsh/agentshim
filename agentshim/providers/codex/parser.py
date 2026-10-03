@@ -34,6 +34,7 @@ from .events import (
     parse_frame,
     summarize_item,
 )
+from .skills import skill_reads
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -170,6 +171,8 @@ class CodexStreamParser:
         if isinstance(item, CommandItem):
             self._tools.start(item.item_id, COMMAND_TOOL)
             self._emit(ToolCall(item.item_id, COMMAND_TOOL, {"command": item.command}))
+            for skill in skill_reads(item.command, item.item_id):
+                self._emit(skill)
         elif isinstance(item, GenericItem):
             self._tools.start(item.item_id, item.kind)
             self._emit(ToolCall(item.item_id, item.kind, dict(item.fields)))

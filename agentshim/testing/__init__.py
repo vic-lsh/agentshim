@@ -160,14 +160,25 @@ def scripted_turn(  # noqa: PLR0913
     tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
     structured_output: object | None = None,
     returncode: int = 0,
+    skills_offered: Sequence[str] | None = None,
+    skills_invoked: Sequence[str] = (),
 ) -> FakeRun:
-    """Build a ``FakeRun`` whose stdout is *provider*'s real stream format."""
+    """Build a ``FakeRun`` whose stdout is *provider*'s real stream format.
+
+    ``skills_invoked`` scripts one load per name, before ``tool_calls``, the
+    way *provider* shows a load, so the turn reports a ``SkillInvoked`` each.
+    ``skills_offered`` scripts the offered list. Either raises ``ValueError``
+    on a provider whose stream cannot carry it (the matching
+    ``profile.skill_*`` signal is ``NONE``).
+    """
     lines = get_scripted_lines(provider)(
         text=text,
         session_id=session_id,
         usage=usage,
         tool_calls=tool_calls,
         structured_output=structured_output,
+        skills_offered=skills_offered,
+        skills_invoked=skills_invoked,
     )
     return FakeRun(stdout=lines, returncode=returncode)
 

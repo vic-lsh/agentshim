@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING, Any, cast
 
 from agentshim.core.events import (
@@ -11,6 +12,8 @@ from agentshim.core.events import (
     RawOutput,
     Reasoning,
     SessionStarted,
+    SkillInvoked,
+    SkillsDiscovered,
     Stderr,
     ToolCall,
     ToolResult,
@@ -36,6 +39,15 @@ if TYPE_CHECKING:
     from agentshim.core.events import AgentEvent
 
 PROVIDER_NAME = "claude"
+
+#: The built-in tool through which Claude Code loads a skill.
+SKILL_TOOL = "Skill"
+
+#: The built-in tool through which Claude Code reads a file.
+READ_TOOL = "Read"
+
+#: ``.../skills/<name>/SKILL.md``: a skill's instructions, read directly.
+_SKILL_FILE = re.compile(r"/skills/(?:[^/]+/)*?(?P<name>[^/]+)/SKILL\.md$")
 
 
 def fold_usage(usage: Mapping[str, Any] | None, turns: int = 0) -> TokenUsage:
@@ -74,6 +86,30 @@ def _int(value: object) -> int:
     if isinstance(value, (int, float)):
         return int(value)
     return 0
+
+
+def skill_invocation(
+    tool_id: str | None, tool: str, args: Mapping[str, Any] | str | None
+) -> SkillInvoked | None:
+    """Recognize a tool call that loads a skill.
+
+    Claude Code loads a skill through its ``Skill`` tool. An agent can also
+    read a ``SKILL.md`` with ``Read``, which loads the same instructions.
+    """
+    if not isinstance(args, dict):
+        return None
+    if tool == SKILL_TOOL:
+        name = args.get("skill")
+        if isinstance(name, str) and name:
+            return SkillInvoked(name=name, tool_id=tool_id)
+        return None
+    if tool == READ_TOOL:
+        path = args.get("file_path")
+        if isinstance(path, str):
+            match = _SKILL_FILE.search(path)
+            if match is not None:
+                return SkillInvoked(name=match["name"], source_path=path, tool_id=tool_id)
+    return None
 
 
 class ClaudeStreamParser:
@@ -141,6 +177,8 @@ class ClaudeStreamParser:
             if self._session_id is None and frame.session_id:
                 self._session_id = frame.session_id
                 self._emit(SessionStarted(frame.session_id))
+            if frame.skills is not None:
+                self._emit(SkillsDiscovered(frame.skills))
         elif isinstance(frame, AssistantMessage):
             self._assistant(frame)
         elif isinstance(frame, ToolResultBlock):
@@ -170,6 +208,9 @@ class ClaudeStreamParser:
             else:
                 self._tools.start(block.tool_id, block.tool)
                 self._emit(ToolCall(block.tool_id, block.tool, block.args))
+                skill = skill_invocation(block.tool_id, block.tool, block.args)
+                if skill is not None:
+                    self._emit(skill)
 
     def _tool_result(self, frame: ToolResultBlock) -> None:
         name = self._tools.name(frame.tool_id)

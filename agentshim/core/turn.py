@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+from .skills import SkillSummary
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -62,6 +64,8 @@ class TurnResult:
     cost_usd: float | None
     duration_ms: int
     exit_code: int
+    #: Skills offered and loaded during the turn, derived from its events.
+    skills: SkillSummary = field(default_factory=SkillSummary)
 
 
 def coerce_request(request: TurnRequest | str) -> TurnRequest:

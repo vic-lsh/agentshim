@@ -16,13 +16,16 @@ if TYPE_CHECKING:
     from agentshim.core.usage import TokenUsage
 
 
-def scripted_lines(
+# Mirrors scripted_turn: each option is an independent knob of the test double.
+def scripted_lines(  # noqa: PLR0913
     *,
     text: str = "",
     session_id: str | None = None,
     usage: TokenUsage | None = None,
     tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
     structured_output: object | None = None,
+    skills_offered: Sequence[str] | None = None,
+    skills_invoked: Sequence[str] = (),
 ) -> list[str]:
     """Build the stdout of one Codex turn.
 
@@ -38,10 +41,23 @@ def scripted_lines(
         usage: Token counts reported by ``turn.completed``.
         tool_calls: Commands to report as started-then-completed items.
         structured_output: Payload to serialize as the final message.
+        skills_offered: Must be None; the stream lists no offered skills.
+        skills_invoked: Skills to load first, each as a shell read of its
+            ``SKILL.md``.
 
     Returns:
         One newline-terminated JSON line per Codex event.
     """
+    tool_calls = [
+        *(
+            ("execute", {"command": f"cat .agents/skills/{name}/SKILL.md"}, "")
+            for name in skills_invoked
+        ),
+        *tool_calls,
+    ]
+    if skills_offered is not None:
+        msg = "Codex does not list offered skills in its stream"
+        raise ValueError(msg)
     lines: list[str] = []
     if session_id is not None:
         lines.append(_line({"type": "thread.started", "thread_id": session_id}))

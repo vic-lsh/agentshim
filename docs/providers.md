@@ -203,6 +203,8 @@ profile.state_dirs                 # home-relative provider state
 profile.darwin_state_dirs          # extra state dirs on macOS only
 profile.auth_env_vars              # credential variables to forward
 profile.skill_dirs                 # workspace-relative skill discovery dirs
+profile.skill_discovery            # SkillSignal: does the stream list offered skills?
+profile.skill_invocation           # SkillSignal: does the stream reveal skill loads?
 profile.container_install          # shell commands installing the CLI
 ```
 
@@ -220,6 +222,8 @@ before the process starts.
 | stream | `stream-json` | `--json` | `stream-json` | `run --format json` | `--output-format json` |
 | token usage | yes | yes | yes | yes | no, see below |
 | cost | yes | no | no | yes | no |
+| skills offered | `system/init` `skills` (STRUCTURED) | unknown | unknown | unknown | unknown |
+| skill loads | `Skill` tool call, or `Read` of a `SKILL.md` (STRUCTURED) | shell read of a `SKILL.md` (INFERRED) | unknown | unknown | unknown |
 
 The prompt is never in argv on any provider: it always goes on stdin, so an
 agent's own `pkill -f` cannot match the CLI by prompt text.

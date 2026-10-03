@@ -402,6 +402,14 @@ class TestNormalize:
         result = normalize(_MAPPING, SchemaDialect.OPEN)
         assert result["properties"]["metrics"]["additionalProperties"] == {"type": "number"}
 
+    def test_strict_dialect_keeps_an_open_map_and_reports_it(self) -> None:
+        """Closing ``dict[str, float]`` would only admit ``{}``; it stays a problem."""
+        result = normalize(_MAPPING, SchemaDialect.STRICT)
+        assert result["properties"]["metrics"]["additionalProperties"] == {"type": "number"}
+        assert dialect_problems(result, SchemaDialect.STRICT) == [
+            "#/properties/metrics allows arbitrary object keys"
+        ]
+
     def test_input_is_not_mutated(self) -> None:
         schema = {"type": "object", "properties": {"a": {"type": "string", "default": "x"}}}
         normalize(schema, SchemaDialect.STRICT)

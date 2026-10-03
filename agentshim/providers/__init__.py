@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 class ScriptedLines(Protocol):
     """Builds one turn's stdout in a provider's own stream format."""
 
-    def __call__(
+    def __call__(  # noqa: PLR0913  # mirrors scripted_turn's independent knobs
         self,
         *,
         text: str = "",
@@ -44,12 +44,17 @@ class ScriptedLines(Protocol):
         usage: TokenUsage | None = None,
         tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
         structured_output: object | None = None,
+        skills_offered: Sequence[str] | None = None,
+        skills_invoked: Sequence[str] = (),
     ) -> list[str]:
         """Return the stdout lines of one scripted turn.
 
         ``tool_calls`` entries are ``(tool, args, output)``;
         ``structured_output`` is any JSON-serializable value the turn should
-        report as its structured payload.
+        report as its structured payload. ``skills_offered`` is the skill
+        list the provider announces and ``skills_invoked`` the skills the turn
+        loads, each scripted the way the provider shows a load; a provider
+        whose stream cannot carry either raises ``ValueError``.
         """
         ...
 

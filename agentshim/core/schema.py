@@ -272,9 +272,11 @@ def normalize(schema: Mapping[str, Any], dialect: SchemaDialect) -> dict[str, An
     requires every declared property, drops ``default``, strips the annotation
     siblings of a ``$ref`` that the strict subset forbids, and removes the
     document metadata (``$schema``, ``$id``, ``title``, ``description``,
-    ``examples``) that ``dialect_problems`` reports under ``STRICT``. What
-    comes back is therefore a schema the strict subset accepts. Callers that
-    want the schema passed through untouched skip this.
+    ``examples``) that ``dialect_problems`` reports under ``STRICT``. An open
+    map (``additionalProperties`` a schema or ``true``) is kept, since closing
+    it would change what the schema accepts; so ``dialect_problems`` on the
+    normalized schema reports exactly what the dialect cannot express.
+    Callers that want the schema passed through untouched skip this.
     """
     return cast("dict[str, Any]", _normalized(copy.deepcopy(dict(schema)), dialect))
 
@@ -314,12 +316,15 @@ def _normalized(node: object, dialect: SchemaDialect) -> object:
 
 
 def _close_object(mapping: dict[str, Any], dialect: SchemaDialect) -> None:
-    additional = mapping.get("additionalProperties")
-    if additional in (None, False):
-        mapping["additionalProperties"] = False
-        return
-    if dialect is SchemaDialect.STRICT:
-        # dialect_problems already reported this; normalize does not guess.
+    """Close an object whose extra keys are merely unspecified.
+
+    An open map (``additionalProperties`` a schema or ``true``) is left open
+    in every dialect: closing it would silently turn ``dict[str, float]`` into
+    an object that can only be empty. Under ``STRICT`` it stays a problem for
+    ``dialect_problems`` to report on the normalized schema.
+    """
+    del dialect  # an open map is left open in every dialect
+    if mapping.get("additionalProperties") in (None, False):
         mapping["additionalProperties"] = False
 
 

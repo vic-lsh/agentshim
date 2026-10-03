@@ -34,6 +34,8 @@ from .events import (
     RunFinished,
     RunStarted,
     SessionStarted,
+    SkillInvoked,
+    SkillsDiscovered,
     Stderr,
     ToolCall,
     ToolResult,
@@ -51,9 +53,16 @@ from .mcp import (
     install_config_file,
 )
 from .pricing import ModelPricing, PricingTable, cost_usd, default_pricing, price_for
-from .profile import McpMechanism, OutputSchemaStyle, ProviderProfile, SchemaDialect
+from .profile import (
+    McpMechanism,
+    OutputSchemaStyle,
+    ProviderProfile,
+    SchemaDialect,
+    SkillSignal,
+)
 from .provider import ArgvContext, McpInstallation, ParsedTurn, Provider, StreamParser
 from .schema import compact_json, dialect_problems, materialize, normalize
+from .skills import SkillSummary, SkillTracker
 from .stream import ToolTracker, parse_json_object
 from .turn import OutputSchema, TurnRequest, TurnResult
 from .usage import ProviderUsage, TokenUsage, TokenWeights, normalized_usage
@@ -100,6 +109,11 @@ __all__ = [
     "SchemaDialectError",
     "SessionResumeError",
     "SessionStarted",
+    "SkillInvoked",
+    "SkillSignal",
+    "SkillSummary",
+    "SkillTracker",
+    "SkillsDiscovered",
     "Stderr",
     "StdioMcpServer",
     "StreamParser",

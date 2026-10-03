@@ -25,13 +25,16 @@ _NO_STRUCTURED_OUTPUT = (
 )
 
 
-def scripted_lines(
+# Mirrors scripted_turn: each option is an independent knob of the test double.
+def scripted_lines(  # noqa: PLR0913
     *,
     text: str = "",
     session_id: str | None = None,
     usage: TokenUsage | None = None,
     tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
     structured_output: object | None = None,
+    skills_offered: Sequence[str] | None = None,
+    skills_invoked: Sequence[str] = (),
 ) -> list[str]:
     """Build the stdout of one opencode turn.
 
@@ -45,6 +48,8 @@ def scripted_lines(
         usage: Token counts to report in the closing ``step_finish`` frame.
         tool_calls: Tool calls to script.
         structured_output: Must be None; opencode has no native output schema.
+        skills_offered: Must be None; the stream lists no offered skills.
+        skills_invoked: Must be empty; the stream reports no skill loads.
 
     Returns:
         The stdout lines, each a JSON object with a trailing newline.
@@ -52,6 +57,12 @@ def scripted_lines(
     Raises:
         ValueError: If ``structured_output`` is given.
     """
+    if skills_invoked:
+        msg = "opencode reports no skill loads in its stream"
+        raise ValueError(msg)
+    if skills_offered is not None:
+        msg = "opencode does not list offered skills in its stream"
+        raise ValueError(msg)
     if structured_output is not None:
         raise ValueError(_NO_STRUCTURED_OUTPUT)
 

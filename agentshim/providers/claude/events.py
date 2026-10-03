@@ -20,6 +20,8 @@ class SystemInit:
 
     session_id: str | None
     subtype: str | None
+    #: The ``skills`` list of an ``init`` frame; ``None`` when absent.
+    skills: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,7 @@ def parse_frame(data: Mapping[str, Any]) -> ClaudeFrame | None:
         return SystemInit(
             session_id=_str_or_none(data.get("session_id")),
             subtype=_str_or_none(data.get("subtype")),
+            skills=_str_tuple_or_none(data.get("skills")),
         )
     if kind == "assistant":
         return _assistant(data)
@@ -206,6 +209,12 @@ def _text(value: object) -> str:
 
 def _str_or_none(value: object) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def _str_tuple_or_none(value: object) -> tuple[str, ...] | None:
+    if not isinstance(value, list):
+        return None
+    return tuple(item for item in cast("list[object]", value) if isinstance(item, str))
 
 
 def _int_or_none(value: object) -> int | None:

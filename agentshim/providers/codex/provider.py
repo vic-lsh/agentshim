@@ -334,6 +334,10 @@ _CONFIG_OVERRIDE_RE = re.compile(r"^mcp_servers\.([^.=]+)\.(.+)$")
 _TOML_STRING_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
 
+_DISABLED = "\0disabled"
+"""Scratch key marking an entry an ``enabled=false`` override switched off."""
+
+
 def parse_mcp_servers(argv: Sequence[str]) -> dict[str, dict[str, Any]]:
     """Recover the MCP servers rendered into *argv* by ``_server_flags``.
 
@@ -355,9 +359,14 @@ def parse_mcp_servers(argv: Sequence[str]) -> dict[str, dict[str, Any]]:
     servers: dict[str, dict[str, Any]] = {}
     for key, field, raw_value in _mcp_config_overrides(argv):
         _apply_mcp_override(servers.setdefault(key, {}), field, raw_value)
-    # ``McpScope.SESSION`` also emits ``enabled=false`` overrides for servers
-    # the user configured; those define no server, so they are not reported.
-    servers = {key: entry for key, entry in servers.items() if "command" in entry or "url" in entry}
+    # ``McpScope.SESSION`` also emits overrides that disable the servers the
+    # user configured (their transport plus ``enabled=false``); those are not
+    # servers the turn was given, so they are not reported.
+    servers = {
+        key: entry
+        for key, entry in servers.items()
+        if not entry.pop(_DISABLED, False) and ("command" in entry or "url" in entry)
+    }
     for entry in servers.values():
         if "url" not in entry:
             entry.setdefault("args", [])
@@ -385,6 +394,8 @@ def _apply_mcp_override(entry: dict[str, Any], field: str, raw_value: str) -> No
     elif field == "url":
         entry["url"] = _parsetoml_str(raw_value)
         entry["transport"] = "http"
+    elif field == "enabled":
+        entry[_DISABLED] = raw_value.strip() == "false"
     elif field == "tool_timeout_sec":
         entry["tool_timeout_s"] = float(raw_value)
     elif field == "startup_timeout_sec":

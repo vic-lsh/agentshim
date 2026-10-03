@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 
 import pytest
@@ -157,6 +158,35 @@ class TestCodex:
             _codex_save_auth(home if who == "run" else user_home, f"token-{generation}")
             assert (home / "auth.json").read_text() == (user_home / "auth.json").read_text()
         assert _saved_token(user_home) == f"token-{len(refreshes)}"
+
+    def test_concurrent_first_starts_in_one_process_all_succeed(self, tmp_path: Path) -> None:
+        # Parallel first session starts of one run share a pid and a home.
+        user_home = tmp_path / "user" / ".codex"
+        user_home.mkdir(parents=True)
+        _codex_save_auth(user_home, "token")
+        home = tmp_path / "run-home"
+        env = {"HOME": str(tmp_path / "user")}
+        profile = get_provider("codex").profile
+        threads = 16
+        start = threading.Barrier(threads)
+        errors: list[BaseException] = []
+
+        def first_start() -> None:
+            start.wait()
+            try:
+                prepare_config_home(profile, home, env)
+            except BaseException as exc:  # noqa: BLE001 - collected and asserted empty
+                errors.append(exc)
+
+        workers = [threading.Thread(target=first_start) for _ in range(threads)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join()
+
+        assert errors == []
+        assert (home / "auth.json").resolve() == (user_home / "auth.json").resolve()
+        assert [p.name for p in home.iterdir()] == ["auth.json"]
 
     def test_a_copy_from_an_older_home_becomes_the_link(self, tmp_path: Path) -> None:
         user_home = tmp_path / "user" / ".codex"

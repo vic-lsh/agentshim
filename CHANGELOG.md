@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.13.1 (2026-10-03)
+
+Fix only.
+
+### Fixed
+
+- `prepare_config_home` no longer fails when several sessions of one process
+  start at once. The staged link name was shared by every thread of a process,
+  so parallel first starts could raise `FileExistsError` or
+  `FileNotFoundError`. Each call now stages a uniquely named link, and a link
+  that already points at the login counts as success.
+
 ## 0.13.0 (2026-10-03)
 
 A session can leave out the user's own CLI configuration. Additive.

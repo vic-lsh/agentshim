@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentshim import ArgvContext
+from agentshim import ArgvContext, SkillScope
 from agentshim.providers.claude import ClaudeProvider, SandboxConfig
 
 
@@ -117,3 +117,14 @@ class TestMcpArgv:
     def test_config_file_providers_contribute_no_flags(self) -> None:
         argv = ClaudeProvider().build_argv(_ctx(mcp_argv=()))
         assert "--mcp-config" not in argv
+
+
+class TestSkillScope:
+    def test_project_scope_loads_only_workspace_settings(self) -> None:
+        """Leaving out the ``user`` source is what hides user skills and plugins."""
+        argv = ClaudeProvider().build_argv(_ctx(skill_scope=SkillScope.PROJECT))
+        assert argv[argv.index("--setting-sources") + 1] == "project,local"
+
+    def test_all_scope_leaves_the_setting_sources_to_the_cli(self) -> None:
+        argv = ClaudeProvider().build_argv(_ctx(skill_scope=SkillScope.ALL))
+        assert "--setting-sources" not in argv

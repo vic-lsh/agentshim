@@ -13,6 +13,7 @@ from agentshim.core.profile import (
     OutputSchemaStyle,
     ProviderProfile,
     SchemaDialect,
+    SkillScope,
     SkillSignal,
 )
 
@@ -20,6 +21,7 @@ from ._toml import toml_array, toml_str, unescape_toml
 from .parser import CodexStreamParser
 from .rules import RULES_FILENAME
 from .sandbox import CodexSandboxConfig, resolve_sandbox, sandbox_overrides
+from .skills import project_scope_overrides
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -79,6 +81,7 @@ PROFILE = ProviderProfile(
     # ``exec --json`` lists no skills; a load is inferred from a shell read
     # of a ``SKILL.md`` (``skills.py``).
     skill_invocation=SkillSignal.INFERRED,
+    skill_scopes=frozenset({SkillScope.ALL, SkillScope.PROJECT}),
     container_install=(_NODE_INSTALL, _CODEX_INSTALL),
     # Documented Codex CLI variable that relocates ~/.codex (``codex --help``:
     # "Layer $CODEX_HOME/<name>.config.toml on top of the base user config";
@@ -130,6 +133,8 @@ class CodexProvider:
         if ctx.model:
             argv += ["--model", ctx.model]
         argv += _shell_path_config(ctx.env)
+        if ctx.skill_scope is SkillScope.PROJECT:
+            argv += project_scope_overrides(ctx.env)
         if ctx.reasoning_effort:
             argv += ["--config", f"model_reasoning_effort={toml_str(ctx.reasoning_effort)}"]
         argv += list(ctx.mcp_argv)

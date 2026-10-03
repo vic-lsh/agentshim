@@ -91,6 +91,10 @@ matches tool names or paths.
 `INFERRED` (derived from tool activity, so a load by other means can be
 missed). See [Providers](providers.md) for the per-provider matrix.
 
+Which skills are offered at all is a session option:
+`start_session(skill_scope=SkillScope.PROJECT)` limits it to the workspace's
+skills (see [Providers](providers.md)).
+
 ## Usage
 
 Every provider emits at least one `UsageReport` per turn when its CLI reports

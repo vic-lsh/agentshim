@@ -205,6 +205,7 @@ profile.auth_env_vars              # credential variables to forward
 profile.skill_dirs                 # workspace-relative skill discovery dirs
 profile.skill_discovery            # SkillSignal: does the stream list offered skills?
 profile.skill_invocation           # SkillSignal: does the stream reveal skill loads?
+profile.skill_scopes               # frozenset[SkillScope] a session may request
 profile.container_install          # shell commands installing the CLI
 ```
 
@@ -224,6 +225,28 @@ before the process starts.
 | cost | yes | no | no | yes | no |
 | skills offered | `system/init` `skills` (STRUCTURED) | unknown | unknown | unknown | unknown |
 | skill loads | `Skill` tool call, or `Read` of a `SKILL.md` (STRUCTURED) | shell read of a `SKILL.md` (INFERRED) | unknown | unknown | unknown |
+| `SkillScope.PROJECT` | `--setting-sources project,local` | `features.plugins=false`, user skills off in `skills.config` | refused | refused | refused |
+
+`start_session(skill_scope=SkillScope.PROJECT)` (also on `run`) offers the
+agent only the workspace's skills (`profile.skill_dirs`) and the CLI's
+built-in ones, not the user's personal skills or installed plugins, so who
+runs agentshim does not change what the agent sees. A provider that cannot
+enforce it raises `ProviderCapabilityError` from `start_session`. Side
+effects beyond skills:
+
+- Claude Code: the `user` settings source is skipped, so `~/.claude/skills`,
+  user plugins (their skills, hooks and MCP servers), `~/.claude/CLAUDE.md`
+  and user settings (default model, permissions, hooks, `env`,
+  `apiKeyHelper`) are not loaded. Credentials (`.credentials.json`,
+  `auth_env_vars`) still work; auth configured only through user-settings
+  `env` or `apiKeyHelper` does not, so pass it as environment instead.
+  Workspace settings, `--settings`, managed policy and claude.ai account
+  connectors still apply.
+- Codex: plugins are switched off as a feature, and every `SKILL.md` under
+  `$CODEX_HOME/skills` (except Codex's bundled `.system`) and
+  `~/.agents/skills` is disabled by path; the scan runs on the host
+  agentshim runs on. `config.toml`, auth and session storage are untouched,
+  so resume works as before.
 
 The prompt is never in argv on any provider: it always goes on stdin, so an
 agent's own `pkill -f` cannot match the CLI by prompt text.

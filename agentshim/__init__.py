@@ -50,6 +50,7 @@ from .core import (
     SessionResumeError,
     SessionStarted,
     SkillInvoked,
+    SkillScope,
     SkillsDiscovered,
     SkillSignal,
     SkillSummary,
@@ -96,7 +97,7 @@ from .providers.copilot import CopilotProvider
 from .providers.gemini import GeminiProvider
 from .providers.opencode import OpencodeProvider
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 __all__ = [
     "AgentEvent",
@@ -159,6 +160,7 @@ __all__ = [
     "SessionResumeError",
     "SessionStarted",
     "SkillInvoked",
+    "SkillScope",
     "SkillSignal",
     "SkillSummary",
     "SkillTracker",

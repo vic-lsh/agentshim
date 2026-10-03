@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
+from .profile import SkillScope
 from .usage import ProviderUsage
 
 if TYPE_CHECKING:
@@ -37,6 +38,9 @@ class ArgvContext:
     #: The directory the CLI will run in, or ``None`` for the executor's own.
     #: Argv never carries it; a provider reads it to validate paths against it.
     cwd: str | None = None
+    #: Which skills the CLI may discover; the session has already checked
+    #: that the provider's profile supports it.
+    skill_scope: SkillScope = SkillScope.ALL
 
 
 @dataclass(frozen=True)

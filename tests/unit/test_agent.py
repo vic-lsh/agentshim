@@ -29,6 +29,7 @@ from agentshim import (
     CommandStreamSink,
     HostCommandExecutor,
     McpMechanism,
+    McpScope,
     OutputSchema,
     OutputSchemaStyle,
     ProviderCapabilityError,
@@ -829,4 +830,34 @@ class TestSkillScope:
         agent = CliAgent("gemini", executor=executor, env=dict(_ENV))
         with pytest.raises(ProviderCapabilityError, match="scope 'project'"):
             agent.start_session(skill_scope=SkillScope.PROJECT)
+        assert executor.requests == []
+
+
+class TestMcpScope:
+    def test_a_session_scope_reaches_every_turns_argv(self, tmp_path: Path) -> None:
+        executor = FakeExecutor([scripted_turn("claude", text="ok", session_id="s1")] * 2)
+        session = _agent(executor).start_session(mcp_scope=McpScope.SESSION, cwd=str(tmp_path))
+        session.turn("one")
+        session.turn("two")
+        assert all("--strict-mcp-config" in list(request.argv) for request in executor.requests)
+
+    def test_the_turns_servers_are_the_ones_the_scope_allows(self, tmp_path: Path) -> None:
+        executor = FakeExecutor(scripted_turn("claude", text="ok"))
+        session = _agent(executor).start_session(mcp_scope=McpScope.SESSION, cwd=str(tmp_path))
+        session.turn(TurnRequest("go", mcp_servers=[StdioMcpServer("given", "tool")]))
+        argv = list(executor.requests[0].argv)
+        assert list(json.loads(argv[argv.index("--mcp-config") + 1])["mcpServers"]) == ["given"]
+
+    def test_the_default_scope_is_all(self) -> None:
+        executor = FakeExecutor(scripted_turn("claude", text="ok"))
+        session = _agent(executor).start_session()
+        session.turn("hi")
+        assert session.mcp_scope is McpScope.ALL
+        assert "--strict-mcp-config" not in list(executor.requests[0].argv)
+
+    def test_an_unsupported_scope_is_refused_before_any_turn(self) -> None:
+        executor = FakeExecutor(scripted_turn("gemini", text="ok"))
+        agent = CliAgent("gemini", executor=executor, env=dict(_ENV))
+        with pytest.raises(ProviderCapabilityError, match="scope 'session'"):
+            agent.start_session(mcp_scope=McpScope.SESSION)
         assert executor.requests == []

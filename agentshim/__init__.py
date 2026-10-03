@@ -27,6 +27,7 @@ from .core import (
     McpConfigError,
     McpInstallation,
     McpMechanism,
+    McpScope,
     McpServer,
     McpTransport,
     ModelPricing,
@@ -97,7 +98,7 @@ from .providers.copilot import CopilotProvider
 from .providers.gemini import GeminiProvider
 from .providers.opencode import OpencodeProvider
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 __all__ = [
     "AgentEvent",
@@ -134,6 +135,7 @@ __all__ = [
     "McpConfigError",
     "McpInstallation",
     "McpMechanism",
+    "McpScope",
     "McpServer",
     "McpTransport",
     "ModelPricing",

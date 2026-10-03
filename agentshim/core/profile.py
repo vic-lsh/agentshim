@@ -77,6 +77,22 @@ class SkillScope(Enum):
     PROJECT = "project"
 
 
+class McpScope(Enum):
+    """Which MCP servers a session's CLI may connect to.
+
+    ``ALL``: whatever the CLI finds by default, including the user's and the
+    project's own MCP configuration, plugin servers and account-level
+    connectors. ``SESSION``: only the servers the session was given through
+    ``TurnRequest.mcp_servers``; a session given none sees no MCP server at
+    all. A provider declares the scopes it can enforce in
+    ``ProviderProfile.mcp_scopes``; asking for another one is an error, never
+    a silent ``ALL``.
+    """
+
+    ALL = "all"
+    SESSION = "session"
+
+
 def _no_container_env() -> Mapping[str, str]:
     """Empty read-only default: a frozen spec must not carry a mutable one.
 
@@ -127,3 +143,5 @@ class ProviderProfile:
     skill_invocation: SkillSignal = SkillSignal.NONE
     #: The ``SkillScope`` values a session on this provider may request.
     skill_scopes: frozenset[SkillScope] = frozenset({SkillScope.ALL})
+    #: The ``McpScope`` values a session on this provider may request.
+    mcp_scopes: frozenset[McpScope] = frozenset({McpScope.ALL})

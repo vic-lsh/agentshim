@@ -10,6 +10,7 @@ from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
 from agentshim.core.mcp import FlagsInstallation, HttpMcpServer, NoopInstallation
 from agentshim.core.profile import (
     McpMechanism,
+    McpScope,
     OutputSchemaStyle,
     ProviderProfile,
     SchemaDialect,
@@ -18,6 +19,7 @@ from agentshim.core.profile import (
 )
 
 from ._toml import toml_array, toml_str, unescape_toml
+from .mcp_scope import session_scope_overrides
 from .parser import CodexStreamParser
 from .rules import RULES_FILENAME
 from .sandbox import CodexSandboxConfig, resolve_sandbox, sandbox_overrides
@@ -82,6 +84,7 @@ PROFILE = ProviderProfile(
     # of a ``SKILL.md`` (``skills.py``).
     skill_invocation=SkillSignal.INFERRED,
     skill_scopes=frozenset({SkillScope.ALL, SkillScope.PROJECT}),
+    mcp_scopes=frozenset({McpScope.ALL, McpScope.SESSION}),
     container_install=(_NODE_INSTALL, _CODEX_INSTALL),
     # Documented Codex CLI variable that relocates ~/.codex (``codex --help``:
     # "Layer $CODEX_HOME/<name>.config.toml on top of the base user config";
@@ -133,8 +136,7 @@ class CodexProvider:
         if ctx.model:
             argv += ["--model", ctx.model]
         argv += _shell_path_config(ctx.env)
-        if ctx.skill_scope is SkillScope.PROJECT:
-            argv += project_scope_overrides(ctx.env)
+        argv += _scope_overrides(ctx)
         if ctx.reasoning_effort:
             argv += ["--config", f"model_reasoning_effort={toml_str(ctx.reasoning_effort)}"]
         argv += list(ctx.mcp_argv)
@@ -270,6 +272,21 @@ def _shell_path_config(env: Mapping[str, str]) -> list[str]:
     return ["--config", f"shell_environment_policy.set.PATH={toml_str(path)}"]
 
 
+def _scope_overrides(ctx: ArgvContext) -> list[str]:
+    """The ``--config`` flags the session's skill and MCP scopes call for.
+
+    Both scopes switch ``features.plugins`` off; the flag is emitted once.
+    """
+    flags: list[str] = []
+    if ctx.skill_scope is SkillScope.PROJECT:
+        flags += project_scope_overrides(ctx.env)
+    if ctx.mcp_scope is McpScope.SESSION:
+        given = {server.name.replace("-", "_") for server in ctx.mcp_servers}
+        flags += session_scope_overrides(ctx.env, ctx.cwd, given)
+    pairs = [flags[i : i + 2] for i in range(0, len(flags), 2)]
+    return [item for pair in dict.fromkeys(map(tuple, pairs)) for item in pair]
+
+
 def _server_flags(server: McpServer) -> list[str]:
     """Render one MCP server as dotted-path TOML overrides.
 
@@ -338,6 +355,9 @@ def parse_mcp_servers(argv: Sequence[str]) -> dict[str, dict[str, Any]]:
     servers: dict[str, dict[str, Any]] = {}
     for key, field, raw_value in _mcp_config_overrides(argv):
         _apply_mcp_override(servers.setdefault(key, {}), field, raw_value)
+    # ``McpScope.SESSION`` also emits ``enabled=false`` overrides for servers
+    # the user configured; those define no server, so they are not reported.
+    servers = {key: entry for key, entry in servers.items() if "command" in entry or "url" in entry}
     for entry in servers.values():
         if "url" not in entry:
             entry.setdefault("args", [])

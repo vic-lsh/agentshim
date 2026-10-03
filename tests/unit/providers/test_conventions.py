@@ -19,6 +19,7 @@ from agentshim import (
     CliExitError,
     HttpMcpServer,
     McpMechanism,
+    McpScope,
     OutputSchemaStyle,
     ProviderCapabilityError,
     RawOutput,
@@ -400,3 +401,22 @@ def test_a_skill_scope_is_enforced_or_refused_never_ignored(
     agent.run("go", skill_scope=scope)
     default, scoped = (list(request.argv) for request in executor.requests)
     assert (default == scoped) is (scope is SkillScope.ALL)
+
+
+@pytest.mark.parametrize("name", PROVIDERS)
+@pytest.mark.parametrize("scope", list(McpScope))
+def test_an_mcp_scope_is_enforced_or_refused_never_ignored(
+    name: str, scope: McpScope, tmp_path: Path
+) -> None:
+    """A supported narrower scope changes argv; an unsupported one raises."""
+    executor = FakeExecutor(scripted_turn(name, text="ok"))
+    agent = CliAgent(name, executor=executor, env={**_ENV, "HOME": str(tmp_path)})
+    assert McpScope.ALL in agent.profile.mcp_scopes
+    if scope not in agent.profile.mcp_scopes:
+        with pytest.raises(ProviderCapabilityError):
+            agent.start_session(mcp_scope=scope)
+        return
+    agent.run("go", cwd=str(tmp_path))
+    agent.run("go", cwd=str(tmp_path), mcp_scope=scope)
+    default, scoped = (list(request.argv) for request in executor.requests)
+    assert (default == scoped) is (scope is McpScope.ALL)

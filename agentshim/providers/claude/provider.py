@@ -9,6 +9,7 @@ from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
 from agentshim.core.mcp import HttpMcpServer, NoopInstallation, StdioMcpServer, install_config_file
 from agentshim.core.profile import (
     McpMechanism,
+    McpScope,
     OutputSchemaStyle,
     ProviderProfile,
     SchemaDialect,
@@ -43,6 +44,12 @@ MCP_SERVER_KEY = "mcpServers"
 #: account connectors are not user settings and stay.
 PROJECT_SETTING_SOURCES = ("--setting-sources", "project,local")
 
+#: ``McpScope.SESSION``: ``--strict-mcp-config`` makes ``--mcp-config`` the
+#: only source of MCP servers. It drops the user's and the project's
+#: (``.mcp.json``) servers, plugin servers and claude.ai account connectors,
+#: so the servers the turn was given are passed inline as ``--mcp-config``.
+STRICT_MCP_FLAG = "--strict-mcp-config"
+
 PROFILE = ProviderProfile(
     name="claude",
     display_name="Claude Code",
@@ -67,6 +74,7 @@ PROFILE = ProviderProfile(
     skill_discovery=SkillSignal.STRUCTURED,
     skill_invocation=SkillSignal.STRUCTURED,
     skill_scopes=frozenset({SkillScope.ALL, SkillScope.PROJECT}),
+    mcp_scopes=frozenset({McpScope.ALL, McpScope.SESSION}),
     container_install=(
         "apt-get update && apt-get install -y --no-install-recommends curl ca-certificates",
         "curl -fsSL https://claude.ai/install.sh | bash",
@@ -141,6 +149,8 @@ class ClaudeProvider:
         settings = build_settings(self.sandbox, hooks=self.hooks)
         if settings:
             argv += ["--settings", json.dumps(settings)]
+        if ctx.mcp_scope is McpScope.SESSION:
+            argv += _session_mcp_argv(ctx.mcp_servers)
         argv += list(ctx.mcp_argv)
         argv += list(ctx.extra_args)
         return argv
@@ -191,6 +201,15 @@ def _resumed_session_id(argv: Sequence[str]) -> str | None:
     if index + 1 >= len(args):
         return None
     return args[index + 1]
+
+
+def _session_mcp_argv(servers: Sequence[McpServer]) -> list[str]:
+    """Flags that leave Claude Code exactly *servers* and nothing else."""
+    argv = [STRICT_MCP_FLAG]
+    if servers:
+        config = {MCP_SERVER_KEY: {server.name: mcp_entry(server) for server in servers}}
+        argv += ["--mcp-config", json.dumps(config)]
+    return argv
 
 
 def mcp_entry(server: McpServer) -> dict[str, Any]:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentshim import ArgvContext, SkillScope
+from agentshim import ArgvContext, McpScope, SkillScope, StdioMcpServer
 from agentshim.providers.claude import ClaudeProvider, SandboxConfig
 
 
@@ -128,3 +128,25 @@ class TestSkillScope:
     def test_all_scope_leaves_the_setting_sources_to_the_cli(self) -> None:
         argv = ClaudeProvider().build_argv(_ctx(skill_scope=SkillScope.ALL))
         assert "--setting-sources" not in argv
+
+
+class TestMcpScope:
+    _SERVER = StdioMcpServer("given", "tool", args=("--flag",))
+
+    def test_session_scope_makes_the_given_servers_the_only_source(self) -> None:
+        argv = ClaudeProvider().build_argv(
+            _ctx(mcp_scope=McpScope.SESSION, mcp_servers=(self._SERVER,))
+        )
+        assert "--strict-mcp-config" in argv
+        config = json.loads(argv[argv.index("--mcp-config") + 1])
+        assert config == {"mcpServers": {"given": {"command": "tool", "args": ["--flag"]}}}
+
+    def test_session_scope_without_servers_is_strict_with_no_config(self) -> None:
+        argv = ClaudeProvider().build_argv(_ctx(mcp_scope=McpScope.SESSION))
+        assert "--strict-mcp-config" in argv
+        assert "--mcp-config" not in argv
+
+    def test_all_scope_leaves_discovery_to_the_cli(self) -> None:
+        argv = ClaudeProvider().build_argv(_ctx(mcp_servers=(self._SERVER,)))
+        assert "--strict-mcp-config" not in argv
+        assert "--mcp-config" not in argv

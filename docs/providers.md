@@ -206,6 +206,7 @@ profile.skill_dirs                 # workspace-relative skill discovery dirs
 profile.skill_discovery            # SkillSignal: does the stream list offered skills?
 profile.skill_invocation           # SkillSignal: does the stream reveal skill loads?
 profile.skill_scopes               # frozenset[SkillScope] a session may request
+profile.mcp_scopes                 # frozenset[McpScope] a session may request
 profile.container_install          # shell commands installing the CLI
 ```
 
@@ -226,6 +227,7 @@ before the process starts.
 | skills offered | `system/init` `skills` (STRUCTURED) | unknown | unknown | unknown | unknown |
 | skill loads | `Skill` tool call, or `Read` of a `SKILL.md` (STRUCTURED) | shell read of a `SKILL.md` (INFERRED) | unknown | unknown | unknown |
 | `SkillScope.PROJECT` | `--setting-sources project,local` | `features.plugins=false`, user skills off in `skills.config` | refused | refused | refused |
+| `McpScope.SESSION` | `--strict-mcp-config` and the turn's servers as inline `--mcp-config` | `enabled=false` on configured servers, `features.plugins=false`, `features.apps=false` | refused | refused | refused |
 
 `start_session(skill_scope=SkillScope.PROJECT)` (also on `run`) offers the
 agent only the workspace's skills (`profile.skill_dirs`) and the CLI's
@@ -247,6 +249,22 @@ effects beyond skills:
   `~/.agents/skills` is disabled by path; the scan runs on the host
   agentshim runs on. `config.toml`, auth and session storage are untouched,
   so resume works as before.
+
+`start_session(mcp_scope=McpScope.SESSION)` (also on `run`) connects the CLI
+only to the servers in `TurnRequest.mcp_servers`; a turn given none sees no
+MCP server. It is independent of `skill_scope`. A provider that cannot
+enforce it raises `ProviderCapabilityError` from `start_session`.
+
+- Claude Code: `--strict-mcp-config` makes `--mcp-config` the only source, so
+  user and project (`.mcp.json`) servers, plugin servers and claude.ai
+  account connectors are all dropped. The turn's servers travel inline in
+  argv (as Codex's do), not through the workspace `.mcp.json`.
+- Codex: every `mcp_servers` entry in `$CODEX_HOME/config.toml`,
+  `/etc/codex/config.toml` and `<cwd>/.codex/config.toml` that the turn was
+  not given is disabled by name, and plugins and apps (the account's ChatGPT
+  connectors) are switched off as features. The scan runs where agentshim
+  runs. Give session servers names the user's config does not use: Codex
+  merges same-named entries field by field.
 
 The prompt is never in argv on any provider: it always goes on stdin, so an
 agent's own `pkill -f` cannot match the CLI by prompt text.

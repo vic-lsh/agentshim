@@ -23,7 +23,13 @@ from agentshim.core.errors import (
     SessionResumeError,
 )
 from agentshim.core.events import RunFinished, RunStarted, compose_event_handlers
-from agentshim.core.profile import McpMechanism, OutputSchemaStyle, SchemaDialect, SkillScope
+from agentshim.core.profile import (
+    McpMechanism,
+    McpScope,
+    OutputSchemaStyle,
+    SchemaDialect,
+    SkillScope,
+)
 from agentshim.core.provider import ArgvContext
 from agentshim.core.schema import compact_json, dialect_problems, materialize
 from agentshim.core.skills import SkillTracker
@@ -115,13 +121,20 @@ class CliAgent:
         timeout: float | None = None,
         session_id: str | None = None,
         skill_scope: SkillScope = SkillScope.ALL,
+        mcp_scope: McpScope = McpScope.ALL,
     ) -> AgentSession:
         """Open a conversation whose turns resume one another.
 
-        ``skill_scope`` is fixed for the conversation (see ``AgentSession``).
+        ``skill_scope`` and ``mcp_scope`` are fixed for the conversation (see
+        ``AgentSession``).
         """
         return AgentSession(
-            self, cwd=cwd, timeout=timeout, session_id=session_id, skill_scope=skill_scope
+            self,
+            cwd=cwd,
+            timeout=timeout,
+            session_id=session_id,
+            skill_scope=skill_scope,
+            mcp_scope=mcp_scope,
         )
 
     def run(
@@ -131,9 +144,12 @@ class CliAgent:
         cwd: str | None = None,
         timeout: float | None = None,
         skill_scope: SkillScope = SkillScope.ALL,
+        mcp_scope: McpScope = McpScope.ALL,
     ) -> TurnResult:
         """Run one turn in a throwaway session."""
-        session = self.start_session(cwd=cwd, timeout=timeout, skill_scope=skill_scope)
+        session = self.start_session(
+            cwd=cwd, timeout=timeout, skill_scope=skill_scope, mcp_scope=mcp_scope
+        )
         return session.turn(request)
 
 
@@ -144,7 +160,7 @@ def _discard(message: str) -> None:
 class AgentSession:
     """A provider conversation. One turn at a time; ``cancel`` is thread-safe."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - one keyword per independent session option
         self,
         agent: CliAgent,
         *,
@@ -152,6 +168,7 @@ class AgentSession:
         timeout: float | None = None,
         session_id: str | None = None,
         skill_scope: SkillScope = SkillScope.ALL,
+        mcp_scope: McpScope = McpScope.ALL,
     ) -> None:
         """Bind a conversation to one agent, with per-turn defaults.
 
@@ -162,12 +179,19 @@ class AgentSession:
         first turn resumes rather than starts fresh. ``skill_scope`` limits
         which skills every turn's CLI may discover; a scope the provider's
         ``profile.skill_scopes`` does not list raises
-        ``ProviderCapabilityError`` here, before any turn runs.
+        ``ProviderCapabilityError`` here, before any turn runs. ``mcp_scope``
+        limits which MCP servers every turn's CLI may connect to
+        (``McpScope.SESSION``: only those in ``TurnRequest.mcp_servers``) and
+        is checked against ``profile.mcp_scopes`` the same way.
         """
         if skill_scope not in agent.profile.skill_scopes:
             msg = f"{agent.profile.name} cannot limit skills to scope {skill_scope.value!r}"
             raise ProviderCapabilityError(msg)
+        if mcp_scope not in agent.profile.mcp_scopes:
+            msg = f"{agent.profile.name} cannot limit MCP servers to scope {mcp_scope.value!r}"
+            raise ProviderCapabilityError(msg)
         self.skill_scope = skill_scope
+        self.mcp_scope = mcp_scope
         self._agent = agent
         self._cwd = cwd
         self._timeout = timeout
@@ -277,6 +301,8 @@ class AgentSession:
                     extra_args=req.extra_args,
                     cwd=cwd,
                     skill_scope=self.skill_scope,
+                    mcp_scope=self.mcp_scope,
+                    mcp_servers=tuple(req.mcp_servers),
                 )
             )
             command = CommandRequest(argv=argv, stdin=req.prompt, cwd=cwd, env=env, timeout=timeout)

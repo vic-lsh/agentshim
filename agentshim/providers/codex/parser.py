@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from agentshim.core.errors import ProviderCapabilityError
 from agentshim.core.events import (
     AssistantText,
     Lifecycle,
@@ -53,20 +55,20 @@ COMMAND_TOOL = "execute"
 FAILED_ITEM_STATUS = "failed"
 
 
-def fold_usage(frame: TurnCompleted, previous: TokenUsage) -> TokenUsage:
-    """Add one ``turn.completed`` frame's counts to the running total.
+def fold_usage(frame: TurnCompleted, previous: TurnCompleted) -> TokenUsage:
+    """Subtract the previous thread total from Codex's cumulative counts.
 
-    Codex's counts are already nested the way agentshim normalizes them:
-    ``input_tokens`` includes cache reads (``cached_input_tokens``) and cache
-    writes, and ``output_tokens`` includes ``reasoning_output_tokens``. So
-    unlike Claude nothing is folded in; adding them would double-count.
+    Exec JSON exports the thread's total, including on resume, with no
+    per-invocation field. Input already includes cache reads and writes;
+    output already includes reasoning. Subtract before normalizing so an
+    inconsistent provider breakdown cannot distort the saved baseline.
     """
-    return previous + normalized_usage(
-        input_tokens=frame.input_tokens,
-        output_tokens=frame.output_tokens,
-        cache_read_input_tokens=frame.cached_input_tokens,
-        cache_write_input_tokens=frame.cache_write_input_tokens,
-        reasoning_output_tokens=frame.reasoning_output_tokens,
+    return normalized_usage(
+        input_tokens=frame.input_tokens - previous.input_tokens,
+        output_tokens=frame.output_tokens - previous.output_tokens,
+        cache_read_input_tokens=frame.cached_input_tokens - previous.cached_input_tokens,
+        cache_write_input_tokens=frame.cache_write_input_tokens - previous.cache_write_input_tokens,
+        reasoning_output_tokens=frame.reasoning_output_tokens - previous.reasoning_output_tokens,
         turns=1,
     )
 
@@ -79,6 +81,8 @@ class CodexStreamParser:
         emit: Callable[[AgentEvent], None],
         *,
         expect_structured: bool = False,
+        previous_usage: ProviderUsage | None = None,
+        resumed: bool = False,
     ) -> None:
         """Build a parser that emits through *emit*.
 
@@ -86,6 +90,10 @@ class CodexStreamParser:
             emit: Sink for every event this run produces.
             expect_structured: Whether the turn asked Codex for a schema, in
                 which case the final message is decoded as JSON.
+            previous_usage: The prior invocation's report. Its raw counts,
+                rather than its normalized increment, are the thread baseline.
+            resumed: Whether this invocation resumes an existing thread. A
+                completed resume without a baseline cannot be accounted for.
         """
         self._emit = emit
         self._expect_structured = expect_structured
@@ -94,6 +102,18 @@ class CodexStreamParser:
         # Codex has no terminal result frame: the last agent_message is the
         # answer, and with a schema it is the structured payload verbatim.
         self._final_text: str | None = None
+        baseline = None
+        if (
+            previous_usage is not None
+            and previous_usage.provider == PROVIDER_NAME
+            and previous_usage.raw is not None
+        ):
+            baseline = parse_frame({"type": "turn.completed", "usage": dict(previous_usage.raw)})
+        self._baseline = baseline if isinstance(baseline, TurnCompleted) else TurnCompleted()
+        self._baseline_known = not resumed or (
+            isinstance(baseline, TurnCompleted) and baseline.usage is not None
+        )
+        self._completed_turns = 0
         self._tokens = TokenUsage()
         self._usage = ProviderUsage(provider=PROVIDER_NAME)
         self._error: str | None = None
@@ -159,7 +179,20 @@ class CodexStreamParser:
         self._emit(Lifecycle("thread_started", frame.thread_id))
 
     def _turn_completed(self, frame: TurnCompleted) -> None:
-        self._tokens = fold_usage(frame, self._tokens)
+        self._completed_turns += 1
+        if frame.usage is not None and not self._baseline_known:
+            # Keep the total for recovery, but never expose it as this run's usage.
+            self._usage = ProviderUsage(provider=PROVIDER_NAME, raw=frame.usage)
+            msg = (
+                "Codex resume usage needs the previous thread total; pass previous_usage "
+                "from the last TurnResult.usage to start_session() or adopt()"
+            )
+            raise ProviderCapabilityError(msg)
+        if frame.usage is not None:
+            delta = fold_usage(frame, self._baseline)
+            self._tokens = replace(delta, turns=self._completed_turns)
+        else:
+            self._tokens = self._tokens + TokenUsage(turns=1)
         self._usage = ProviderUsage(
             tokens=self._tokens,
             total_cost_usd=None,

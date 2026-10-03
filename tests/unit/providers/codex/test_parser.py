@@ -5,20 +5,26 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
 from agentshim import (
     AssistantText,
     Lifecycle,
+    ProviderCapabilityError,
     ProviderError,
+    ProviderUsage,
     RawOutput,
     Reasoning,
     SessionStarted,
     Stderr,
+    TokenUsage,
     ToolCall,
     ToolResult,
     UsageReport,
 )
 from agentshim.core.events import AgentEvent
 from agentshim.providers.codex import CodexStreamParser
+from hypothesis import given
+from hypothesis import strategies as st
 
 
 def _parser(*, expect_structured: bool = False) -> tuple[CodexStreamParser, list[AgentEvent]]:
@@ -280,15 +286,15 @@ class TestUsage:
         assert isinstance(events[-1], UsageReport)
         assert Lifecycle("turn_completed", "in=1200 cached=800 out=150") in events
 
-    def test_repeated_turns_accumulate(self) -> None:
+    def test_repeated_completions_replace_the_cumulative_total(self) -> None:
         parser, _ = _parser()
         parser.feed_stdout(_usage_line(100, 10, 5))
         parser.feed_stdout(_usage_line(200, 20, 7))
         tokens = parser.finish().usage.tokens
         assert (tokens.input_tokens, tokens.cached_input_tokens, tokens.output_tokens) == (
-            300,
-            30,
-            12,
+            200,
+            20,
+            7,
         )
         assert tokens.turns == 2
 
@@ -399,3 +405,97 @@ class TestStderr:
         parser, events = _parser()
         parser.feed_stderr("\n")
         assert events == []
+
+
+# Disjoint token classes keep the generated breakdowns valid independently
+# of normalized_usage, including zero-token turns and multi-frame invocations.
+_COUNTS = st.tuples(*(st.integers(0, 1_000_000) for _ in range(5)))
+
+
+@given(st.lists(st.lists(_COUNTS, min_size=1, max_size=5), min_size=1, max_size=15))
+def test_invocation_increments_sum_to_the_final_thread_total(
+    invocations: list[list[tuple[int, int, int, int, int]]],
+) -> None:
+    total = TokenUsage()
+    summed = TokenUsage()
+    previous = None
+    for invocation in invocations:
+        parser = CodexStreamParser(
+            lambda _event: None, previous_usage=previous, resumed=previous is not None
+        )
+        for uncached, read, write, output, reasoning in invocation:
+            total += TokenUsage(
+                input_tokens=uncached + read + write,
+                cache_read_input_tokens=read,
+                cache_write_input_tokens=write,
+                output_tokens=output + reasoning,
+                reasoning_output_tokens=reasoning,
+                turns=1,
+            )
+            parser.feed_stdout(
+                _line(
+                    {
+                        "type": "turn.completed",
+                        "usage": {
+                            "input_tokens": total.input_tokens,
+                            "cached_input_tokens": total.cache_read_input_tokens,
+                            "cache_write_input_tokens": total.cache_write_input_tokens,
+                            "output_tokens": total.output_tokens,
+                            "reasoning_output_tokens": total.reasoning_output_tokens,
+                        },
+                    }
+                )
+            )
+        previous = parser.finish().usage
+        summed += previous.tokens
+    assert summed == total
+
+
+def test_resume_subtracts_each_raw_count_before_normalizing() -> None:
+    previous = ProviderUsage(
+        provider="codex",
+        raw={
+            "input_tokens": 100,
+            "cached_input_tokens": 80,
+            "cache_write_input_tokens": 30,
+            "output_tokens": 10,
+            "reasoning_output_tokens": 12,
+        },
+    )
+    parser = CodexStreamParser(lambda _event: None, previous_usage=previous, resumed=True)
+    parser.feed_stdout(
+        _line(
+            {
+                "type": "turn.completed",
+                "usage": {
+                    "input_tokens": 160,
+                    "cached_input_tokens": 100,
+                    "cache_write_input_tokens": 40,
+                    "output_tokens": 30,
+                    "reasoning_output_tokens": 17,
+                },
+            }
+        )
+    )
+    assert parser.finish().usage.tokens == TokenUsage(
+        input_tokens=60,
+        cache_read_input_tokens=20,
+        cache_write_input_tokens=10,
+        output_tokens=20,
+        reasoning_output_tokens=5,
+        turns=1,
+    )
+
+
+def test_resume_without_a_baseline_never_reports_the_thread_total_as_usage() -> None:
+    events: list[AgentEvent] = []
+    parser = CodexStreamParser(events.append, resumed=True)
+    with pytest.raises(ProviderCapabilityError, match="previous thread total"):
+        parser.feed_stdout(_usage_line(100, 50, 10))
+    assert not any(isinstance(event, UsageReport) for event in events)
+    assert parser.finish().usage.tokens == TokenUsage()
+    assert parser.finish().usage.raw == {
+        "input_tokens": 100,
+        "cached_input_tokens": 50,
+        "output_tokens": 10,
+    }

@@ -135,12 +135,17 @@ class Provider(Protocol):
         emit: Callable[[AgentEvent], None],
         *,
         expect_structured: bool,
+        previous_usage: ProviderUsage | None = None,
+        resumed: bool = False,
     ) -> StreamParser:
         """Create a parser for one run, wired to publish events through *emit*.
 
         A parser is single-use. ``expect_structured`` says the caller asked for
         an output schema, which is what lets a parser tell a missing structured
-        result apart from a turn that never wanted one.
+        result apart from a turn that never wanted one. ``previous_usage``
+        is the previous report for this conversation, including its raw provider
+        totals. ``resumed`` distinguishes a fresh conversation from a resume
+        whose baseline may be unavailable.
         """
         ...
 

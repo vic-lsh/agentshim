@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from agentshim.core.events import AgentEvent
     from agentshim.core.mcp import McpServer
     from agentshim.core.provider import ArgvContext, McpInstallation
+    from agentshim.core.usage import ProviderUsage
 
 MCP_CONFIG_FILENAME = ".mcp.json"
 MCP_SERVER_KEY = "mcpServers"
@@ -173,8 +174,11 @@ class ClaudeProvider:
         emit: Callable[[AgentEvent], None],
         *,
         expect_structured: bool,
+        previous_usage: ProviderUsage | None = None,
+        resumed: bool = False,
     ) -> ClaudeStreamParser:
         """Return a parser for one run's ``stream-json`` output."""
+        del previous_usage, resumed  # This parser does not use a thread baseline.
         return ClaudeStreamParser(emit, expect_structured=expect_structured)
 
     def install_mcp(self, workspace: Path | None, servers: Sequence[McpServer]) -> McpInstallation:

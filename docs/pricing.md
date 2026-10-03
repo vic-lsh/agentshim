@@ -31,6 +31,11 @@ How each CLI's report maps onto it:
 | Copilot (`assistant.usage`) | `inputTokens` + reads + writes | `cacheReadTokens` | `cacheWriteTokens` | `outputTokens` + `reasoningTokens` |
 | Gemini (`result.stats`) | `input_tokens` already includes `cached` | `cached` | not reported (0) | `output_tokens`; thinking is not reported |
 
+Codex's five fields are cumulative thread totals, including on resume.
+The parser subtracts the previous raw report to produce per-invocation counts;
+`ProviderUsage.raw` retains the cumulative report. See
+[provider behavior](providers.md#token-usage) for checkpointed resumes.
+
 Known gaps: Claude's `result.usage` covers the main conversation only, so
 tokens spent by a Task subagent are missing from it (they are in the CLI's
 `modelUsage` and `total_cost_usd`). Copilot 1.0.83 prints no token counts.

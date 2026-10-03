@@ -276,7 +276,9 @@ class McpInstallation(Protocol):
 class Provider(Protocol):
     profile: ProviderProfile
     def build_argv(self, ctx: ArgvContext) -> list[str]: ...
-    def new_parser(self, emit: Callable[[AgentEvent], None], *, expect_structured: bool) -> StreamParser: ...
+    def new_parser(self, emit: Callable[[AgentEvent], None], *, expect_structured: bool,
+                   previous_usage: ProviderUsage | None = None,
+                   resumed: bool = False) -> StreamParser: ...
     def install_mcp(self, workspace: Path | None, servers: Sequence[McpServer]) -> McpInstallation: ...
     def classify_exit(self, error: CliExitError, *, resumed: bool) -> AgentShimError: ...
 
@@ -297,6 +299,10 @@ class ArgvContext:
 The prompt is always delivered on stdin and never appears in argv (an
 agent's own `pkill -f` must not be able to match the CLI by prompt text).
 
+Custom providers must accept `previous_usage` and `resumed` in `new_parser`.
+Providers that report per-invocation counts can ignore both arguments; a
+cumulative provider uses the previous raw report as its baseline.
+
 ### Agent and session
 
 ```python
@@ -312,13 +318,14 @@ class CliAgent:
     binary_path: str
     env: dict[str, str]
     def start_session(self, *, cwd: str | None = None, timeout: float | None = None,
-                      session_id: str | None = None) -> AgentSession
+                      session_id: str | None = None,
+                      previous_usage: ProviderUsage | None = None) -> AgentSession
     def run(self, request: TurnRequest | str, *, cwd=None, timeout=None) -> TurnResult   # one-shot
 
 class AgentSession:
     session_id: str | None              # readable and writable
     last_result: TurnResult | None
-    def adopt(self, session_id: str) -> bool   # False if unsupported or a conversation is live
+    def adopt(self, session_id: str, *, previous_usage: ProviderUsage | None = None) -> bool   # False if unsupported or a conversation is live
     def forget(self) -> bool                   # False if a turn is in flight
     def turn(self, request: TurnRequest | str) -> TurnResult
     def cancel(self, grace_s: float = 5.0) -> None   # thread-safe; terminate then kill

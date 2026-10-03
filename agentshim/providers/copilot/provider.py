@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from agentshim.core.events import AgentEvent
     from agentshim.core.mcp import McpServer, StdioMcpServer
     from agentshim.core.provider import ArgvContext, McpInstallation
+    from agentshim.core.usage import ProviderUsage
 
 MCP_CONFIG_FLAG = "--additional-mcp-config"
 MCP_SERVER_KEY = "mcpServers"
@@ -102,12 +103,15 @@ class CopilotProvider:
         emit: Callable[[AgentEvent], None],
         *,
         expect_structured: bool,
+        previous_usage: ProviderUsage | None = None,
+        resumed: bool = False,
     ) -> CopilotStreamParser:
         """Return a parser for one run.
 
         Copilot has no output-schema mode, so the parser records the flag and
         never acts on it.
         """
+        del previous_usage, resumed  # This parser does not use a thread baseline.
         return CopilotStreamParser(emit, expect_structured=expect_structured)
 
     def install_mcp(self, workspace: Path | None, servers: Sequence[McpServer]) -> McpInstallation:

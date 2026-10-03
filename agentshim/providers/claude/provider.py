@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
+from agentshim.core.errors import FailureKind, ProviderCapabilityError, SessionResumeError
 from agentshim.core.mcp import HttpMcpServer, NoopInstallation, StdioMcpServer, install_config_file
 from agentshim.core.profile import (
     McpMechanism,
@@ -178,17 +178,24 @@ class ClaudeProvider:
         )
 
     def classify_exit(self, error: CliExitError, *, resumed: bool) -> AgentShimError:
-        """Any nonzero exit on a resumed turn means the conversation is gone.
+        """A resumed turn that failed for no reason the stream named lost its conversation.
 
         ``claude --resume`` gives no distinguishable exit code for a missing
-        transcript, and a resumed turn that fails is unusable either way:
-        the caller has to start a fresh conversation.
+        transcript, so a resumed turn whose failure the parser could not
+        classify is treated as a dead conversation. A failure the stream did
+        classify (an overload, a usage limit, a login problem) happened inside
+        a conversation that resumed, so it keeps its own kind.
         """
-        if resumed:
+        if resumed and error.kind is FailureKind.OTHER:
             session_id = _resumed_session_id(error.argv)
             if session_id is not None:
                 return SessionResumeError(
-                    error.argv, error.returncode, session_id, error.stdout, error.stderr
+                    error.argv,
+                    error.returncode,
+                    session_id,
+                    error.stdout,
+                    error.stderr,
+                    detail=error.detail,
                 )
         return error
 

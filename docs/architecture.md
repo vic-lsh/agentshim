@@ -187,7 +187,8 @@ have nothing in common, so the name is not part of the package contract.
 AgentShimError
   CliNotFoundError            binary not on PATH
   CliCheckError               binary found but the health check failed
-  CliExitError                nonzero exit: argv, returncode, stdout, stderr
+  CliExitError                nonzero exit: argv, returncode, stdout, stderr,
+                              kind (FailureKind), detail (the stream's error text)
     SessionResumeError        a resumed turn failed because the conversation is gone: session_id
   CliTimeoutError             argv, timeout, partial: ParsedTurn | None
   ProviderCapabilityError     the provider cannot do what the request asked
@@ -583,8 +584,21 @@ and `1` where it only reports a boolean.
 `tests/unit/providers/test_conventions.py` pins this and the other rules
 across all five providers.
 
-**Claude, Gemini and opencode map *any* nonzero exit on a resumed turn to
-`SessionResumeError`.** None of those CLIs gives a distinguishable exit for
+**Each provider's parser classifies a failed turn as a `FailureKind`.** The
+parser sees the structured frames a CLI writes about a failed request, so it
+sets `ParsedTurn.error_kind`, and the session puts that and the stream's
+error text on `CliExitError.kind` and `.detail`. Claude reads the assistant
+frame's `error` kind, the result frame's `api_error_status`, and, for older
+builds, `API Error: <status>` in the result text; Codex reads the text of its
+last `error`/`turn.failed` event. Each reads stderr only when the stream
+reported nothing, and never tool output. The other providers report `OTHER`.
+The error text goes into the message because Claude reports its failures in
+the stream and leaves stderr empty.
+
+**Claude, Gemini and opencode map an unclassified nonzero exit on a resumed
+turn to `SessionResumeError`.** A Claude failure the parser classified as
+`TRANSIENT`, `USAGE_LIMIT` or `AUTH` happened inside a conversation that
+resumed, so it keeps its kind and the session keeps the conversation. None of those CLIs gives a distinguishable exit for
 a missing transcript, and a resumed turn that failed is unusable either way:
 the caller has to start a fresh conversation, and without the typed error a
 caller holding a checkpoint would offer the same dead id forever. The session

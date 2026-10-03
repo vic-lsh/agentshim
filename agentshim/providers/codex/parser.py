@@ -34,6 +34,7 @@ from .events import (
     parse_frame,
     summarize_item,
 )
+from .failures import classify_failure
 from .skills import skill_reads
 
 if TYPE_CHECKING:
@@ -96,6 +97,7 @@ class CodexStreamParser:
         self._tokens = TokenUsage()
         self._usage = ProviderUsage(provider=PROVIDER_NAME)
         self._error: str | None = None
+        self._stderr: list[str] = []
 
     def feed_stdout(self, line: str) -> None:
         """Parse one stdout line, emitting whatever events it carries."""
@@ -114,6 +116,7 @@ class CodexStreamParser:
         """Emit one stderr line as a ``Stderr`` event."""
         stripped = line.rstrip("\n")
         if stripped:
+            self._stderr.append(stripped)
             self._emit(Stderr(stripped))
 
     def finish(self) -> ParsedTurn:
@@ -125,6 +128,11 @@ class CodexStreamParser:
             usage=self._usage,
             cost_usd=None,
             error=self._error,
+            # The last error event is the one that ended the turn; a CLI that
+            # died before writing one left its reason on stderr.
+            error_kind=classify_failure(
+                self._error if self._error is not None else "\n".join(self._stderr)
+            ),
         )
 
     def _handle(self, frame: CodexFrame) -> None:

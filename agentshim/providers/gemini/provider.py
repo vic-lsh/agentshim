@@ -133,7 +133,12 @@ class GeminiProvider:
             session_id = _resumed_session_id(error.argv, "--resume")
             if session_id is not None:
                 return SessionResumeError(
-                    error.argv, error.returncode, session_id, error.stdout, error.stderr
+                    error.argv,
+                    error.returncode,
+                    session_id,
+                    error.stdout,
+                    error.stderr,
+                    detail=error.detail,
                 )
         return error
 

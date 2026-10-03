@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.11.0 (2026-10-03)
+
+A failed turn says why it failed. Additive except that a classified failure of
+a resumed Claude turn is no longer a `SessionResumeError`.
+
+### Added
+
+- `FailureKind` (`TRANSIENT`, `USAGE_LIMIT`, `AUTH`, `OTHER`) on
+  `CliExitError.kind`, and the stream's error text on `CliExitError.detail`.
+  Claude Code classifies from the assistant frame's `error` kind, the result
+  frame's `api_error_status`, and `API Error: <status>` text; Codex from its
+  `error` and `turn.failed` messages. Copilot, Gemini and opencode report
+  `OTHER`.
+- `ParsedTurn.error_kind`, set by a provider's parser.
+- `agentshim.testing.scripted_failure(provider, kind)` and
+  `providers.get_failure_lines`: a real failed Claude or Codex run of each kind.
+
+### Changed
+
+- A resumed Claude turn that failed with a classified kind (an overload, a
+  usage limit, a login problem) raises `CliExitError` with that kind instead of
+  `SessionResumeError`, and the session keeps the conversation.
+
+### Fixed
+
+- `CliExitError`'s message was empty when Claude reported the failure only in
+  its stream (for example `error_max_structured_output_retries`): the message
+  now carries the stream's error text as well as stderr.
+
 ## 0.10.1 (2026-10-03)
 
 ### Fixed

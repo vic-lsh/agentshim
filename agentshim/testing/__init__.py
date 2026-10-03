@@ -14,7 +14,12 @@ from agentshim.core.errors import CliNotFoundError, CliTimeoutError
 from agentshim.core.profile import McpMechanism
 from agentshim.core.usage import TokenUsage
 from agentshim.execution.executor import CommandResult
-from agentshim.providers import get_provider, get_resume_failure_lines, get_scripted_lines
+from agentshim.providers import (
+    get_failure_lines,
+    get_provider,
+    get_resume_failure_lines,
+    get_scripted_lines,
+)
 from agentshim.providers.claude import provider as _claude
 from agentshim.providers.codex.provider import parse_mcp_servers as _parse_codex_mcp_servers
 from agentshim.providers.copilot.provider import parse_mcp_servers as _parse_copilot_mcp_servers
@@ -25,6 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     from pathlib import Path
 
+    from agentshim.core.errors import FailureKind
     from agentshim.core.events import AgentEvent
     from agentshim.execution.executor import CommandRequest, CommandStreamSink
 
@@ -212,6 +218,28 @@ def scripted_resume_failure(provider: str, *, session_id: str | None = None) -> 
     return FakeRun(stdout=list(stdout), stderr=list(stderr), returncode=returncode)
 
 
+def scripted_failure(provider: str, kind: FailureKind, *, session_id: str | None = None) -> FakeRun:
+    """Build a ``FakeRun`` for a turn that fails and classifies as *kind*.
+
+    The run is *provider*'s real report of such a failure (an overload, a
+    usage limit, a rejected login, or an unclassifiable failure), so the
+    raised ``CliExitError`` carries ``kind`` through the real parser. A
+    consumer can therefore test its retry policy without knowing how any
+    CLI phrases a failure.
+
+    Args:
+        provider: A provider whose stream reports failure kinds (``claude``
+            or ``codex``); any other raises ``ValueError``.
+        kind: The ``FailureKind`` the raised error must carry.
+        session_id: The conversation the failed run names, if any.
+
+    Returns:
+        A ``FakeRun`` with a nonzero exit code.
+    """
+    stdout, stderr, returncode = get_failure_lines(provider)(kind, session_id=session_id)
+    return FakeRun(stdout=list(stdout), stderr=list(stderr), returncode=returncode)
+
+
 def installed_mcp_servers(
     provider: str, request: CommandRequest, workspace: Path
 ) -> dict[str, dict[str, Any]]:
@@ -325,6 +353,7 @@ __all__ = [
     "RecordingEventHandler",
     "TokenUsage",
     "installed_mcp_servers",
+    "scripted_failure",
     "scripted_resume_failure",
     "scripted_turn",
 ]

@@ -37,6 +37,7 @@ from agentshim import (
     SchemaDialectError,
     SessionResumeError,
     SessionStarted,
+    SkillScope,
     StdioMcpServer,
     TokenUsage,
     TurnRequest,
@@ -801,3 +802,31 @@ def test_python_is_not_required_on_the_path_for_argv() -> None:
     agent.run("go")
     assert next(iter(executor.requests[0].argv)) == "/opt/bin/claude"
     assert sys.executable  # sanity: the test runner has an interpreter
+
+
+class TestSkillScope:
+    def test_a_session_scope_reaches_every_turns_argv(self) -> None:
+        executor = FakeExecutor([scripted_turn("claude", text="ok", session_id="s1")] * 2)
+        session = _agent(executor).start_session(skill_scope=SkillScope.PROJECT)
+        session.turn("one")
+        session.turn("two")
+        assert all("--setting-sources" in list(request.argv) for request in executor.requests)
+
+    def test_the_default_scope_is_all(self) -> None:
+        executor = FakeExecutor(scripted_turn("claude", text="ok"))
+        session = _agent(executor).start_session()
+        session.turn("hi")
+        assert session.skill_scope is SkillScope.ALL
+        assert "--setting-sources" not in list(executor.requests[0].argv)
+
+    def test_a_one_shot_run_takes_a_scope(self) -> None:
+        executor = FakeExecutor(scripted_turn("claude", text="ok"))
+        _agent(executor).run("hi", skill_scope=SkillScope.PROJECT)
+        assert "--setting-sources" in list(executor.requests[0].argv)
+
+    def test_an_unsupported_scope_is_refused_before_any_turn(self) -> None:
+        executor = FakeExecutor(scripted_turn("gemini", text="ok"))
+        agent = CliAgent("gemini", executor=executor, env=dict(_ENV))
+        with pytest.raises(ProviderCapabilityError, match="scope 'project'"):
+            agent.start_session(skill_scope=SkillScope.PROJECT)
+        assert executor.requests == []

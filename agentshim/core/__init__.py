@@ -58,6 +58,7 @@ from .profile import (
     OutputSchemaStyle,
     ProviderProfile,
     SchemaDialect,
+    SkillScope,
     SkillSignal,
 )
 from .provider import ArgvContext, McpInstallation, ParsedTurn, Provider, StreamParser
@@ -110,6 +111,7 @@ __all__ = [
     "SessionResumeError",
     "SessionStarted",
     "SkillInvoked",
+    "SkillScope",
     "SkillSignal",
     "SkillSummary",
     "SkillTracker",

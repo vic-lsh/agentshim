@@ -61,6 +61,22 @@ class SkillSignal(Enum):
     INFERRED = "inferred"
 
 
+class SkillScope(Enum):
+    """Which skills a session's CLI may discover.
+
+    ``ALL``: whatever the CLI finds by default, including the user's own
+    skills and installed plugins. ``PROJECT``: only the skills under the
+    session's working directory (the profile's ``skill_dirs``) plus the
+    CLI's built-in ones, so the user running agentshim does not change what
+    the agent is offered. A provider declares the scopes it can enforce in
+    ``ProviderProfile.skill_scopes``; asking for another one is an error,
+    never a silent ``ALL``.
+    """
+
+    ALL = "all"
+    PROJECT = "project"
+
+
 def _no_container_env() -> Mapping[str, str]:
     """Empty read-only default: a frozen spec must not carry a mutable one.
 
@@ -109,3 +125,5 @@ class ProviderProfile:
     skill_discovery: SkillSignal = SkillSignal.NONE
     #: Whether the stream reveals skill loads (``SkillInvoked``).
     skill_invocation: SkillSignal = SkillSignal.NONE
+    #: The ``SkillScope`` values a session on this provider may request.
+    skill_scopes: frozenset[SkillScope] = frozenset({SkillScope.ALL})

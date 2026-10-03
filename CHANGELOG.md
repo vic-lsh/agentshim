@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.9.0 (2026-10-03)
+
+Skill isolation. Additive: the default scope keeps today's behaviour.
+
+### Added
+
+- `SkillScope` (`ALL`, `PROJECT`) and `start_session(skill_scope=...)` /
+  `run(skill_scope=...)`. `PROJECT` offers only the workspace's skills and
+  the CLI's built-in ones, not the user's personal skills or plugins.
+- `ProviderProfile.skill_scopes` declares the scopes a provider enforces;
+  asking for another raises `ProviderCapabilityError` from `start_session`.
+- `ArgvContext.skill_scope` carries the session's scope to `build_argv`.
+- Claude Code: `PROJECT` passes `--setting-sources project,local`, which also
+  skips user settings and `~/.claude/CLAUDE.md`; credentials still work.
+- Codex: `PROJECT` sets `features.plugins=false` and disables every user
+  `SKILL.md` (`$CODEX_HOME/skills` except `.system`, `~/.agents/skills`)
+  through `skills.config`.
+- Gemini, opencode and Copilot support `ALL` only.
+- Live e2e: `SkillScope.PROJECT` hides a skill seeded in a relocated user
+  home while the workspace skill stays offered (`tests/e2e/test_skills_e2e.py`).
+
 ## 0.8.0 (2026-10-03)
 
 Skill observability. Additive: a caller that ignores the new events and the

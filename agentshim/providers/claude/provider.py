@@ -12,6 +12,7 @@ from agentshim.core.profile import (
     OutputSchemaStyle,
     ProviderProfile,
     SchemaDialect,
+    SkillScope,
     SkillSignal,
 )
 
@@ -30,6 +31,17 @@ if TYPE_CHECKING:
 
 MCP_CONFIG_FILENAME = ".mcp.json"
 MCP_SERVER_KEY = "mcpServers"
+
+#: ``SkillScope.PROJECT``: load settings only from the workspace's
+#: ``.claude/settings.json`` and ``.claude/settings.local.json`` (plus
+#: ``--settings`` and managed policy, which always apply). Leaving out the
+#: ``user`` source drops ``~/.claude/skills``, the user's plugins (with their
+#: skills, hooks and MCP servers), ``~/.claude/CLAUDE.md`` and the user's
+#: settings (default model, permissions, hooks, ``env``, ``apiKeyHelper``).
+#: Credentials are not settings: OAuth in ``.credentials.json`` and the
+#: ``auth_env_vars`` keep working. Claude Code's built-in skills and claude.ai
+#: account connectors are not user settings and stay.
+PROJECT_SETTING_SOURCES = ("--setting-sources", "project,local")
 
 PROFILE = ProviderProfile(
     name="claude",
@@ -54,6 +66,7 @@ PROFILE = ProviderProfile(
     # ``system/init`` lists ``skills``; the ``Skill`` tool call names one.
     skill_discovery=SkillSignal.STRUCTURED,
     skill_invocation=SkillSignal.STRUCTURED,
+    skill_scopes=frozenset({SkillScope.ALL, SkillScope.PROJECT}),
     container_install=(
         "apt-get update && apt-get install -y --no-install-recommends curl ca-certificates",
         "curl -fsSL https://claude.ai/install.sh | bash",
@@ -117,6 +130,8 @@ class ClaudeProvider:
             "stream-json",
             "--verbose",
         ]
+        if ctx.skill_scope is SkillScope.PROJECT:
+            argv += PROJECT_SETTING_SOURCES
         if ctx.model:
             argv += ["--model", ctx.model]
         if ctx.reasoning_effort:

@@ -190,8 +190,11 @@ AgentShimError
 `CliExitError.kind` says why a turn failed, so a caller can pick a policy
 without knowing how any CLI words its errors: `TRANSIENT` (an overload, rate
 limit or server error that waiting may outlast), `USAGE_LIMIT` (a quota or
-billing limit), `AUTH` (credentials), or `OTHER`. Claude Code and Codex
-classify their failures; the other providers report `OTHER`.
+billing limit), `AUTH` (credentials), `SCHEMA` (the provider gave up producing
+output that matches the requested schema; `.detail` holds the last validation
+errors and the conversation survives, so a correction can follow), or `OTHER`.
+Claude Code and Codex classify their failures; the other providers report
+`OTHER`. Codex never reports `SCHEMA`: it constrains decoding to the schema.
 `agentshim.testing.scripted_failure(provider, kind)` scripts each one.
 
 ## Adding a provider

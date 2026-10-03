@@ -29,6 +29,10 @@ class FailureKind(str, Enum):
     USAGE_LIMIT = "usage_limit"
     #: Missing, expired, or rejected credentials.
     AUTH = "auth"
+    #: The provider gave up producing output that matches the requested output
+    #: schema. ``detail`` carries the last validation errors it reported, and
+    #: the conversation survives: a correction can be sent as the next turn.
+    SCHEMA = "schema"
     #: Anything else, including every failure a provider cannot classify.
     OTHER = "other"
 

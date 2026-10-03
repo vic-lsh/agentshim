@@ -589,15 +589,19 @@ parser sees the structured frames a CLI writes about a failed request, so it
 sets `ParsedTurn.error_kind`, and the session puts that and the stream's
 error text on `CliExitError.kind` and `.detail`. Claude reads the assistant
 frame's `error` kind, the result frame's `api_error_status`, and, for older
-builds, `API Error: <status>` in the result text; Codex reads the text of its
-last `error`/`turn.failed` event. Each reads stderr only when the stream
+builds, `API Error: <status>` in the result text, and reports `SCHEMA` for the
+`error_max_structured_output_retries` subtype with the last rejected
+`StructuredOutput` call's validation errors as the detail; Codex reads the text of its
+last `error`/`turn.failed` event, and never reports `SCHEMA` because
+`--output-schema` is sent as a strict response format that constrains decoding
+(a `maxLength` or `minItems` is met by truncating or padding the output, exit 0). Each reads stderr only when the stream
 reported nothing, and never tool output. The other providers report `OTHER`.
 The error text goes into the message because Claude reports its failures in
 the stream and leaves stderr empty.
 
 **Claude, Gemini and opencode map an unclassified nonzero exit on a resumed
 turn to `SessionResumeError`.** A Claude failure the parser classified as
-`TRANSIENT`, `USAGE_LIMIT` or `AUTH` happened inside a conversation that
+`TRANSIENT`, `USAGE_LIMIT`, `AUTH` or `SCHEMA` happened inside a conversation that
 resumed, so it keeps its kind and the session keeps the conversation. None of those CLIs gives a distinguishable exit for
 a missing transcript, and a resumed turn that failed is unusable either way:
 the caller has to start a fresh conversation, and without the typed error a

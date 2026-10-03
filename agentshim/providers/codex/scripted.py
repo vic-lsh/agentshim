@@ -130,8 +130,15 @@ _FAILURES: dict[FailureKind, str] = {
         "(https://chatgpt.com/explore/plus), or try again in 2 hours."
     ),
     FailureKind.AUTH: "unexpected status 401 Unauthorized: Missing bearer authentication",
-    FailureKind.OTHER: "model response did not match the output schema",
+    FailureKind.OTHER: "Codex ran out of room in the model's context window.",
 }
+
+
+#: Codex sends ``--output-schema`` to the model as a strict response format,
+#: so decoding is constrained to the schema and a turn never fails over it.
+_NO_SCHEMA_FAILURE = (
+    "codex never fails a turn over its output schema: decoding is constrained to the schema"
+)
 
 
 def failure_lines(
@@ -140,7 +147,8 @@ def failure_lines(
     """Build the stdout, stderr and exit code of a turn that fails with *kind*.
 
     Codex reports the failure as an ``error`` event followed by
-    ``turn.failed``, both carrying the same message.
+    ``turn.failed``, both carrying the same message. ``SCHEMA`` raises
+    ``ValueError``: Codex has no such failure.
 
     Args:
         kind: The classification the scripted failure must produce.
@@ -149,7 +157,9 @@ def failure_lines(
     Returns:
         ``(stdout, stderr, returncode)`` for a ``FakeRun``.
     """
-    message = _FAILURES[kind]
+    message = _FAILURES.get(kind)
+    if message is None:
+        raise ValueError(_NO_SCHEMA_FAILURE)
     lines: list[str] = []
     if session_id is not None:
         lines.append(_line({"type": "thread.started", "thread_id": session_id}))

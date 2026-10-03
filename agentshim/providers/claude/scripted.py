@@ -120,9 +120,7 @@ def resume_failure_lines(*, session_id: str | None = None) -> tuple[list[str], l
 
 
 #: What Claude writes for a failed request of each kind: the assistant
-#: ``error`` kind, the HTTP status, and the message. ``OTHER`` is a turn that
-#: ran but could not satisfy its output schema, the subtype Claude reports
-#: when no StructuredOutput call validated.
+#: ``error`` kind, the HTTP status, and the message.
 _FAILURES: dict[FailureKind, tuple[str, int, str]] = {
     FailureKind.TRANSIENT: (
         "overloaded",
@@ -133,6 +131,10 @@ _FAILURES: dict[FailureKind, tuple[str, int, str]] = {
     FailureKind.AUTH: ("authentication_failed", 401, "Invalid API key \u00b7 Please run /login"),
 }
 
+#: The validation errors Claude's ``StructuredOutput`` tool returns for a
+#: submission that does not match the schema.
+SCHEMA_ERRORS = "Output does not match required schema: root: must have required property 'answer'"
+
 
 def failure_lines(
     kind: FailureKind, *, session_id: str | None = None
@@ -140,8 +142,10 @@ def failure_lines(
     """Build the stdout, stderr and exit code of a turn that fails with *kind*.
 
     An API failure is the synthetic assistant message Claude writes for it,
-    then an error ``result`` frame with the HTTP status. ``OTHER`` is an
-    ``error_max_structured_output_retries`` result, which names no API error.
+    then an error ``result`` frame with the HTTP status. ``SCHEMA`` is a
+    ``StructuredOutput`` call the tool rejects, then an
+    ``error_max_structured_output_retries`` result. ``OTHER`` is an
+    ``error_during_execution`` result, which names no API error.
 
     Args:
         kind: The classification the scripted failure must produce.
@@ -156,17 +160,38 @@ def failure_lines(
     result: dict[str, Any] = {"type": "result", "is_error": True, "num_turns": 1}
     if session_id is not None:
         result["session_id"] = session_id
-    failure = _FAILURES.get(kind)
-    if failure is None:
-        result["subtype"] = "error_max_structured_output_retries"
-        result["errors"] = ["no StructuredOutput call produced a valid output"]
+    if kind is FailureKind.SCHEMA:
+        lines.extend(_rejected_structured_output())
+        result.update(subtype="error_max_structured_output_retries", errors=[])
+    elif kind is FailureKind.OTHER:
+        result.update(subtype="error_during_execution", errors=["the turn stopped unexpectedly"])
     else:
-        error, status, text = failure
+        error, status, text = _FAILURES[kind]
         message = {"role": "assistant", "content": [{"type": "text", "text": text}]}
         lines.append(_line({"type": "assistant", "message": message, "error": error}))
         result.update(subtype="success", result=text, api_error_status=status)
     lines.append(_line(result))
     return lines, [], 1
+
+
+def _rejected_structured_output() -> list[str]:
+    """One ``StructuredOutput`` call and the validation error it got back."""
+    call: dict[str, Any] = {
+        "type": "tool_use",
+        "id": "toolu_schema",
+        "name": "StructuredOutput",
+        "input": {},
+    }
+    rejection = {
+        "type": "tool_result",
+        "tool_use_id": "toolu_schema",
+        "content": SCHEMA_ERRORS,
+        "is_error": True,
+    }
+    return [
+        _line({"type": "assistant", "message": {"role": "assistant", "content": [call]}}),
+        _line({"type": "user", "message": {"role": "user", "content": [rejection]}}),
+    ]
 
 
 def _usage_payload(usage: TokenUsage | None) -> dict[str, Any]:

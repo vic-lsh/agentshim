@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.1 (2026-10-03)
+
+### Fixed
+
+- Codex `McpScope.SESSION` failed the whole turn with `invalid transport`
+  when the CLI could not see a config file agentshim had scanned (a confined
+  or containerized home): `enabled=false` alone defines an entry with no
+  transport. Each disabled server now restates its own `command` or `url`, so
+  the override is a complete, disabled entry whether or not the file is seen.
+
 ## 0.10.0 (2026-10-03)
 
 MCP isolation. Additive: the default scope keeps today's behaviour. Adds a

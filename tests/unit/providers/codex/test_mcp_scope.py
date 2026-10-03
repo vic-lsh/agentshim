@@ -123,3 +123,27 @@ def test_all_scope_leaves_servers_alone(tmp_path: Path) -> None:
 def test_both_scopes_together_emit_the_plugins_flag_once(tmp_path: Path) -> None:
     argv = _argv({"HOME": str(tmp_path)}, skill_scope=SkillScope.PROJECT)
     assert argv.count("features.plugins=false") == 1
+
+
+@given(user=_KEYS)
+def test_every_disabled_server_restates_its_transport(user: list[str]) -> None:
+    """Disabling alone fails a CLI that cannot see the file ("invalid transport").
+
+    The turn's argv must therefore define each disabled entry completely, so
+    it is valid whether or not Codex reads the config file agentshim scanned.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        _write_config(Path(tmp) / ".codex" / "config.toml", user)
+        overrides = _overrides(_argv({"HOME": tmp}))
+        for key in user:
+            assert overrides[f"mcp_servers.{key}.command"] == "x"
+            assert overrides[f"mcp_servers.{key}.enabled"] is False
+
+
+def test_a_remote_server_restates_its_url(tmp_path: Path) -> None:
+    config = tmp_path / ".codex" / "config.toml"
+    config.parent.mkdir()
+    config.write_text('[mcp_servers.remote]\nurl = "https://example.invalid/mcp"\n')
+    overrides = _overrides(_argv({"HOME": str(tmp_path)}))
+    assert overrides["mcp_servers.remote.url"] == "https://example.invalid/mcp"
+    assert "mcp_servers.remote.command" not in overrides

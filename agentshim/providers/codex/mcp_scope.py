@@ -22,7 +22,7 @@ else:  # pragma: no cover - exercised on the 3.10 CI leg
     import tomli as tomllib  # pyright: ignore[reportMissingImports]
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable, Mapping
+    from collections.abc import Collection, Mapping
 
 _SYSTEM_CONFIG = "/etc/codex/config.toml"
 _BARE_KEY = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
@@ -32,32 +32,47 @@ _BARE_KEY = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234
 _MCP_FEATURES = ("plugins", "apps")
 
 
-def configured_server_keys(env: Mapping[str, str], cwd: str | None) -> list[str]:
-    """Every ``mcp_servers`` key the config files Codex would read define.
+def configured_servers(env: Mapping[str, str], cwd: str | None) -> dict[str, str]:
+    """Every configured ``mcp_servers`` key, with a ``--config`` flag pinning its transport.
 
     Reads the user's ``$CODEX_HOME/config.toml`` (default ``~/.codex``), the
     system config, and ``<cwd>/.codex/config.toml``. A file that is missing or
     not valid TOML contributes nothing (Codex reports a broken config itself).
-    The scan runs where agentshim runs, so a CLI in a container is only
-    covered when the container shares these files.
+    The value is the entry's own ``command`` or ``url`` rendered as an
+    override (empty when it has neither). Disabling an entry with
+    ``enabled=false`` alone fails the whole turn ("invalid transport") when
+    the CLI cannot see the file agentshim scanned, as in a container or a
+    confined home; restating the transport makes the override a complete,
+    disabled entry either way.
     """
     home = env.get("HOME") or os.path.expanduser("~")  # noqa: PTH111 - a str contract, not a Path
     codex_home = env.get("CODEX_HOME") or os.path.join(home, ".codex")  # noqa: PTH118
     paths = [os.path.join(codex_home, "config.toml"), _SYSTEM_CONFIG]  # noqa: PTH118
     if cwd is not None:
         paths.append(os.path.join(cwd, ".codex", "config.toml"))  # noqa: PTH118
-    keys: list[str] = []
+    servers: dict[str, str] = {}
     for path in paths:
-        keys += _server_keys(path)
-    return list(dict.fromkeys(keys))
+        servers.update(_servers(path))
+    return servers
 
 
-def _server_keys(path: str) -> Iterable[str]:
+def _servers(path: str) -> dict[str, str]:
     config = _read_toml(path)
-    servers: object = config.get("mcp_servers")
-    if not isinstance(servers, dict):
-        return []
-    return [str(key) for key in cast("dict[object, object]", servers)]
+    table: object = config.get("mcp_servers")
+    if not isinstance(table, dict):
+        return {}
+    found: dict[str, str] = {}
+    for key, entry in cast("dict[object, object]", table).items():
+        pinned = ""
+        if isinstance(entry, dict):
+            fields = cast("dict[str, object]", entry)
+            for field in ("command", "url"):
+                value = fields.get(field)
+                if isinstance(value, str):
+                    pinned = f"{field}={toml_str(value)}"
+                    break
+        found[str(key)] = pinned
+    return found
 
 
 def _read_toml(path: str) -> dict[str, Any]:
@@ -85,9 +100,14 @@ def session_scope_overrides(
     names the user's config does not use.
     """
     flags: list[str] = []
-    for key in configured_server_keys(env, cwd):
-        if key not in given_keys:
-            flags += ["--config", f"mcp_servers.{_table_key(key)}.enabled=false"]
+    for key, pinned in configured_servers(env, cwd).items():
+        if key in given_keys:
+            continue
+        prefix = f"mcp_servers.{_table_key(key)}"
+        if pinned:
+            name, _, value = pinned.partition("=")
+            flags += ["--config", f"{prefix}.{name}={value}"]
+        flags += ["--config", f"{prefix}.enabled=false"]
     for feature in _MCP_FEATURES:
         flags += ["--config", f"features.{feature}=false"]
     return flags

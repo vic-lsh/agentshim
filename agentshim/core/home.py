@@ -19,8 +19,10 @@ refreshes (``AuthManager::refresh_token``'s guarded reload).
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from ._files import real_path
 
@@ -80,11 +82,24 @@ def prepare_config_home(
 
 
 def _link(link: Path, target: Path) -> None:
-    """Point *link* at *target*, atomically replacing any file already there."""
+    """Point *link* at *target*, atomically replacing any file already there.
+
+    Safe to call concurrently for the same *link* from threads or processes:
+    each call stages its own uniquely named link, and ``replace`` is atomic, so
+    the last writer wins with the same target. A link that already points at
+    *target* is success, whoever made it.
+    """
     if link.is_symlink() and link.readlink() == target:
         return
     link.parent.mkdir(parents=True, exist_ok=True)
-    staged = link.with_name(f".{link.name}.{os.getpid()}.link")
-    staged.unlink(missing_ok=True)
+    staged = link.with_name(
+        f".{link.name}.{os.getpid()}.{threading.get_ident()}.{uuid4().hex}.link"
+    )
     staged.symlink_to(target)
-    staged.replace(link)
+    try:
+        staged.replace(link)
+    except OSError:
+        staged.unlink(missing_ok=True)
+        if link.is_symlink() and link.readlink() == target:
+            return
+        raise

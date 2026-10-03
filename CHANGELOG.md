@@ -23,8 +23,9 @@ new `TurnResult` field sees no change, but an exhaustive match over
   under a `skills/` directory. `codex exec --json` does not list offered
   skills, so discovery is unknown.
 - Gemini, opencode and Copilot report unknown for both.
-- `scripted_turn(..., skills_offered=[...])` scripts the offered list (Claude
-  only; other providers raise `ValueError`).
+- `scripted_turn(..., skills_offered=[...], skills_invoked=[...])` scripts the
+  offered list (Claude) and skill loads (Claude, Codex) in each provider's own
+  format; a provider whose stream cannot carry them raises `ValueError`.
 - Recorded skill streams under `tests/fixtures/{claude,codex}/` and a live
   e2e suite, `tests/e2e/test_skills_e2e.py`, with a positive and a negative
   turn per provider.

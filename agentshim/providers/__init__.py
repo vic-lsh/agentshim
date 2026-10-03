@@ -45,14 +45,16 @@ class ScriptedLines(Protocol):
         tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
         structured_output: object | None = None,
         skills_offered: Sequence[str] | None = None,
+        skills_invoked: Sequence[str] = (),
     ) -> list[str]:
         """Return the stdout lines of one scripted turn.
 
         ``tool_calls`` entries are ``(tool, args, output)``;
         ``structured_output`` is any JSON-serializable value the turn should
         report as its structured payload. ``skills_offered`` is the skill
-        list the provider announces; a provider whose stream cannot carry one
-        raises ``ValueError``.
+        list the provider announces and ``skills_invoked`` the skills the turn
+        loads, each scripted the way the provider shows a load; a provider
+        whose stream cannot carry either raises ``ValueError``.
         """
         ...
 

@@ -103,3 +103,16 @@ def test_a_scripted_claude_turn_offers_skills() -> None:
 def test_scripting_an_offered_list_fails_where_the_stream_has_none(provider: str) -> None:
     with pytest.raises(ValueError, match="offered skills"):
         scripted_turn(provider, text="ok", skills_offered=["a"])
+
+
+@pytest.mark.parametrize("provider", ["claude", "codex"])
+def test_a_scripted_skill_load_is_reported_in_order(provider: str) -> None:
+    run = scripted_turn(provider, text="ok", skills_invoked=["a", "b"])
+    result = CliAgent(provider, executor=FakeExecutor(run)).run("hi")
+    assert [event.name for event in result.skills.invocations or ()] == ["a", "b"]
+
+
+@pytest.mark.parametrize("provider", ["copilot", "gemini", "opencode"])
+def test_scripting_a_skill_load_fails_where_the_stream_has_none(provider: str) -> None:
+    with pytest.raises(ValueError, match="skill loads"):
+        scripted_turn(provider, text="ok", skills_invoked=["a"])

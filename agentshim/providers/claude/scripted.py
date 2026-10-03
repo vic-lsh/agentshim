@@ -25,14 +25,20 @@ def scripted_lines(  # noqa: PLR0913
     tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
     structured_output: object | None = None,
     skills_offered: Sequence[str] | None = None,
+    skills_invoked: Sequence[str] = (),
 ) -> list[str]:
     """Build the stdout of one Claude turn.
 
     ``tool_calls`` entries are ``(tool, args, output)`` and become a
     ``tool_use`` block plus the matching ``tool_result`` frame; a ``Skill``
-    call with ``{"skill": name}`` is a skill load. ``skills_offered`` goes in
-    the ``init`` frame's ``skills`` list.
+    call with ``{"skill": name}`` is a skill load, and each of
+    ``skills_invoked`` becomes one ahead of ``tool_calls``. ``skills_offered``
+    goes in the ``init`` frame's ``skills`` list.
     """
+    tool_calls = [
+        *(("Skill", {"skill": name}, f"Launching skill: {name}") for name in skills_invoked),
+        *tool_calls,
+    ]
     lines: list[str] = []
     if session_id is not None or skills_offered is not None:
         init: dict[str, Any] = {"type": "system", "subtype": "init"}

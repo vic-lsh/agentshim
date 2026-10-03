@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from agentshim.core.errors import FailureKind, ProviderCapabilityError, SessionResumeError
 from agentshim.core.mcp import HttpMcpServer, NoopInstallation, StdioMcpServer, install_config_file
 from agentshim.core.profile import (
+    ConfigScope,
     McpMechanism,
     McpScope,
     OutputSchemaStyle,
@@ -44,6 +45,14 @@ MCP_SERVER_KEY = "mcpServers"
 #: account connectors are not user settings and stay.
 PROJECT_SETTING_SOURCES = ("--setting-sources", "project,local")
 
+#: ``ConfigScope.PROJECT``: the same ``--setting-sources`` drops the user's
+#: settings (hooks, ``env``, permissions, default model), ``~/.claude/CLAUDE.md``
+#: and plugins; auto-memory is not a setting source and is switched off in the
+#: turn's ``--settings`` instead, so ``~/.claude/projects/*/memory`` is neither
+#: read nor written. Built-in skills, the workspace's ``CLAUDE.md``,
+#: ``.claude/`` settings and skills, and credentials keep working.
+NO_AUTO_MEMORY_SETTINGS = {"autoMemoryEnabled": False}
+
 #: ``McpScope.SESSION``: ``--strict-mcp-config`` makes ``--mcp-config`` the
 #: only source of MCP servers. It drops the user's and the project's
 #: (``.mcp.json``) servers, plugin servers and claude.ai account connectors,
@@ -75,6 +84,7 @@ PROFILE = ProviderProfile(
     skill_invocation=SkillSignal.STRUCTURED,
     skill_scopes=frozenset({SkillScope.ALL, SkillScope.PROJECT}),
     mcp_scopes=frozenset({McpScope.ALL, McpScope.SESSION}),
+    config_scopes=frozenset({ConfigScope.ALL, ConfigScope.PROJECT}),
     container_install=(
         "apt-get update && apt-get install -y --no-install-recommends curl ca-certificates",
         "curl -fsSL https://claude.ai/install.sh | bash",
@@ -138,7 +148,8 @@ class ClaudeProvider:
             "stream-json",
             "--verbose",
         ]
-        if ctx.skill_scope is SkillScope.PROJECT:
+        isolate_config = ctx.config_scope is ConfigScope.PROJECT
+        if ctx.skill_scope is SkillScope.PROJECT or isolate_config:
             argv += PROJECT_SETTING_SOURCES
         if ctx.model:
             argv += ["--model", ctx.model]
@@ -147,6 +158,8 @@ class ClaudeProvider:
         if ctx.schema_inline:
             argv += ["--json-schema", ctx.schema_inline]
         settings = build_settings(self.sandbox, hooks=self.hooks)
+        if isolate_config:
+            settings.update(NO_AUTO_MEMORY_SETTINGS)
         if settings:
             argv += ["--settings", json.dumps(settings)]
         if ctx.mcp_scope is McpScope.SESSION:

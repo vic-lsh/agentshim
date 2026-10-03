@@ -93,6 +93,26 @@ class McpScope(Enum):
     SESSION = "session"
 
 
+class ConfigScope(Enum):
+    """Which of the user's own CLI configuration a session loads.
+
+    ``ALL``: whatever the CLI loads by default: the user's settings, hooks,
+    global instructions (``~/.claude/CLAUDE.md``, ``$CODEX_HOME/AGENTS.md``),
+    notify commands, profiles and memory. ``PROJECT``: none of that; the
+    session sees the workspace's own instructions and settings plus what
+    agentshim passes for the turn, so the user running agentshim does not
+    change what the agent does. Credentials keep working. A provider that
+    lists a ``ProviderProfile.config_home_files`` can only isolate through a
+    dedicated home: ``prepare_config_home`` builds it and returns the
+    environment that points the CLI at it. A provider declares the scopes it
+    can enforce in ``ProviderProfile.config_scopes``; asking for another one
+    is an error, never a silent ``ALL``.
+    """
+
+    ALL = "all"
+    PROJECT = "project"
+
+
 def _no_container_env() -> Mapping[str, str]:
     """Empty read-only default: a frozen spec must not carry a mutable one.
 
@@ -145,3 +165,10 @@ class ProviderProfile:
     skill_scopes: frozenset[SkillScope] = frozenset({SkillScope.ALL})
     #: The ``McpScope`` values a session on this provider may request.
     mcp_scopes: frozenset[McpScope] = frozenset({McpScope.ALL})
+    #: The ``ConfigScope`` values a session on this provider may request.
+    config_scopes: frozenset[ConfigScope] = frozenset({ConfigScope.ALL})
+    #: Files, relative to the state root (``state_dirs[0]``, or
+    #: ``$<state_root_env>``), that ``prepare_config_home`` copies into a
+    #: dedicated home for ``ConfigScope.PROJECT``. Empty when the provider
+    #: isolates by flags alone and needs no home.
+    config_home_files: tuple[str, ...] = ()

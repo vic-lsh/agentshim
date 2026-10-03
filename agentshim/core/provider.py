@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from .errors import FailureKind
-from .profile import McpScope, SkillScope
+from .profile import ConfigScope, McpScope, SkillScope
 from .usage import ProviderUsage
 
 if TYPE_CHECKING:
@@ -49,6 +49,9 @@ class ArgvContext:
     #: A provider enforcing ``McpScope.SESSION`` renders them itself when its
     #: installed config file is not enough to exclude the user's own.
     mcp_servers: Sequence[McpServer] = ()
+    #: Which of the user's own CLI configuration the CLI may load; the
+    #: session has already checked that the provider's profile supports it.
+    config_scope: ConfigScope = ConfigScope.ALL
 
 
 @dataclass(frozen=True)

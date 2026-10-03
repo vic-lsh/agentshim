@@ -43,6 +43,7 @@ from .events import (
     UsageReport,
     compose_event_handlers,
 )
+from .home import prepare_config_home
 from .mcp import (
     ConfigFileInstallation,
     FlagsInstallation,
@@ -55,6 +56,7 @@ from .mcp import (
 )
 from .pricing import ModelPricing, PricingTable, cost_usd, default_pricing, price_for
 from .profile import (
+    ConfigScope,
     McpMechanism,
     McpScope,
     OutputSchemaStyle,
@@ -82,6 +84,7 @@ __all__ = [
     "CliTimeoutError",
     "CompositeEventHandler",
     "ConfigFileInstallation",
+    "ConfigScope",
     "ConsoleEventHandler",
     "EventHandlerBase",
     "FailureKind",
@@ -142,5 +145,6 @@ __all__ = [
     "normalize",
     "normalized_usage",
     "parse_json_object",
+    "prepare_config_home",
     "price_for",
 ]

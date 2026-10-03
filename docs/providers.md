@@ -207,6 +207,8 @@ profile.skill_discovery            # SkillSignal: does the stream list offered s
 profile.skill_invocation           # SkillSignal: does the stream reveal skill loads?
 profile.skill_scopes               # frozenset[SkillScope] a session may request
 profile.mcp_scopes                 # frozenset[McpScope] a session may request
+profile.config_scopes              # frozenset[ConfigScope] a session may request
+profile.config_home_files          # state-root files a ConfigScope.PROJECT home carries over
 profile.container_install          # shell commands installing the CLI
 ```
 
@@ -228,6 +230,7 @@ before the process starts.
 | skill loads | `Skill` tool call, or `Read` of a `SKILL.md` (STRUCTURED) | shell read of a `SKILL.md` (INFERRED) | unknown | unknown | unknown |
 | `SkillScope.PROJECT` | `--setting-sources project,local` | `features.plugins=false`, user skills off in `skills.config` | refused | refused | refused |
 | `McpScope.SESSION` | `--strict-mcp-config` and the turn's servers as inline `--mcp-config` | `enabled=false` on configured servers, `features.plugins=false`, `features.apps=false` | refused | refused | refused |
+| `ConfigScope.PROJECT` | `--setting-sources project,local`, `autoMemoryEnabled=false` | dedicated `CODEX_HOME` from `prepare_config_home`, `--ignore-user-config --disable memories` | refused | refused | refused |
 
 `start_session(skill_scope=SkillScope.PROJECT)` (also on `run`) offers the
 agent only the workspace's skills (`profile.skill_dirs`) and the CLI's
@@ -265,6 +268,39 @@ enforce it raises `ProviderCapabilityError` from `start_session`.
   connectors) are switched off as features. The scan runs where agentshim
   runs. Give session servers names the user's config does not use: Codex
   merges same-named entries field by field.
+
+`start_session(config_scope=ConfigScope.PROJECT)` (also on `run`) loads none
+of the user's own CLI configuration: settings, hooks, global instructions,
+notify commands, profiles and memory. The workspace's own instructions and
+settings, the turn's flags and credentials keep working. It is independent of
+the skill and MCP scopes. Verified against Claude Code 2.1.288 and Codex
+0.156.1 by seeding each source with a code word or a hook that touches a file.
+
+| Source | Claude Code | Codex |
+|---|---|---|
+| user hooks | `--setting-sources` (`settings.json` hooks) | dedicated home (`hooks.json`) |
+| global instructions | `--setting-sources` (`~/.claude/CLAUDE.md`) | dedicated home (`AGENTS.md`) |
+| user settings, `env`, profiles, notify | `--setting-sources` | `--ignore-user-config`, dedicated home |
+| memory | `autoMemoryEnabled=false` | dedicated home, `--disable memories` |
+| user skills, plugins | `--setting-sources` | dedicated home |
+| exec-policy rules | n/a | dedicated home |
+
+- Claude Code isolates by flags alone and needs no home: `prepare_config_home`
+  returns `{}` for it. Built-in skills stay.
+- Codex reads `AGENTS.md`, `hooks.json` and `memories/` from `$CODEX_HOME`
+  with no flag to skip them, so the scope needs a state root of its own.
+  `prepare_config_home(profile, home, env)` links `profile.config_home_files`
+  (`auth.json`) from the state root `env` selects into `home` as symlinks and
+  returns `{"CODEX_HOME": home}` to merge into the agent's environment. A link,
+  not a copy: Codex rotates the OAuth refresh token on every refresh and
+  rejects a reused one, and it saves `auth.json` by truncating and writing in
+  place, which follows the link. Both homes therefore always hold the current
+  login, whichever refreshed it. A sandbox around the CLI must expose the
+  link's target read-write. The home also keeps
+  Codex's conversations, so reuse it for every session that must resume
+  another. `build_argv` refuses the scope when `CODEX_HOME` is unset,
+  relative, or the user's own `~/.codex`. `--ignore-user-config` also means a
+  workspace `.codex/config.toml` is not loaded; pass settings as turn flags.
 
 The prompt is never in argv on any provider: it always goes on stdin, so an
 agent's own `pkill -f` cannot match the CLI by prompt text.

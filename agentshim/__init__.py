@@ -19,6 +19,7 @@ from .core import (
     CliTimeoutError,
     CompositeEventHandler,
     ConfigFileInstallation,
+    ConfigScope,
     ConsoleEventHandler,
     EventHandlerBase,
     FailureKind,
@@ -79,6 +80,7 @@ from .core import (
     normalize,
     normalized_usage,
     parse_json_object,
+    prepare_config_home,
     price_for,
 )
 from .execution import (
@@ -99,7 +101,7 @@ from .providers.copilot import CopilotProvider
 from .providers.gemini import GeminiProvider
 from .providers.opencode import OpencodeProvider
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 
 __all__ = [
     "AgentEvent",
@@ -125,6 +127,7 @@ __all__ = [
     "CommandStreamSink",
     "CompositeEventHandler",
     "ConfigFileInstallation",
+    "ConfigScope",
     "ConsoleEventHandler",
     "CopilotProvider",
     "EventHandlerBase",
@@ -194,6 +197,7 @@ __all__ = [
     "normalize",
     "normalized_usage",
     "parse_json_object",
+    "prepare_config_home",
     "price_for",
     "provider_names",
 ]

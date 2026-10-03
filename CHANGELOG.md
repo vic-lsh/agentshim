@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.13.0 (2026-10-03)
+
+A session can leave out the user's own CLI configuration. Additive.
+
+### Added
+
+- `ConfigScope` (`ALL`, `PROJECT`) as a session option on `start_session` and
+  `run`, `ProviderProfile.config_scopes`, and `ArgvContext.config_scope`.
+  `PROJECT` keeps the user's settings, hooks, global instructions, notify
+  commands, profiles and memory out of every turn. Claude Code:
+  `--setting-sources project,local` and `autoMemoryEnabled=false`. Codex: a
+  dedicated `CODEX_HOME` plus `--ignore-user-config --disable memories`;
+  `build_argv` refuses the scope in the user's own home. Copilot, Gemini and
+  opencode refuse it.
+- `ProviderProfile.config_home_files` and `prepare_config_home`, which build
+  that dedicated home holding only the login and return the environment that
+  points the CLI at it. The login is a symlink to the user's own `auth.json`,
+  so a refresh token Codex rotates in either home stays valid in both.
+
 ## 0.12.0 (2026-10-03)
 
 A turn whose output never matched its schema says so. Additive except that

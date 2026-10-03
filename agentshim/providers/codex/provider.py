@@ -7,8 +7,10 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
+from agentshim.core.home import state_root
 from agentshim.core.mcp import FlagsInstallation, HttpMcpServer, NoopInstallation
 from agentshim.core.profile import (
+    ConfigScope,
     McpMechanism,
     McpScope,
     OutputSchemaStyle,
@@ -85,6 +87,10 @@ PROFILE = ProviderProfile(
     skill_invocation=SkillSignal.INFERRED,
     skill_scopes=frozenset({SkillScope.ALL, SkillScope.PROJECT}),
     mcp_scopes=frozenset({McpScope.ALL, McpScope.SESSION}),
+    config_scopes=frozenset({ConfigScope.ALL, ConfigScope.PROJECT}),
+    # Codex reads AGENTS.md, hooks.json and memories/ from $CODEX_HOME with no
+    # flag to skip them, so ConfigScope.PROJECT needs a home of its own.
+    config_home_files=("auth.json",),
     container_install=(_NODE_INSTALL, _CODEX_INSTALL),
     # Documented Codex CLI variable that relocates ~/.codex (``codex --help``:
     # "Layer $CODEX_HOME/<name>.config.toml on top of the base user config";
@@ -104,6 +110,13 @@ BYPASS_FLAG = "--dangerously-bypass-approvals-and-sandbox"
 
 #: Keeps user and project ``.rules`` files out of a sandboxed turn.
 IGNORE_RULES_FLAG = "--ignore-rules"
+
+#: ``ConfigScope.PROJECT``: ``$CODEX_HOME/config.toml`` (profiles, notify,
+#: ``developer_instructions``, project trust) is not loaded, and the memories
+#: Codex would otherwise write and reread across sessions in the home stay
+#: off. The global ``AGENTS.md``, ``hooks.json`` and existing memories are
+#: kept out by the dedicated home itself (``prepare_config_home``).
+PROJECT_CONFIG_FLAGS = ("--ignore-user-config", "--disable", "memories")
 
 
 class CodexProvider:
@@ -136,6 +149,9 @@ class CodexProvider:
         if ctx.model:
             argv += ["--model", ctx.model]
         argv += _shell_path_config(ctx.env)
+        if ctx.config_scope is ConfigScope.PROJECT:
+            _check_config_home(ctx)
+            argv += PROJECT_CONFIG_FLAGS
         argv += _scope_overrides(ctx)
         if ctx.reasoning_effort:
             argv += ["--config", f"model_reasoning_effort={toml_str(ctx.reasoning_effort)}"]
@@ -248,6 +264,26 @@ def _writable_dirs(config: CodexSandboxConfig, ctx: ArgvContext) -> list[str]:
         if tmpdir:
             dirs.append(tmpdir)
     return dirs
+
+
+def _check_config_home(ctx: ArgvContext) -> None:
+    """Refuse ``ConfigScope.PROJECT`` unless the turn runs in a home of its own.
+
+    The user's global ``AGENTS.md``, hooks and memories live in the state root
+    and no flag skips them, so a turn still pointed at the user's root would
+    load them while claiming to be isolated.
+    """
+    home = ctx.env.get("CODEX_HOME")
+    if not home or not os.path.isabs(home):  # noqa: PTH117 - a str contract, not a Path
+        msg = (
+            "ConfigScope.PROJECT needs CODEX_HOME set to the absolute path of a "
+            f"dedicated home prepared with prepare_config_home (got {home!r})"
+        )
+        raise ProviderCapabilityError(msg)
+    user_root = state_root(PROFILE, {key: v for key, v in ctx.env.items() if key != "CODEX_HOME"})
+    if user_root is not None and os.path.realpath(home) == os.path.realpath(user_root):
+        msg = f"ConfigScope.PROJECT needs a dedicated CODEX_HOME, not the user's own {home}"
+        raise ProviderCapabilityError(msg)
 
 
 def _is_within(path: str, directory: str) -> bool:

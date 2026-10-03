@@ -178,13 +178,21 @@ Everything that escapes `turn()` is an `AgentShimError`:
 AgentShimError
   CliNotFoundError            binary not on PATH
   CliCheckError               binary found but the health check failed
-  CliExitError                nonzero exit: argv, returncode, stdout, stderr
+  CliExitError                nonzero exit: argv, returncode, stdout, stderr,
+                              kind (FailureKind), detail (the stream's error text)
     SessionResumeError        the conversation is gone: session_id
   CliTimeoutError             argv, timeout
   ProviderCapabilityError     the provider cannot do what the request asked
     SchemaDialectError        problems: list[str]
   McpConfigError              config file unreadable or not an object
 ```
+
+`CliExitError.kind` says why a turn failed, so a caller can pick a policy
+without knowing how any CLI words its errors: `TRANSIENT` (an overload, rate
+limit or server error that waiting may outlast), `USAGE_LIMIT` (a quota or
+billing limit), `AUTH` (credentials), or `OTHER`. Claude Code and Codex
+classify their failures; the other providers report `OTHER`.
+`agentshim.testing.scripted_failure(provider, kind)` scripts each one.
 
 ## Adding a provider
 

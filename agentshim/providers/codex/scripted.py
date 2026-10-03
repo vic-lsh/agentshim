@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from agentshim.core.errors import FailureKind
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -118,6 +120,43 @@ def resume_failure_lines(*, session_id: str | None = None) -> tuple[list[str], l
     thread = session_id or "unknown-thread"
     stderr = [f"thread/resume failed: no rollout found for thread {thread}\n"]
     return [], stderr, 1
+
+
+#: The message Codex reports for a failed turn of each kind.
+_FAILURES: dict[FailureKind, str] = {
+    FailureKind.TRANSIENT: "exceeded retry limit, last status: 500 Internal Server Error",
+    FailureKind.USAGE_LIMIT: (
+        "You've hit your usage limit. Upgrade to Plus to continue using Codex "
+        "(https://chatgpt.com/explore/plus), or try again in 2 hours."
+    ),
+    FailureKind.AUTH: "unexpected status 401 Unauthorized: Missing bearer authentication",
+    FailureKind.OTHER: "model response did not match the output schema",
+}
+
+
+def failure_lines(
+    kind: FailureKind, *, session_id: str | None = None
+) -> tuple[list[str], list[str], int]:
+    """Build the stdout, stderr and exit code of a turn that fails with *kind*.
+
+    Codex reports the failure as an ``error`` event followed by
+    ``turn.failed``, both carrying the same message.
+
+    Args:
+        kind: The classification the scripted failure must produce.
+        session_id: Thread id ``thread.started`` names, if any.
+
+    Returns:
+        ``(stdout, stderr, returncode)`` for a ``FakeRun``.
+    """
+    message = _FAILURES[kind]
+    lines: list[str] = []
+    if session_id is not None:
+        lines.append(_line({"type": "thread.started", "thread_id": session_id}))
+    lines.append(_line({"type": "turn.started"}))
+    lines.append(_line({"type": "error", "message": message}))
+    lines.append(_line({"type": "turn.failed", "error": {"message": message}}))
+    return lines, [], 1
 
 
 def _usage_payload(usage: TokenUsage | None) -> dict[str, int]:

@@ -21,6 +21,7 @@ from .core import (
     ConfigFileInstallation,
     ConsoleEventHandler,
     EventHandlerBase,
+    FailureKind,
     FlagsInstallation,
     HttpMcpServer,
     Lifecycle,
@@ -98,7 +99,7 @@ from .providers.copilot import CopilotProvider
 from .providers.gemini import GeminiProvider
 from .providers.opencode import OpencodeProvider
 
-__version__ = "0.10.1"
+__version__ = "0.11.0"
 
 __all__ = [
     "AgentEvent",
@@ -127,6 +128,7 @@ __all__ = [
     "ConsoleEventHandler",
     "CopilotProvider",
     "EventHandlerBase",
+    "FailureKind",
     "FlagsInstallation",
     "GeminiProvider",
     "HostCommandExecutor",

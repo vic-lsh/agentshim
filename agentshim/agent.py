@@ -397,7 +397,14 @@ class AgentSession:
         error: AgentShimError | None = None
         if result.returncode != 0:
             error = self._agent.provider.classify_exit(
-                CliExitError(argv, result.returncode, result.stdout, result.stderr),
+                CliExitError(
+                    argv,
+                    result.returncode,
+                    result.stdout,
+                    result.stderr,
+                    kind=parsed.error_kind,
+                    detail=parsed.error or "",
+                ),
                 resumed=resumed,
             )
         if parsed.session_id and not isinstance(error, SessionResumeError):

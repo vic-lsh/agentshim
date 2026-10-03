@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
+from .errors import FailureKind
 from .profile import McpScope, SkillScope
 from .usage import ProviderUsage
 
@@ -59,7 +60,10 @@ class ParsedTurn:
     session_id: str | None = None
     usage: ProviderUsage = field(default_factory=ProviderUsage)
     cost_usd: float | None = None
+    #: The error text the stream reported, or ``None`` when it reported none.
     error: str | None = None
+    #: The parser's classification of ``error``; ``OTHER`` when it cannot tell.
+    error_kind: FailureKind = FailureKind.OTHER
 
 
 class StreamParser(Protocol):

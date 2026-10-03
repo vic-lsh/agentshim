@@ -202,7 +202,12 @@ class CodexProvider:
         if session_id is None:
             return error
         return SessionResumeError(
-            error.argv, error.returncode, session_id, error.stdout, error.stderr
+            error.argv,
+            error.returncode,
+            session_id,
+            error.stdout,
+            error.stderr,
+            detail=error.detail,
         )
 
 

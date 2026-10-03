@@ -11,9 +11,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol
 
 from .claude import ClaudeProvider
+from .claude import failure_lines as _claude_failure
 from .claude import resume_failure_lines as _claude_resume_failure
 from .claude import scripted_lines as _claude_scripted
 from .codex import CodexProvider
+from .codex import failure_lines as _codex_failure
 from .codex import resume_failure_lines as _codex_resume_failure
 from .codex import scripted_lines as _codex_scripted
 from .copilot import CopilotProvider
@@ -29,6 +31,7 @@ from .opencode import scripted_lines as _opencode_scripted
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
+    from agentshim.core.errors import FailureKind
     from agentshim.core.provider import Provider
     from agentshim.core.usage import TokenUsage
 
@@ -74,6 +77,20 @@ class ResumeFailureLines(Protocol):
         ...
 
 
+class FailureLines(Protocol):
+    """Builds the stdout, stderr and exit code of a turn that failed with a given kind."""
+
+    def __call__(
+        self, kind: FailureKind, *, session_id: str | None = None
+    ) -> tuple[Sequence[str], Sequence[str], int]:
+        """Return ``(stdout, stderr, returncode)`` for a ``FakeRun``.
+
+        The run must classify as *kind* through the provider's real parser.
+        ``session_id`` is the conversation the failed run names, if any.
+        """
+        ...
+
+
 # To add a provider: implement providers/<name>/ (provider.py, parser.py,
 # events.py, scripted.py) and add one entry to each dict below.
 _FACTORIES: dict[str, Callable[[], Provider]] = {
@@ -98,6 +115,14 @@ _RESUME_FAILURES: dict[str, ResumeFailureLines] = {
     "copilot": _copilot_resume_failure,
     "gemini": _gemini_resume_failure,
     "opencode": _opencode_resume_failure,
+}
+
+
+# Only the providers whose stream reports why a turn failed: every other
+# provider classifies each failure as ``FailureKind.OTHER``.
+_FAILURES: dict[str, FailureLines] = {
+    "claude": _claude_failure,
+    "codex": _codex_failure,
 }
 
 
@@ -135,14 +160,25 @@ def get_resume_failure_lines(name: str) -> ResumeFailureLines:
     return resume_failure
 
 
+def get_failure_lines(name: str) -> FailureLines:
+    """Return the test-double classified-failure builder for *name*."""
+    failure = _FAILURES.get(name)
+    if failure is None:
+        msg = f"no classified-failure stream for provider {name!r}; available: {sorted(_FAILURES)}"
+        raise ValueError(msg)
+    return failure
+
+
 __all__ = [
     "ClaudeProvider",
     "CodexProvider",
     "CopilotProvider",
+    "FailureLines",
     "GeminiProvider",
     "OpencodeProvider",
     "ResumeFailureLines",
     "ScriptedLines",
+    "get_failure_lines",
     "get_provider",
     "get_resume_failure_lines",
     "get_scripted_lines",

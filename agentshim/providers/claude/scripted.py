@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from agentshim.core.errors import FailureKind
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -115,6 +117,56 @@ def resume_failure_lines(*, session_id: str | None = None) -> tuple[list[str], l
     detail = f" {session_id}" if session_id else ""
     stderr = [f"Error: no conversation found to resume{detail}\n"]
     return [], stderr, 1
+
+
+#: What Claude writes for a failed request of each kind: the assistant
+#: ``error`` kind, the HTTP status, and the message. ``OTHER`` is a turn that
+#: ran but could not satisfy its output schema, the subtype Claude reports
+#: when no StructuredOutput call validated.
+_FAILURES: dict[FailureKind, tuple[str, int, str]] = {
+    FailureKind.TRANSIENT: (
+        "overloaded",
+        529,
+        'API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}',
+    ),
+    FailureKind.USAGE_LIMIT: ("rate_limit", 429, "You've hit your limit \u00b7 resets 3pm (UTC)"),
+    FailureKind.AUTH: ("authentication_failed", 401, "Invalid API key \u00b7 Please run /login"),
+}
+
+
+def failure_lines(
+    kind: FailureKind, *, session_id: str | None = None
+) -> tuple[list[str], list[str], int]:
+    """Build the stdout, stderr and exit code of a turn that fails with *kind*.
+
+    An API failure is the synthetic assistant message Claude writes for it,
+    then an error ``result`` frame with the HTTP status. ``OTHER`` is an
+    ``error_max_structured_output_retries`` result, which names no API error.
+
+    Args:
+        kind: The classification the scripted failure must produce.
+        session_id: Conversation id the ``init`` frame names, if any.
+
+    Returns:
+        ``(stdout, stderr, returncode)`` for a ``FakeRun``.
+    """
+    lines: list[str] = []
+    if session_id is not None:
+        lines.append(_line({"type": "system", "subtype": "init", "session_id": session_id}))
+    result: dict[str, Any] = {"type": "result", "is_error": True, "num_turns": 1}
+    if session_id is not None:
+        result["session_id"] = session_id
+    failure = _FAILURES.get(kind)
+    if failure is None:
+        result["subtype"] = "error_max_structured_output_retries"
+        result["errors"] = ["no StructuredOutput call produced a valid output"]
+    else:
+        error, status, text = failure
+        message = {"role": "assistant", "content": [{"type": "text", "text": text}]}
+        lines.append(_line({"type": "assistant", "message": message, "error": error}))
+        result.update(subtype="success", result=text, api_error_status=status)
+    lines.append(_line(result))
+    return lines, [], 1
 
 
 def _usage_payload(usage: TokenUsage | None) -> dict[str, Any]:

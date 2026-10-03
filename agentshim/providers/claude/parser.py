@@ -32,10 +32,12 @@ from .events import (
     ToolResultBlock,
     parse_frame,
 )
+from .failures import classify_failure
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
+    from agentshim.core.errors import FailureKind
     from agentshim.core.events import AgentEvent
 
 PROVIDER_NAME = "claude"
@@ -136,6 +138,11 @@ class ClaudeStreamParser:
         self._usage = ProviderUsage(provider=PROVIDER_NAME)
         self._cost_usd: float | None = None
         self._error: str | None = None
+        # What the stream said about a failed API request, for classifying it.
+        self._api_error: str | None = None
+        self._api_error_text: str | None = None
+        self._api_error_status: int | None = None
+        self._stderr: list[str] = []
 
     def feed_stdout(self, line: str) -> None:
         """Consume one stdout line, emitting the events its frame implies.
@@ -158,6 +165,7 @@ class ClaudeStreamParser:
         """Emit one non-blank stderr line as a ``Stderr`` event."""
         stripped = line.rstrip("\n")
         if stripped:
+            self._stderr.append(stripped)
             self._emit(Stderr(stripped))
 
     def finish(self) -> ParsedTurn:
@@ -170,7 +178,18 @@ class ClaudeStreamParser:
             usage=self._usage,
             cost_usd=self._cost_usd,
             error=self._error,
+            error_kind=self._error_kind(),
         )
+
+    def _error_kind(self) -> FailureKind:
+        """Classify the failure from the stream, or from stderr if it had none.
+
+        A CLI that dies before writing a ``result`` frame leaves stderr as the
+        only account of why, so stderr is read only then.
+        """
+        reported = [text for text in (self._error, self._api_error_text) if text]
+        text = "\n".join(reported) if reported else "\n".join(self._stderr)
+        return classify_failure(api_error=self._api_error, status=self._api_error_status, text=text)
 
     def _handle(self, frame: object) -> None:
         if isinstance(frame, SystemInit):
@@ -187,6 +206,11 @@ class ClaudeStreamParser:
             self._result(frame)
 
     def _assistant(self, frame: AssistantMessage) -> None:
+        if frame.error is not None:
+            self._api_error = frame.error
+            self._api_error_text = "\n".join(
+                block.text for block in frame.blocks if isinstance(block, TextBlock)
+            )
         if frame.usage is not None:
             self._emit(
                 UsageReport(
@@ -237,7 +261,8 @@ class ClaudeStreamParser:
         )
         self._emit(UsageReport(self._usage, frame.total_cost_usd))
         if frame.is_error:
-            self._error = frame.text or (frame.subtype or "claude reported an error")
+            self._api_error_status = frame.api_error_status
+            self._error = _error_text(frame)
             self._emit(ProviderError(self._error))
 
     def _structured_payload(self, frame: ResultFrame) -> object | None:
@@ -255,3 +280,13 @@ class ClaudeStreamParser:
             return json.loads(frame.text)
         except (json.JSONDecodeError, ValueError):
             return None
+
+
+def _error_text(frame: ResultFrame) -> str:
+    """Say what an error ``result`` frame reported.
+
+    An ``error_*`` subtype carries its messages in ``errors`` and often no
+    ``result`` text at all, so both are read before falling back to the
+    subtype, which is the only part that names some failures.
+    """
+    return frame.text or "; ".join(frame.errors) or frame.subtype or "claude reported an error"

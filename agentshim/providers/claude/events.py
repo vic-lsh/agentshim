@@ -60,6 +60,10 @@ class AssistantMessage:
 
     blocks: Sequence[ContentBlock] = ()
     usage: Mapping[str, Any] | None = None
+    #: The API error kind Claude stamps on the synthetic message it writes
+    #: when a request fails (``overloaded``, ``rate_limit``, ...); ``None`` on
+    #: a normal reply.
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +87,10 @@ class ResultFrame:
     duration_ms: int | None = None
     is_error: bool = False
     subtype: str | None = None
+    #: The HTTP status of the API error that ended the turn, if one did.
+    api_error_status: int | None = None
+    #: The messages an ``error_*`` subtype reports instead of ``result`` text.
+    errors: tuple[str, ...] = ()
 
 
 ClaudeFrame = SystemInit | AssistantMessage | ToolResultBlock | ResultFrame
@@ -111,6 +119,8 @@ def parse_frame(data: Mapping[str, Any]) -> ClaudeFrame | None:
             duration_ms=_int_or_none(data.get("duration_ms")),
             is_error=bool(data.get("is_error")),
             subtype=_str_or_none(data.get("subtype")),
+            api_error_status=_int_or_none(data.get("api_error_status")),
+            errors=_str_tuple_or_none(data.get("errors")) or (),
         )
     return None
 
@@ -128,9 +138,10 @@ def _assistant(data: Mapping[str, Any]) -> AssistantMessage | None:
             if block is not None:
                 blocks.append(block)
     usage = _mapping_or_none(payload.get("usage"))
-    if not blocks and usage is None:
+    error = _str_or_none(data.get("error"))
+    if not blocks and usage is None and error is None:
         return None
-    return AssistantMessage(blocks=tuple(blocks), usage=usage)
+    return AssistantMessage(blocks=tuple(blocks), usage=usage, error=error)
 
 
 def _content_block(raw: object) -> ContentBlock | None:

@@ -75,6 +75,34 @@ class ToolResult:
 
 
 @dataclass(frozen=True)
+class SkillsDiscovered:
+    """The provider listed the skills it offers this session.
+
+    ``names`` are the skill names as the provider reports them (a plugin
+    skill may carry a ``plugin:`` prefix). Only emitted by a provider whose
+    profile declares ``skill_discovery`` other than ``SkillSignal.NONE``, and
+    only when its stream actually carried the list.
+    """
+
+    names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SkillInvoked:
+    """The agent loaded a skill's instructions.
+
+    Emitted at the point in the stream where the load happened, directly
+    after the ``ToolCall`` that performed it; ``tool_id`` names that call.
+    ``source_path`` is the skill file or directory when the stream reveals
+    it, and ``None`` otherwise.
+    """
+
+    name: str
+    source_path: str | None = None
+    tool_id: str | None = None
+
+
+@dataclass(frozen=True)
 class UsageReport:
     """Provider accounting for the turn so far."""
 
@@ -119,6 +147,8 @@ AgentEvent = (
     | Reasoning
     | ToolCall
     | ToolResult
+    | SkillsDiscovered
+    | SkillInvoked
     | UsageReport
     | Lifecycle
     | Stderr
@@ -351,6 +381,8 @@ class ConsoleEventHandler:
         """
         if isinstance(event, Stderr):
             self._line(f"[stderr] {event.text.rstrip()}")
+        elif isinstance(event, SkillInvoked):
+            self._line(self._paint(f"[Skill] {event.name}", self._BLUE))
         elif isinstance(event, ProviderError):
             self._line(f"[error] {event.message}")
         elif isinstance(event, Lifecycle) and self._show_lifecycle:

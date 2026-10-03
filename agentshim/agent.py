@@ -26,6 +26,7 @@ from agentshim.core.events import RunFinished, RunStarted, compose_event_handler
 from agentshim.core.profile import McpMechanism, OutputSchemaStyle, SchemaDialect
 from agentshim.core.provider import ArgvContext
 from agentshim.core.schema import compact_json, dialect_problems, materialize
+from agentshim.core.skills import SkillTracker
 from agentshim.core.turn import TurnRequest, TurnResult, coerce_request
 from agentshim.execution.executor import CommandRequest
 from agentshim.execution.host import HostCommandExecutor
@@ -278,8 +279,10 @@ class AgentSession:
         agent = self._agent
         handler = agent.event_handler
         resumed = self.session_id is not None
+        skills = SkillTracker(self.profile)
 
         def emit(event: AgentEvent) -> None:
+            skills.on_event(event)
             handler.on_event(event)
 
         argv = list(command.argv)
@@ -305,6 +308,7 @@ class AgentSession:
             cost_usd=parsed.cost_usd,
             duration_ms=duration_ms,
             exit_code=result.returncode,
+            skills=skills.summary(),
         )
         self.last_result = turn_result
         return turn_result

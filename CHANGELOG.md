@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.8.0 (2026-10-03)
+
+Skill observability. Additive: a caller that ignores the new events and the
+new `TurnResult` field sees no change, but an exhaustive match over
+`AgentEvent` gains two members.
+
+### Added
+
+- `SkillsDiscovered(names)` and `SkillInvoked(name, source_path, tool_id)`
+  events. `SkillInvoked` sits directly after the `ToolCall` that loaded the
+  skill.
+- `TurnResult.skills`: a `SkillSummary` (`discovered`, `invocations`,
+  `invoked`, `invocation_count`) folded from those events by `SkillTracker`,
+  which callers can also register as a handler to cover several turns.
+  `None` means unknown, never zero.
+- `ProviderProfile.skill_discovery` and `skill_invocation`, each a
+  `SkillSignal` (`NONE`, `STRUCTURED`, `INFERRED`).
+- Claude Code: discovery from the `system/init` `skills` list; a load is a
+  `Skill` tool call or a `Read` of a `SKILL.md`.
+- Codex: a load is inferred from a shell command that names a `SKILL.md`
+  under a `skills/` directory. `codex exec --json` does not list offered
+  skills, so discovery is unknown.
+- Gemini, opencode and Copilot report unknown for both.
+- Recorded skill streams under `tests/fixtures/{claude,codex}/` and a live
+  e2e suite, `tests/e2e/test_skills_e2e.py`, with a positive and a negative
+  turn per provider.
+
 ## 0.7.0 (2026-09-27)
 
 First-class cache accounting and a static pricing table. Additive except one

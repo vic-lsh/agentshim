@@ -12,6 +12,8 @@ union.
 | `Reasoning` | `text` | thinking or reasoning text |
 | `ToolCall` | `tool_id`, `tool`, `args` | a tool was invoked |
 | `ToolResult` | `tool_id`, `tool`, `stdout`, `stderr`, `exit_code`, `duration_s` | a tool finished |
+| `SkillsDiscovered` | `names` | the provider listed the skills it offers |
+| `SkillInvoked` | `name`, `source_path`, `tool_id` | the agent loaded a skill |
 | `UsageReport` | `usage`, `cost_usd` | provider accounting |
 | `Lifecycle` | `kind`, `detail` | provider plumbing |
 | `Stderr` | `text` | one stderr line |
@@ -62,6 +64,32 @@ renderer can therefore branch on `exit_code` alone and never mistake a
 failure for success, which is what `ConsoleEventHandler` does: a failed
 result is red, a successful one green. A provider that reports a real exit
 code passes it through; one that only reports a boolean failure uses `1`.
+
+## Skills
+
+A provider reports skills through two events. `SkillsDiscovered` carries the
+skills offered to the session, once per run, when the stream lists them.
+`SkillInvoked` is emitted where the agent loaded a skill, directly after the
+`ToolCall` that loaded it (its `tool_id` names that call). How each CLI shows
+a load is provider knowledge and stays inside agentshim; a caller never
+matches tool names or paths.
+
+`TurnResult.skills` is a `SkillSummary` folded from the same events by
+`SkillTracker`, which is an ordinary handler: register your own
+`SkillTracker(profile)` to summarize several turns.
+
+| `SkillSummary` | Meaning |
+|---|---|
+| `discovered` | offered skill names, or `None` when the stream did not list them |
+| `invocations` | the `SkillInvoked` events, or `None` when the provider cannot reveal loads |
+| `invoked` | distinct invoked names in first-use order, or `None` |
+| `invocation_count` | number of loads, or `None` |
+
+`None` means unknown, never zero. `profile.skill_discovery` and
+`profile.skill_invocation` declare the signal ahead of a turn as a
+`SkillSignal`: `NONE` (unknown), `STRUCTURED` (a dedicated CLI frame) or
+`INFERRED` (derived from tool activity, so a load by other means can be
+missed). See [Providers](providers.md) for the per-provider matrix.
 
 ## Usage
 

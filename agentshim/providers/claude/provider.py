@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING, Any
 
 from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
 from agentshim.core.mcp import HttpMcpServer, NoopInstallation, StdioMcpServer, install_config_file
-from agentshim.core.profile import McpMechanism, OutputSchemaStyle, ProviderProfile, SchemaDialect
+from agentshim.core.profile import (
+    McpMechanism,
+    OutputSchemaStyle,
+    ProviderProfile,
+    SchemaDialect,
+    SkillSignal,
+)
 
 from .parser import ClaudeStreamParser
 from .sandbox import SANDBOX_ENV, SandboxConfig, build_settings, resolve_sandbox
@@ -45,6 +51,9 @@ PROFILE = ProviderProfile(
         "ANTHROPIC_CUSTOM_HEADERS",
     ),
     skill_dirs=(".claude/skills",),
+    # ``system/init`` lists ``skills``; the ``Skill`` tool call names one.
+    skill_discovery=SkillSignal.STRUCTURED,
+    skill_invocation=SkillSignal.STRUCTURED,
     container_install=(
         "apt-get update && apt-get install -y --no-install-recommends curl ca-certificates",
         "curl -fsSL https://claude.ai/install.sh | bash",

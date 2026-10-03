@@ -13,6 +13,7 @@ from agentshim.core.profile import (
     OutputSchemaStyle,
     ProviderProfile,
     SchemaDialect,
+    SkillSignal,
 )
 
 from ._toml import toml_array, toml_str, unescape_toml
@@ -75,6 +76,9 @@ PROFILE = ProviderProfile(
     ),
     auth_env_vars=("OPENAI_API_KEY", "OPENAI_BASE_URL"),
     skill_dirs=(".agents/skills",),
+    # ``exec --json`` lists no skills; a load is inferred from a shell read
+    # of a ``SKILL.md`` (``skills.py``).
+    skill_invocation=SkillSignal.INFERRED,
     container_install=(_NODE_INSTALL, _CODEX_INSTALL),
     # Documented Codex CLI variable that relocates ~/.codex (``codex --help``:
     # "Layer $CODEX_HOME/<name>.config.toml on top of the base user config";

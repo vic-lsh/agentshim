@@ -46,6 +46,21 @@ class SchemaDialect(Enum):
     OPEN = "open"
 
 
+class SkillSignal(Enum):
+    """How much a provider's output stream says about skills.
+
+    ``NONE``: nothing; a caller must treat skill use as unknown, never as
+    zero. ``STRUCTURED``: the CLI emits a dedicated, documented frame.
+    ``INFERRED``: agentshim derives it from tool activity (for example a
+    shell read of a skill's ``SKILL.md``), so a load by other means can be
+    missed.
+    """
+
+    NONE = "none"
+    STRUCTURED = "structured"
+    INFERRED = "inferred"
+
+
 def _no_container_env() -> Mapping[str, str]:
     """Empty read-only default: a frozen spec must not carry a mutable one.
 
@@ -90,3 +105,7 @@ class ProviderProfile:
     state_root_env: str | None = None
     auth_files: tuple[str, ...] = ()
     mcp_config_file: str | None = None
+    #: Whether the stream lists the skills offered (``SkillsDiscovered``).
+    skill_discovery: SkillSignal = SkillSignal.NONE
+    #: Whether the stream reveals skill loads (``SkillInvoked``).
+    skill_invocation: SkillSignal = SkillSignal.NONE

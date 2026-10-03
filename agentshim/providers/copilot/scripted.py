@@ -20,13 +20,15 @@ _NO_STRUCTURED_OUTPUT = (
 )
 
 
-def scripted_lines(
+# Mirrors scripted_turn: each option is an independent knob of the test double.
+def scripted_lines(  # noqa: PLR0913
     *,
     text: str = "",
     session_id: str | None = None,
     usage: TokenUsage | None = None,
     tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
     structured_output: object | None = None,
+    skills_offered: Sequence[str] | None = None,
 ) -> list[str]:
     """Build the stdout of one Copilot turn.
 
@@ -40,6 +42,7 @@ def scripted_lines(
         usage: Token counts to report in the ``assistant.usage`` frame.
         tool_calls: Tool calls to script.
         structured_output: Must be None; Copilot has no native output schema.
+        skills_offered: Must be None; the stream lists no offered skills.
 
     Returns:
         The stdout lines, each a JSON object with a trailing newline.
@@ -47,6 +50,9 @@ def scripted_lines(
     Raises:
         ValueError: If ``structured_output`` is given.
     """
+    if skills_offered is not None:
+        msg = "Copilot does not list offered skills in its stream"
+        raise ValueError(msg)
     if structured_output is not None:
         raise ValueError(_NO_STRUCTURED_OUTPUT)
 

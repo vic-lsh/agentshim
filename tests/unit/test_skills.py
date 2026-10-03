@@ -90,3 +90,16 @@ def test_claude_skill_recognition(
 )
 def test_codex_skill_md_reads(command: str, names: list[str]) -> None:
     assert [event.name for event in skill_reads(command, None)] == names
+
+
+def test_a_scripted_claude_turn_offers_skills() -> None:
+    run = scripted_turn("claude", text="ok", skills_offered=["a", "b"])
+    result = CliAgent("claude", executor=FakeExecutor(run)).run("hi")
+    assert result.skills.discovered == ("a", "b")
+    assert result.skills.invocations == ()
+
+
+@pytest.mark.parametrize("provider", ["codex", "copilot", "gemini", "opencode"])
+def test_scripting_an_offered_list_fails_where_the_stream_has_none(provider: str) -> None:
+    with pytest.raises(ValueError, match="offered skills"):
+        scripted_turn(provider, text="ok", skills_offered=["a"])

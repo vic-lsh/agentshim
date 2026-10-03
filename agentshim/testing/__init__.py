@@ -160,14 +160,23 @@ def scripted_turn(  # noqa: PLR0913
     tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
     structured_output: object | None = None,
     returncode: int = 0,
+    skills_offered: Sequence[str] | None = None,
 ) -> FakeRun:
-    """Build a ``FakeRun`` whose stdout is *provider*'s real stream format."""
+    """Build a ``FakeRun`` whose stdout is *provider*'s real stream format.
+
+    To script a skill load, pass the tool call that loads one on *provider*:
+    ``("Skill", {"skill": name}, ...)`` on Claude, or a ``command`` that reads
+    ``.agents/skills/<name>/SKILL.md`` on Codex. ``skills_offered`` scripts
+    the offered list and raises ``ValueError`` on a provider whose stream
+    cannot carry one (``profile.skill_discovery`` is ``NONE``).
+    """
     lines = get_scripted_lines(provider)(
         text=text,
         session_id=session_id,
         usage=usage,
         tool_calls=tool_calls,
         structured_output=structured_output,
+        skills_offered=skills_offered,
     )
     return FakeRun(stdout=lines, returncode=returncode)
 

@@ -16,22 +16,31 @@ if TYPE_CHECKING:
     from agentshim.core.usage import TokenUsage
 
 
-def scripted_lines(
+# Mirrors scripted_turn: each option is an independent knob of the test double.
+def scripted_lines(  # noqa: PLR0913
     *,
     text: str = "",
     session_id: str | None = None,
     usage: TokenUsage | None = None,
     tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
     structured_output: object | None = None,
+    skills_offered: Sequence[str] | None = None,
 ) -> list[str]:
     """Build the stdout of one Claude turn.
 
     ``tool_calls`` entries are ``(tool, args, output)`` and become a
-    ``tool_use`` block plus the matching ``tool_result`` frame.
+    ``tool_use`` block plus the matching ``tool_result`` frame; a ``Skill``
+    call with ``{"skill": name}`` is a skill load. ``skills_offered`` goes in
+    the ``init`` frame's ``skills`` list.
     """
     lines: list[str] = []
-    if session_id is not None:
-        lines.append(_line({"type": "system", "subtype": "init", "session_id": session_id}))
+    if session_id is not None or skills_offered is not None:
+        init: dict[str, Any] = {"type": "system", "subtype": "init"}
+        if session_id is not None:
+            init["session_id"] = session_id
+        if skills_offered is not None:
+            init["skills"] = list(skills_offered)
+        lines.append(_line(init))
 
     blocks: list[dict[str, Any]] = []
     if text:

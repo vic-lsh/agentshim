@@ -40,8 +40,15 @@ def _claude_result(**fields: object) -> FakeRun:
     return FakeRun(stdout=[json.dumps(frame) + "\n"], returncode=1)
 
 
-@pytest.mark.parametrize("provider", _CLASSIFYING_PROVIDERS)
-@pytest.mark.parametrize("kind", list(FailureKind))
+_SCRIPTABLE = [
+    (provider, kind)
+    for provider in _CLASSIFYING_PROVIDERS
+    for kind in FailureKind
+    if not (provider == "codex" and kind is FailureKind.SCHEMA)
+]
+
+
+@pytest.mark.parametrize(("provider", "kind"), _SCRIPTABLE)
 def test_a_failed_turn_carries_its_kind_and_the_provider_text(
     provider: str, kind: FailureKind
 ) -> None:
@@ -52,8 +59,9 @@ def test_a_failed_turn_carries_its_kind_and_the_provider_text(
     assert error.detail in str(error)
 
 
-@pytest.mark.parametrize("provider", _CLASSIFYING_PROVIDERS)
-@pytest.mark.parametrize("kind", [FailureKind.TRANSIENT, FailureKind.USAGE_LIMIT, FailureKind.AUTH])
+@pytest.mark.parametrize(
+    ("provider", "kind"), [(p, k) for p, k in _SCRIPTABLE if k is not FailureKind.OTHER]
+)
 def test_a_classified_failure_of_a_resumed_turn_keeps_the_conversation(
     provider: str, kind: FailureKind
 ) -> None:
@@ -83,14 +91,78 @@ def test_an_error_subtype_with_no_result_text_still_says_what_failed() -> None:
     """Regression: Claude reports this in the stream, so stderr was empty and so was the message."""
     error = _fail(
         "claude",
-        _claude_result(
-            subtype="error_max_structured_output_retries",
-            errors=["no StructuredOutput call produced a valid output"],
-        ),
+        _claude_result(subtype="error_during_execution", errors=["the turn stopped unexpectedly"]),
     )
 
-    assert "no StructuredOutput call produced a valid output" in str(error)
+    assert "the turn stopped unexpectedly" in str(error)
     assert error.kind is FailureKind.OTHER
+
+
+def test_codex_has_no_schema_failure_to_script() -> None:
+    """Codex constrains decoding to the schema, so no real run fails this way."""
+    with pytest.raises(ValueError, match="constrained"):
+        scripted_failure("codex", FailureKind.SCHEMA)
+
+
+def _rejection(index: int, errors: str, tool: str = "StructuredOutput") -> list[str]:
+    call = {"type": "tool_use", "id": f"t{index}", "name": tool, "input": {}}
+    result = {
+        "type": "tool_result",
+        "tool_use_id": f"t{index}",
+        "content": errors,
+        "is_error": True,
+    }
+    return [
+        json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [call]}})
+        + "\n",
+        json.dumps({"type": "user", "message": {"role": "user", "content": [result]}}) + "\n",
+    ]
+
+
+_VALIDATION_ERRORS = st.text(
+    alphabet=st.characters(codec="utf-8", exclude_categories=("Cs", "Cc")), min_size=1
+).filter(str.strip)
+
+
+@given(rejections=st.lists(_VALIDATION_ERRORS, min_size=1, max_size=5))
+def test_used_up_schema_retries_carry_the_last_validation_errors(rejections: list[str]) -> None:
+    """Regression: r10's planner failed its schema five times and the run saw no reason."""
+    lines = [line for index, errors in enumerate(rejections) for line in _rejection(index, errors)]
+    lines.append(
+        json.dumps(
+            {"type": "result", "is_error": True, "subtype": "error_max_structured_output_retries"}
+        )
+        + "\n"
+    )
+
+    error = _fail("claude", FakeRun(stdout=lines, returncode=1))
+
+    assert error.kind is FailureKind.SCHEMA
+    assert error.detail == rejections[-1]
+    assert rejections[-1].strip() in str(error)
+
+
+def test_used_up_schema_retries_without_a_rejection_still_classify() -> None:
+    error = _fail("claude", _claude_result(subtype="error_max_structured_output_retries"))
+
+    assert error.kind is FailureKind.SCHEMA
+    assert "error_max_structured_output_retries" in error.detail
+
+
+def test_only_a_structured_output_rejection_is_reported_as_the_validation_errors() -> None:
+    """A failed Bash call that prints schema-like text must not become the detail."""
+    lines = [
+        *_rejection(0, "the real validation errors"),
+        *_rejection(1, "Output does not match required schema: jq", tool="Bash"),
+        json.dumps(
+            {"type": "result", "is_error": True, "subtype": "error_max_structured_output_retries"}
+        )
+        + "\n",
+    ]
+
+    error = _fail("claude", FakeRun(stdout=lines, returncode=1))
+
+    assert error.detail == "the real validation errors"
 
 
 _TRANSIENT_STATUSES = st.sampled_from([408, 429]) | st.integers(500, 599)

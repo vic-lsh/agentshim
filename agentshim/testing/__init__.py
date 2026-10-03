@@ -222,14 +222,17 @@ def scripted_failure(provider: str, kind: FailureKind, *, session_id: str | None
     """Build a ``FakeRun`` for a turn that fails and classifies as *kind*.
 
     The run is *provider*'s real report of such a failure (an overload, a
-    usage limit, a rejected login, or an unclassifiable failure), so the
+    usage limit, a rejected login, output that never matched the requested
+    schema, or an unclassifiable failure), so the
     raised ``CliExitError`` carries ``kind`` through the real parser. A
     consumer can therefore test its retry policy without knowing how any
     CLI phrases a failure.
 
     Args:
         provider: A provider whose stream reports failure kinds (``claude``
-            or ``codex``); any other raises ``ValueError``.
+            or ``codex``); any other raises ``ValueError``, as does
+            ``FailureKind.SCHEMA`` on ``codex``, whose decoding is
+            constrained to the schema.
         kind: The ``FailureKind`` the raised error must carry.
         session_id: The conversation the failed run names, if any.
 

@@ -32,7 +32,7 @@ from .events import (
     ToolResultBlock,
     parse_frame,
 )
-from .failures import classify_failure
+from .failures import SCHEMA_RETRIES_SUBTYPE, classify_failure
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -44,6 +44,10 @@ PROVIDER_NAME = "claude"
 
 #: The built-in tool through which Claude Code loads a skill.
 SKILL_TOOL = "Skill"
+
+#: The tool through which Claude Code submits a schema-constrained answer;
+#: its error result is the validation failure of one submission.
+STRUCTURED_OUTPUT_TOOL = "StructuredOutput"
 
 #: The built-in tool through which Claude Code reads a file.
 READ_TOOL = "Read"
@@ -142,6 +146,9 @@ class ClaudeStreamParser:
         self._api_error: str | None = None
         self._api_error_text: str | None = None
         self._api_error_status: int | None = None
+        self._subtype: str | None = None
+        # The validation errors of the last rejected StructuredOutput call.
+        self._schema_errors: str | None = None
         self._stderr: list[str] = []
 
     def feed_stdout(self, line: str) -> None:
@@ -189,7 +196,12 @@ class ClaudeStreamParser:
         """
         reported = [text for text in (self._error, self._api_error_text) if text]
         text = "\n".join(reported) if reported else "\n".join(self._stderr)
-        return classify_failure(api_error=self._api_error, status=self._api_error_status, text=text)
+        return classify_failure(
+            subtype=self._subtype,
+            api_error=self._api_error,
+            status=self._api_error_status,
+            text=text,
+        )
 
     def _handle(self, frame: object) -> None:
         if isinstance(frame, SystemInit):
@@ -238,6 +250,8 @@ class ClaudeStreamParser:
 
     def _tool_result(self, frame: ToolResultBlock) -> None:
         name = self._tools.name(frame.tool_id)
+        if name == STRUCTURED_OUTPUT_TOOL and frame.is_error:
+            self._schema_errors = frame.output
         self._emit(
             ToolResult(
                 tool_id=frame.tool_id,
@@ -262,7 +276,8 @@ class ClaudeStreamParser:
         self._emit(UsageReport(self._usage, frame.total_cost_usd))
         if frame.is_error:
             self._api_error_status = frame.api_error_status
-            self._error = _error_text(frame)
+            self._subtype = frame.subtype
+            self._error = self._error_text(frame)
             self._emit(ProviderError(self._error))
 
     def _structured_payload(self, frame: ResultFrame) -> object | None:
@@ -281,12 +296,16 @@ class ClaudeStreamParser:
         except (json.JSONDecodeError, ValueError):
             return None
 
+    def _error_text(self, frame: ResultFrame) -> str:
+        """Say what an error ``result`` frame reported.
 
-def _error_text(frame: ResultFrame) -> str:
-    """Say what an error ``result`` frame reported.
-
-    An ``error_*`` subtype carries its messages in ``errors`` and often no
-    ``result`` text at all, so both are read before falling back to the
-    subtype, which is the only part that names some failures.
-    """
-    return frame.text or "; ".join(frame.errors) or frame.subtype or "claude reported an error"
+        A turn that used up its schema retries is described by the validation
+        errors of its last rejected submission, which only the
+        ``StructuredOutput`` tool result carries. Otherwise an ``error_*``
+        subtype carries its messages in ``errors`` and often no ``result``
+        text at all, so both are read before falling back to the subtype,
+        which is the only part that names some failures.
+        """
+        if frame.subtype == SCHEMA_RETRIES_SUBTYPE and self._schema_errors:
+            return self._schema_errors
+        return frame.text or "; ".join(frame.errors) or frame.subtype or "claude reported an error"

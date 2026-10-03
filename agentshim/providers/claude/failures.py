@@ -4,7 +4,9 @@ Claude reports a failed API request three ways, newest first: an ``error``
 kind on the synthetic assistant message it writes for the failure, an
 ``api_error_status`` on the final ``result`` frame, and the text
 ``API Error: <status> <body>`` in that frame's ``result``. Older builds only
-have the text, so all three are read.
+have the text, so all three are read. A turn whose ``StructuredOutput`` calls
+never validated ends with the ``result`` subtype
+``error_max_structured_output_retries`` instead.
 """
 
 from __future__ import annotations
@@ -39,17 +41,29 @@ _AUTH_STATUSES = frozenset({401, 403})
 #: A request timeout or a rate limit; every 5xx (529 is an overload) is transient too.
 _TRANSIENT_STATUSES = frozenset({408, 429})
 _SERVER_ERRORS = range(500, 600)
+#: The ``result`` subtype of a turn that used up its output-schema retries.
+SCHEMA_RETRIES_SUBTYPE = "error_max_structured_output_retries"
 
 
-def classify_failure(*, api_error: str | None, status: int | None, text: str) -> FailureKind:
+def classify_failure(
+    *, subtype: str | None, api_error: str | None, status: int | None, text: str
+) -> FailureKind:
     """Classify one failed turn from what Claude reported about it.
 
-    ``api_error`` is the assistant frame's ``error`` kind, ``status`` the
+    ``subtype`` is the error ``result`` frame's subtype, ``api_error`` the
+    assistant frame's ``error`` kind, ``status`` the
     result frame's ``api_error_status``, and ``text`` the error text the
     stream (or, when the stream had none, stderr) carried. Tool output is
     never part of ``text``, so a tool that printed an API error cannot make
     the turn look like one.
     """
+    if subtype == SCHEMA_RETRIES_SUBTYPE:
+        return FailureKind.SCHEMA
+    return _classify_api_failure(api_error=api_error, status=status, text=text)
+
+
+def _classify_api_failure(*, api_error: str | None, status: int | None, text: str) -> FailureKind:
+    """Classify a failure from the API error Claude reported, if it reported one."""
     if api_error in _AUTH_KINDS:
         return FailureKind.AUTH
     if api_error in _USAGE_LIMIT_KINDS:

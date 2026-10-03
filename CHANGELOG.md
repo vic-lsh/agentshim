@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.12.0 (2026-10-03)
+
+A turn whose output never matched its schema says so. Additive except that
+Claude's `error_max_structured_output_retries` is no longer `OTHER`.
+
+### Added
+
+- `FailureKind.SCHEMA`: the provider gave up producing output that matches the
+  requested schema. Claude Code reports it for the
+  `error_max_structured_output_retries` result, with the validation errors of
+  the last rejected `StructuredOutput` call on `CliExitError.detail`. A resumed
+  turn that fails this way keeps its conversation. Codex never reports it:
+  `--output-schema` constrains decoding, so its output always parses against
+  the schema.
+- `scripted_failure("claude", FailureKind.SCHEMA)`.
+
+### Changed
+
+- `scripted_failure(provider, FailureKind.OTHER)` scripts a failure that is
+  not about the schema (Claude `error_during_execution`, Codex running out of
+  context). `scripted_failure("codex", FailureKind.SCHEMA)` raises
+  `ValueError`.
+
 ## 0.11.0 (2026-10-03)
 
 A failed turn says why it failed. Additive except that a classified failure of

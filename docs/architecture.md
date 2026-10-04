@@ -532,15 +532,18 @@ caller feeding one of those to a `STRICT` provider needs it fixed up.
 Splitting the two lets the caller decide: `dialect_problems` reports,
 `normalize` rewrites, and the session only ever calls the first.
 
-`normalize` also drops the document metadata (`$schema`, `$id`, `title`,
-`description`, `examples`) that a generator emits and Codex's subset refuses,
-so a normalized schema passes `dialect_problems` in either dialect unless it
-holds an open map (`additionalProperties` a schema or `true`). `normalize`
-keeps an open map open, since closing it would change what the schema
-accepts, so `dialect_problems(normalize(s, d), d)` is the check for whether a
-generated schema can go native. The
-`OPEN` dialect does not report `$schema` or `$id` at all: a CLI that accepts
-open-ended schemas ignores them.
+`normalize` preserves descriptions, titles and examples at every schema node,
+so field guidance reaches the model. Real CLI probes on 2026-10-04 confirmed
+Codex and Claude accept these annotations. Claude accepts `$ref` annotation
+siblings; Codex rejects them, so `STRICT` normalization moves them onto an
+`anyOf` wrapper containing the reference. It only drops
+metadata rejected by the selected dialect: `$schema` and `$id` under `STRICT`.
+The `OPEN` dialect accepts those document identifiers and `oneOf`; `STRICT`
+rejects `oneOf`. Dialect policy lives in `core/schema.py` and is shared by
+normalization and checking. `normalize` keeps an open map open, since closing
+it would change what the schema accepts, so
+`dialect_problems(normalize(s, d), d)` checks whether a generated schema can go
+native.
 
 **`CliAgent` and `AgentSession` live in `agentshim/agent.py`, above
 `providers/`.** `CliAgent("claude")` has to work, so something must turn a

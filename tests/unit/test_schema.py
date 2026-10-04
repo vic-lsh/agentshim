@@ -46,7 +46,7 @@ class TestDialectProblems:
     def test_non_object_root_is_a_problem(self) -> None:
         assert dialect_problems({"type": "array"}, SchemaDialect.OPEN) != []
 
-    @pytest.mark.parametrize("keyword", ["allOf", "oneOf", "not", "if", "patternProperties"])
+    @pytest.mark.parametrize("keyword", ["allOf", "not", "if", "patternProperties"])
     def test_unsupported_keywords_are_reported(self, keyword: str) -> None:
         schema = {"type": "object", "properties": {"a": {"type": "string"}}, keyword: {}}
         problems = dialect_problems(schema, SchemaDialect.OPEN)
@@ -389,14 +389,18 @@ class TestNormalize:
         result = normalize(schema, SchemaDialect.STRICT)
         assert "default" not in result["properties"]["a"]
 
-    def test_ref_siblings_are_stripped(self) -> None:
+    def test_ref_annotations_survive_but_other_siblings_are_stripped(self) -> None:
         schema = {
             "type": "object",
-            "properties": {"a": {"$ref": "#/$defs/Inner", "description": "doc"}},
+            "properties": {"a": {"$ref": "#/$defs/Inner", "description": "doc", "default": {}}},
             "$defs": {"Inner": {"type": "object", "properties": {}}},
         }
         result = normalize(schema, SchemaDialect.STRICT)
-        assert result["properties"]["a"] == {"$ref": "#/$defs/Inner"}
+        assert result["properties"]["a"] == {
+            "anyOf": [{"$ref": "#/$defs/Inner"}],
+            "description": "doc",
+        }
+        assert dialect_problems(result, SchemaDialect.STRICT) == []
 
     def test_open_dialect_keeps_a_schema_valued_additional_properties(self) -> None:
         result = normalize(_MAPPING, SchemaDialect.OPEN)
@@ -416,7 +420,7 @@ class TestNormalize:
         assert schema["properties"]["a"]["default"] == "x"  # pyright: ignore[reportIndexIssue]
 
     @pytest.mark.parametrize("dialect", [SchemaDialect.OPEN, SchemaDialect.STRICT])
-    def test_metadata_is_dropped(self, dialect: SchemaDialect) -> None:
+    def test_only_rejected_metadata_is_dropped(self, dialect: SchemaDialect) -> None:
         schema = {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$id": "https://example.invalid/report",
@@ -430,12 +434,12 @@ class TestNormalize:
 
         result = normalize(schema, dialect)
 
-        assert result == {
-            "type": "object",
-            "properties": {"a": {"type": "integer"}},
-            "additionalProperties": False,
-            "required": ["a"],
-        }
+        expected = {**schema, "required": ["a"]}
+        if dialect is SchemaDialect.STRICT:
+            expected.pop("$schema")
+            expected.pop("$id")
+        assert result == expected
+        assert dialect_problems(result, dialect) == []
 
     def test_normalize_repairs_what_the_strict_dialect_rejects(self) -> None:
         """``dialect_problems`` reports metadata under STRICT; ``normalize`` fixes it."""
@@ -460,6 +464,121 @@ class TestNormalize:
 
         assert sorted(result["properties"]) == ["description", "title"]
         assert result["required"] == ["title", "description"]
+
+
+def _schema_node_paths(
+    node: dict[str, Any], path: tuple[str | int, ...] = ()
+) -> list[tuple[str | int, ...]]:
+    """Find schema nodes without treating annotation or instance values as schemas."""
+    paths = [path]
+    for key in ("properties", "$defs", "definitions"):
+        for name, child in node.get(key, {}).items():
+            paths += _schema_node_paths(child, (*path, key, name))
+    for key in ("anyOf", "oneOf"):
+        for index, child in enumerate(node.get(key, [])):
+            paths += _schema_node_paths(child, (*path, key, index))
+    if "items" in node:
+        paths += _schema_node_paths(node["items"], (*path, "items"))
+    return paths
+
+
+class TestAnnotationPreservation:
+    @pytest.mark.parametrize("dialect", list(SchemaDialect))
+    @pytest.mark.parametrize("union", ["anyOf", "oneOf"])
+    def test_descriptions_survive_every_schema_position(
+        self, dialect: SchemaDialect, union: str
+    ) -> None:
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "nested": {"type": "object", "properties": {"leaf": {"type": "string"}}},
+                "variant": {union: [{"type": "string"}, {"type": "null"}]},
+                "array": {"type": "array", "items": {"type": "object", "properties": {}}},
+                "reference": {"$ref": "#/$defs/Inner"},
+            },
+            "$defs": {"Inner": {"type": "object", "properties": {}}},
+        }
+        paths = _schema_node_paths(schema)
+        for path in paths:
+            _at(schema, path)["description"] = f"Meaning at {_pointer(path)}"
+            _at(schema, path)["default"] = None
+        original = copy.deepcopy(schema)
+
+        result = normalize(schema, dialect)
+
+        assert schema == original
+        for path in paths:
+            before, after = _at(schema, path), _at(result, path)
+            assert after["description"] == before["description"]
+            assert "default" not in after
+            if before.get("type") == "object":
+                assert after["additionalProperties"] is False
+                assert after["required"] == list(after["properties"])
+        problems = dialect_problems(result, dialect)
+        assert problems == (
+            ["#/properties/variant uses unsupported keyword 'oneOf'"]
+            if union == "oneOf" and dialect is SchemaDialect.STRICT
+            else []
+        )
+
+    @pytest.mark.parametrize(
+        ("keyword", "value"),
+        [
+            ("title", "A"),
+            ("description", "Meaning"),
+            ("examples", [{"default": 1, "description": "data", "type": "object"}]),
+        ],
+    )
+    @pytest.mark.parametrize("dialect", list(SchemaDialect))
+    def test_ref_annotations_follow_dialect_policy(
+        self, keyword: str, value: object, dialect: SchemaDialect
+    ) -> None:
+        schema = _closed(
+            {"a": {"$ref": "#/$defs/Inner", keyword: value}},
+            **{"$defs": {"Inner": {"type": "string"}}},
+        )
+        problems = dialect_problems(schema, dialect)
+        if dialect is SchemaDialect.STRICT:
+            assert problems == [
+                f"#/properties/a uses unsupported keyword {keyword!r} beside '$ref'"
+            ]
+        else:
+            assert problems == []
+        result = normalize(schema, dialect)
+        field = result["properties"]["a"]
+        assert field[keyword] == value
+        assert dialect_problems(result, dialect) == []
+        assert normalize(result, dialect) == result
+        if dialect is SchemaDialect.STRICT:
+            assert field["anyOf"] == [{"$ref": "#/$defs/Inner"}]
+        else:
+            assert field["$ref"] == "#/$defs/Inner"
+
+    @pytest.mark.parametrize("dialect", list(SchemaDialect))
+    def test_annotation_and_instance_values_are_untouched(self, dialect: SchemaDialect) -> None:
+        value = {"default": "data", "description": "data", "type": "object", "$ref": "external"}
+        schema = _closed({"a": {"enum": [value], "examples": [value], "const": value}})
+        result = normalize(schema, dialect)
+        assert result == schema
+        assert dialect_problems(result, dialect) == []
+
+    @pytest.mark.parametrize("dialect", list(SchemaDialect))
+    @given(_strict_schemas, st.text())
+    def test_generated_schema_descriptions_are_preserved(
+        self, dialect: SchemaDialect, schema: dict[str, Any], description: str
+    ) -> None:
+        schema = copy.deepcopy(schema)
+        paths = _schema_node_paths(schema)
+        for path in paths:
+            _at(schema, path)["description"] = description
+            _at(schema, path)["default"] = None
+
+        result = normalize(schema, dialect)
+
+        assert dialect_problems(result, dialect) == []
+        for path in paths:
+            assert _at(result, path)["description"] == description
+            assert "default" not in _at(result, path)
 
 
 class TestCompactJson:

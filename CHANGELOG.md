@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Schema normalization preserves descriptions, titles and examples, including
+  annotations alongside `$ref`, so structured-output field guidance reaches
+  the model. Only metadata rejected by the selected dialect is removed.
+- The open schema dialect accepts `oneOf` variants, as Claude does.
+
 ## 0.14.0 (2026-10-04)
 
 Codex resumed turns report invocation usage. Additive.

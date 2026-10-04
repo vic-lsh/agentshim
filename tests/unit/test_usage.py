@@ -227,7 +227,16 @@ def test_provider_usage_to_dict_adds_cost_and_provider() -> None:
     assert payload["total_cost_usd"] == 0.5
     assert payload["provider"] == "claude"
     assert payload["turns"] == 1
+    assert payload["increment_known"] is True
 
 
 def test_raw_defaults_to_none() -> None:
     assert ProviderUsage().raw is None
+
+
+def test_unknown_usage_marker_survives_serialization_without_exposing_raw_totals() -> None:
+    usage = ProviderUsage(provider="codex", raw={"input_tokens": 200}, increment_known=False)
+    payload = usage.to_dict()
+    assert payload["increment_known"] is False
+    assert payload["input_tokens"] == 0
+    assert "raw" not in payload

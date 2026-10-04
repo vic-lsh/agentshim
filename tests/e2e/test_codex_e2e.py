@@ -35,11 +35,22 @@ def test_a_single_turn_answers_and_reports_usage(tmp_path: Path) -> None:
 
 def test_a_second_turn_resumes_the_first(tmp_path: Path) -> None:
     session = _agent().start_session(cwd=str(tmp_path))
-    session.turn("Remember the word 'juniper'. Reply with 'ok'.")
+    first = session.turn("Remember the word 'juniper'. Reply with 'ok'.")
     assert session.session_id is not None
     second = session.turn("What word did I ask you to remember? Reply with just the word.")
     assert second.resumed is True
     assert "juniper" in second.text.lower()
+    assert first.usage.raw is not None
+    assert second.usage.raw is not None
+    summed = first.usage.tokens + second.usage.tokens
+    for raw_field, normalized_field in (
+        ("input_tokens", "input_tokens"),
+        ("cached_input_tokens", "cache_read_input_tokens"),
+        ("cache_write_input_tokens", "cache_write_input_tokens"),
+        ("output_tokens", "output_tokens"),
+        ("reasoning_output_tokens", "reasoning_output_tokens"),
+    ):
+        assert getattr(summed, normalized_field) == second.usage.raw.get(raw_field, 0)
 
 
 def test_a_native_output_schema_returns_structured_output(tmp_path: Path) -> None:

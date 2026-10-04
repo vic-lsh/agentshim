@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"vibesys-thread"}
+{"type":"turn.completed","usage":{"input_tokens":2019100}}
+{"type":"thread.started","thread_id":"vibesys-thread"}
+{"type":"turn.completed","usage":{"input_tokens":12564014}}

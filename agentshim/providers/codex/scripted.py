@@ -40,7 +40,8 @@ def scripted_lines(  # noqa: PLR0913
     Args:
         text: The assistant's final message.
         session_id: Thread id announced by ``thread.started``.
-        usage: Token counts reported by ``turn.completed``.
+        usage: Cumulative thread counts reported by ``turn.completed``.
+            For a resumed turn, include the earlier invocations too.
         tool_calls: Commands to report as started-then-completed items.
         structured_output: Payload to serialize as the final message.
         skills_offered: Must be None; the stream lists no offered skills.

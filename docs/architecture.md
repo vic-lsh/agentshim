@@ -276,7 +276,8 @@ class McpInstallation(Protocol):
 class Provider(Protocol):
     profile: ProviderProfile
     def build_argv(self, ctx: ArgvContext) -> list[str]: ...
-    def new_parser(self, emit: Callable[[AgentEvent], None], *, expect_structured: bool) -> StreamParser: ...
+    def new_parser(self, emit: Callable[[AgentEvent], None], *,
+                   expect_structured: bool) -> StreamParser: ...
     def install_mcp(self, workspace: Path | None, servers: Sequence[McpServer]) -> McpInstallation: ...
     def classify_exit(self, error: CliExitError, *, resumed: bool) -> AgentShimError: ...
 
@@ -297,6 +298,15 @@ class ArgvContext:
 The prompt is always delivered on stdin and never appears in argv (an
 agent's own `pkill -f` must not be able to match the CLI by prompt text).
 
+Custom providers keep the original `new_parser(emit, *, expect_structured)`
+signature. A parser that needs invocation context may implement the optional,
+runtime-checkable `ContextualStreamParser` protocol with
+`configure(context: ParserContext) -> None`. The session calls it before
+streaming, passing `ParserContext(previous_usage=..., resumed=...)`. Parsers
+without this method continue working unchanged. Codex uses the previous raw
+report as a fixed baseline; without one on resume, it marks the increment
+unknown and retains the raw total for the next invocation.
+
 ### Agent and session
 
 ```python
@@ -312,13 +322,14 @@ class CliAgent:
     binary_path: str
     env: dict[str, str]
     def start_session(self, *, cwd: str | None = None, timeout: float | None = None,
-                      session_id: str | None = None) -> AgentSession
+                      session_id: str | None = None,
+                      previous_usage: ProviderUsage | None = None) -> AgentSession
     def run(self, request: TurnRequest | str, *, cwd=None, timeout=None) -> TurnResult   # one-shot
 
 class AgentSession:
     session_id: str | None              # readable and writable
     last_result: TurnResult | None
-    def adopt(self, session_id: str) -> bool   # False if unsupported or a conversation is live
+    def adopt(self, session_id: str, *, previous_usage: ProviderUsage | None = None) -> bool   # False if unsupported or a conversation is live
     def forget(self) -> bool                   # False if a turn is in flight
     def turn(self, request: TurnRequest | str) -> TurnResult
     def cancel(self, grace_s: float = 5.0) -> None   # thread-safe; terminate then kill

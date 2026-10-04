@@ -31,7 +31,7 @@ from agentshim.core.profile import (
     SchemaDialect,
     SkillScope,
 )
-from agentshim.core.provider import ArgvContext
+from agentshim.core.provider import ArgvContext, ContextualStreamParser, ParserContext
 from agentshim.core.schema import compact_json, dialect_problems, materialize
 from agentshim.core.skills import SkillTracker
 from agentshim.core.turn import TurnRequest, TurnResult, coerce_request
@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from agentshim.core.profile import ProviderProfile
     from agentshim.core.provider import McpInstallation, ParsedTurn, Provider, StreamParser
     from agentshim.core.turn import OutputSchema
+    from agentshim.core.usage import ProviderUsage
     from agentshim.execution.executor import CommandExecutor, CommandHandle, CommandResult
 
 
@@ -121,6 +122,7 @@ class CliAgent:
         cwd: str | None = None,
         timeout: float | None = None,
         session_id: str | None = None,
+        previous_usage: ProviderUsage | None = None,
         skill_scope: SkillScope = SkillScope.ALL,
         mcp_scope: McpScope = McpScope.ALL,
         config_scope: ConfigScope = ConfigScope.ALL,
@@ -128,13 +130,16 @@ class CliAgent:
         """Open a conversation whose turns resume one another.
 
         ``skill_scope``, ``mcp_scope`` and ``config_scope`` are fixed for the
-        conversation (see ``AgentSession``).
+        conversation (see ``AgentSession``). ``previous_usage`` seeds the
+        baseline when adopting a cumulative-usage provider conversation after
+        a restart; pass its most recent ``TurnResult.usage``.
         """
         return AgentSession(
             self,
             cwd=cwd,
             timeout=timeout,
             session_id=session_id,
+            previous_usage=previous_usage,
             skill_scope=skill_scope,
             mcp_scope=mcp_scope,
             config_scope=config_scope,
@@ -175,6 +180,7 @@ class AgentSession:
         cwd: str | None = None,
         timeout: float | None = None,
         session_id: str | None = None,
+        previous_usage: ProviderUsage | None = None,
         skill_scope: SkillScope = SkillScope.ALL,
         mcp_scope: McpScope = McpScope.ALL,
         config_scope: ConfigScope = ConfigScope.ALL,
@@ -185,7 +191,9 @@ class AgentSession:
         successive turns resume one another. ``cwd`` and ``timeout`` are
         defaults an individual ``TurnRequest`` may override. Passing
         ``session_id`` adopts a conversation the provider already has, so the
-        first turn resumes rather than starts fresh. ``skill_scope`` limits
+        first turn resumes rather than starts fresh. ``previous_usage`` is
+        that conversation's last report, including raw cumulative totals,
+        when it was run outside this session. ``skill_scope`` limits
         which skills every turn's CLI may discover; a scope the provider's
         ``profile.skill_scopes`` does not list raises
         ``ProviderCapabilityError`` here, before any turn runs. ``mcp_scope``
@@ -215,6 +223,9 @@ class AgentSession:
         self._timeout = timeout
         self.session_id: str | None = session_id
         self.last_result: TurnResult | None = None
+        self._usage_by_session: dict[str, ProviderUsage] = {}
+        if session_id is not None and previous_usage is not None:
+            self._usage_by_session[session_id] = previous_usage
         self._lock = threading.Lock()
         self._handle: CommandHandle | None = None
         self._cancel_requested = False
@@ -230,9 +241,11 @@ class AgentSession:
         """
         return self._agent.profile
 
-    def adopt(self, session_id: str) -> bool:
+    def adopt(self, session_id: str, *, previous_usage: ProviderUsage | None = None) -> bool:
         """Continue an existing provider conversation on the next turn.
 
+        ``previous_usage`` seeds an external conversation's last raw report.
+        Reports from conversations already seen by this session are retained.
         Returns ``False`` when the provider cannot resume, or when a turn is
         in flight and switching conversations would race it.
         """
@@ -242,6 +255,8 @@ class AgentSession:
             if not self._idle.is_set():
                 return False
             self.session_id = session_id
+            if previous_usage is not None:
+                self._usage_by_session[session_id] = previous_usage
         return True
 
     def forget(self) -> bool:
@@ -348,7 +363,19 @@ class AgentSession:
             handler.on_event(event)
 
         argv = list(command.argv)
-        parser = agent.provider.new_parser(emit, expect_structured=expect_structured)
+        parser = agent.provider.new_parser(
+            emit,
+            expect_structured=expect_structured,
+        )
+        if isinstance(parser, ContextualStreamParser):
+            parser.configure(
+                ParserContext(
+                    previous_usage=(
+                        self._usage_by_session.get(self.session_id) if self.session_id else None
+                    ),
+                    resumed=resumed,
+                )
+            )
         emit(RunStarted(tuple(argv)))
         started = time.monotonic()
         try:
@@ -359,6 +386,7 @@ class AgentSession:
         duration_ms = int((time.monotonic() - started) * 1000)
         emit(RunFinished(result.returncode))
         parsed = parser.finish()
+        self._remember_usage(parsed)
         self._adopt_then_report(parsed, result, argv, resumed=resumed)
 
         turn_result = TurnResult(
@@ -393,10 +421,17 @@ class AgentSession:
         """
         emit(RunFinished(None))
         partial = parser.finish()
+        self._remember_usage(partial)
         if partial.session_id:
             self.session_id = partial.session_id
         if isinstance(error, CliTimeoutError):
             error.partial = partial
+
+    def _remember_usage(self, parsed: ParsedTurn) -> None:
+        """Retain raw totals even on a failed invocation, without erasing a baseline."""
+        session_id = parsed.session_id or self.session_id
+        if session_id is not None and parsed.usage.raw is not None:
+            self._usage_by_session[session_id] = parsed.usage
 
     def _adopt_then_report(
         self,

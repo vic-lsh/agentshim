@@ -188,7 +188,10 @@ class CodexProvider:
         expect_structured: bool,
     ) -> CodexStreamParser:
         """Build a stream parser for one run."""
-        return CodexStreamParser(emit, expect_structured=expect_structured)
+        return CodexStreamParser(
+            emit,
+            expect_structured=expect_structured,
+        )
 
     def install_mcp(self, workspace: Path | None, servers: Sequence[McpServer]) -> McpInstallation:
         """Render *servers* as ``--config mcp_servers.*`` flags.

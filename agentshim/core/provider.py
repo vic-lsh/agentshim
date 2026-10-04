@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from .errors import FailureKind
 from .profile import ConfigScope, McpScope, SkillScope
@@ -99,6 +99,23 @@ class StreamParser(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class ParserContext:
+    """Optional invocation context for parsers that need cumulative usage."""
+
+    previous_usage: ProviderUsage | None = None
+    resumed: bool = False
+
+
+@runtime_checkable
+class ContextualStreamParser(Protocol):
+    """Optional parser extension, leaving existing provider factories compatible."""
+
+    def configure(self, context: ParserContext) -> None:
+        """Set invocation context once, before any stream lines are fed."""
+        ...
+
+
 class McpInstallation(Protocol):
     """The undo record for MCP servers installed for one turn."""
 
@@ -140,7 +157,9 @@ class Provider(Protocol):
 
         A parser is single-use. ``expect_structured`` says the caller asked for
         an output schema, which is what lets a parser tell a missing structured
-        result apart from a turn that never wanted one.
+        result apart from a turn that never wanted one. Parsers that implement
+        ``ContextualStreamParser`` receive a ``ParserContext`` before streaming.
+        Existing parsers need not implement that optional extension.
         """
         ...
 

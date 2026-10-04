@@ -1,11 +1,11 @@
 """Normalized token counts from recorded provider streams.
 
-Each fixture under ``tests/fixtures/<provider>/`` is real CLI stdout, trimmed
+The fixtures replayed below are real CLI stdout, trimmed
 (long strings shortened, local paths replaced) with every usage object kept
 verbatim. The expected numbers are read off the raw frames by hand, so these
 tests pin each provider's mapping onto agentshim's breakdown:
 
-- Codex ``turn.completed``: ``input_tokens`` already includes cache reads
+- Codex ``turn.completed`` (cumulative thread totals): ``input_tokens`` already includes cache reads
   (``cached_input_tokens``) and writes; ``output_tokens`` already includes
   ``reasoning_output_tokens``.
 - Claude ``result.usage``: ``input_tokens`` excludes both cache classes, which

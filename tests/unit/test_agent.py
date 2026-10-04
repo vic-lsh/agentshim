@@ -33,6 +33,7 @@ from agentshim import (
     OutputSchema,
     OutputSchemaStyle,
     ProviderCapabilityError,
+    ProviderUsage,
     RunFinished,
     RunStarted,
     SchemaDialectError,
@@ -45,6 +46,7 @@ from agentshim import (
     UsageReport,
 )
 from agentshim.providers.claude import ClaudeProvider
+from agentshim.providers.claude.parser import ClaudeStreamParser
 from agentshim.testing import (
     FakeCommandHandle,
     FakeExecutor,
@@ -861,3 +863,130 @@ class TestMcpScope:
         with pytest.raises(ProviderCapabilityError, match="scope 'session'"):
             agent.start_session(mcp_scope=McpScope.SESSION)
         assert executor.requests == []
+
+
+def test_codex_resume_reports_the_increment_from_vibesys_totals() -> None:
+    """Reconstruct the two usage frames supplied in the VibeSys bug report."""
+    lines = (
+        (Path(__file__).parents[1] / "fixtures/codex/resume_vibesys_totals.jsonl")
+        .read_text()
+        .splitlines(keepends=True)
+    )
+    executor = FakeExecutor([FakeRun(stdout=lines[:2]), FakeRun(stdout=lines[2:])])
+    recorder = RecordingEventHandler()
+    session = CliAgent("codex", executor=executor, env=_ENV, event_handler=recorder).start_session()
+    first = session.turn("first")
+    second = session.turn("second")
+    assert first.usage.tokens.input_tokens == 2_019_100
+    assert second.usage.tokens.input_tokens == 10_544_914
+    assert (first.usage.tokens + second.usage.tokens).input_tokens == 12_564_014
+    assert second.usage.raw == {"input_tokens": 12_564_014}
+    reports = [event for event in recorder.events if isinstance(event, UsageReport)]
+    assert [report.usage.tokens.input_tokens for report in reports] == [2_019_100, 10_544_914]
+
+
+def _codex_usage_agent(*reports: tuple[str, int]) -> CliAgent:
+    runs = [
+        scripted_turn("codex", session_id=thread, usage=TokenUsage(input_tokens=count))
+        for thread, count in reports
+    ]
+    return CliAgent("codex", executor=FakeExecutor(runs), env=_ENV)
+
+
+def test_codex_third_invocation_uses_the_raw_total_not_the_previous_increment() -> None:
+    session = _codex_usage_agent(("a", 100), ("a", 250), ("a", 600)).start_session()
+    assert [session.turn("hi").usage.tokens.input_tokens for _ in range(3)] == [100, 150, 350]
+
+
+def test_codex_usage_follows_the_conversation_through_forget_and_adopt() -> None:
+    session = _codex_usage_agent(("a", 100), ("b", 25), ("a", 160), ("b", 90)).start_session()
+    assert session.turn("hi").usage.tokens.input_tokens == 100
+    assert session.forget()
+    assert session.turn("hi").usage.tokens.input_tokens == 25
+    assert session.adopt("a")
+    assert session.turn("hi").usage.tokens.input_tokens == 60
+    assert session.adopt("b")
+    assert session.turn("hi").usage.tokens.input_tokens == 65
+
+
+@pytest.mark.parametrize("method", ["start_session", "adopt"])
+def test_codex_external_resume_accepts_a_checkpointed_raw_baseline(method: str) -> None:
+    agent = _codex_usage_agent(("a", 200))
+    previous = ProviderUsage(provider="codex", raw={"input_tokens": 150})
+    if method == "start_session":
+        session = agent.start_session(session_id="a", previous_usage=previous)
+    else:
+        session = agent.start_session()
+        assert session.adopt("a", previous_usage=previous)
+    assert session.turn("hi").usage.tokens.input_tokens == 50
+
+
+def test_codex_a_failed_invocation_without_usage_keeps_the_previous_baseline() -> None:
+    first = scripted_turn("codex", session_id="a", usage=TokenUsage(input_tokens=100))
+    second = FakeRun(stdout=['{"type":"thread.started","thread_id":"a"}\n'], returncode=1)
+    third = scripted_turn("codex", session_id="a", usage=TokenUsage(input_tokens=230))
+    session = CliAgent(
+        "codex", executor=FakeExecutor([first, second, third]), env=_ENV
+    ).start_session()
+    session.turn("hi")
+    with pytest.raises(CliExitError):
+        session.turn("fail")
+    assert session.turn("hi").usage.tokens.input_tokens == 130
+
+
+def test_codex_usage_is_retained_when_a_completed_invocation_exits_nonzero() -> None:
+    first = scripted_turn("codex", session_id="a", usage=TokenUsage(input_tokens=100))
+    second = replace(
+        scripted_turn("codex", session_id="a", usage=TokenUsage(input_tokens=200)), returncode=1
+    )
+    third = scripted_turn("codex", session_id="a", usage=TokenUsage(input_tokens=230))
+    session = CliAgent(
+        "codex", executor=FakeExecutor([first, second, third]), env=_ENV
+    ).start_session()
+    session.turn("hi")
+    with pytest.raises(CliExitError):
+        session.turn("fail")
+    assert session.turn("hi").usage.tokens.input_tokens == 30
+
+
+def test_codex_an_unknown_external_baseline_is_reported_and_the_new_total_is_retained() -> None:
+    recorder = RecordingEventHandler()
+    runs = [
+        scripted_turn("codex", session_id="a", text="Hello.", usage=TokenUsage(input_tokens=n))
+        for n in (200, 230)
+    ]
+    session = CliAgent(
+        "codex", executor=FakeExecutor(runs), env=_ENV, event_handler=recorder
+    ).start_session(session_id="a")
+    result = session.turn("hi")
+    assert result.text == "Hello."
+    assert result.exit_code == 0
+    assert result.resumed
+    assert session.last_result is result
+    assert not result.usage.increment_known
+    assert result.usage.tokens == TokenUsage(turns=1)
+    assert result.usage.raw is not None
+    assert result.usage.raw["input_tokens"] == 200
+    reports = [event for event in recorder.events if isinstance(event, UsageReport)]
+    assert len(reports) == 1
+    assert reports[0].usage == result.usage
+    recovered = session.turn("continue")
+    assert recovered.usage.increment_known
+    assert recovered.usage.tokens.input_tokens == 30
+
+
+class _LegacyCustomProvider(ClaudeProvider):
+    def new_parser(
+        self, emit: Callable[[AgentEvent], None], *, expect_structured: bool
+    ) -> ClaudeStreamParser:
+        """A custom factory using the original signature, without context."""
+        return ClaudeStreamParser(emit, expect_structured=expect_structured)
+
+
+def test_custom_provider_with_the_original_factory_signature_can_resume() -> None:
+    runs = [scripted_turn("claude", session_id="a") for _ in range(2)]
+    session = CliAgent(
+        _LegacyCustomProvider(), executor=FakeExecutor(runs), env=_ENV
+    ).start_session()
+    assert not session.turn("hi").resumed
+    assert session.turn("continue").resumed

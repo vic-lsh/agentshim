@@ -333,7 +333,46 @@ agent = CliAgent("claude", env={**interactive_env(), "ANTHROPIC_API_KEY": "..."}
 
 Every provider normalizes its counts into `TokenUsage`; see
 [Usage and Pricing](pricing.md) for the breakdown and how each CLI's fields
-map onto it. One gap:
+map onto it.
+
+**Codex exec JSON reports cumulative thread totals.** On 0.144.4 and 0.160.0,
+`turn.completed.usage` copies `input_tokens`, `cached_input_tokens`,
+`cache_write_input_tokens`, `output_tokens` and `reasoning_output_tokens` from
+the thread's `total`, including on `codex exec resume`. There is no
+per-invocation usage field in this stream. See the
+[Codex JSON event processor](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/exec/src/event_processor_with_jsonl_output.rs).
+
+agentshim subtracts the previous raw thread report before normalizing these
+counts. `TurnResult.usage.tokens` and `UsageReport` contain the invocation's
+increment; `ProviderUsage.raw` and the completion lifecycle detail retain the
+CLI's cumulative values. A fresh conversation starts from zero. Sessions
+retain baselines by conversation id across `forget()` and `adopt()`.
+
+When adopting a thread from outside this session, pass its last report:
+
+```python
+session = agent.start_session(session_id=saved_id, previous_usage=saved_usage)
+# Or: session.adopt(saved_id, previous_usage=saved_usage)
+```
+
+Checkpoint `saved_usage.provider` and `saved_usage.raw` along with the id.
+`ProviderUsage.to_dict()` omits `raw`, so its output alone is insufficient.
+Reconstruct a checkpoint with `ProviderUsage(provider="codex", raw=saved_raw)`.
+If a resumed invocation has no baseline, it returns its result normally with
+`ProviderUsage.increment_known=False` on both `TurnResult.usage` and
+`UsageReport`. Token counts are zero placeholders, while `tokens.turns` still
+counts completion frames. Check `increment_known` before pricing or budgeting;
+these placeholders do not mean the invocation was free. The cumulative total
+remains in `raw`, never in the increment. The session retains that total as the
+next invocation's baseline, so subsequent increments are known. The missing
+increment cannot be recovered from that frame alone. CLI failures retain their
+original classification. Changes to the same
+thread outside the session must be accompanied by an updated baseline.
+Missing reports cannot account for tokens consumed before a failed invocation
+ends; those tokens appear in the next observed total. Inconsistent or decreasing
+counts are clamped by `normalized_usage` after subtraction.
+
+One other gap:
 **Copilot CLI reports no token counts.** Verified on 1.0.83, a run prints no
 `assistant.usage` frame and no per-message `outputTokens`, so
 `TurnResult.usage.tokens` is all zeros. Its `session.usage_checkpoint` frame

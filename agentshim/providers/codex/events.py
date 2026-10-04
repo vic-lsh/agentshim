@@ -34,7 +34,7 @@ class TurnStarted:
 
 @dataclass(frozen=True)
 class TurnCompleted:
-    """``{"type":"turn.completed","usage":{...}}``: one turn's token counts.
+    """``{"type":"turn.completed","usage":{...}}``: cumulative thread token counts.
 
     Codex's ``input_tokens`` already includes ``cached_input_tokens`` (cache
     reads) and ``cache_write_input_tokens``, and ``output_tokens`` already

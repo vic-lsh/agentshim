@@ -36,6 +36,7 @@ from .events import (
     summarize_item,
 )
 from .failures import classify_failure
+from .rollout_usage import RolloutUsage
 from .skills import skill_reads
 
 if TYPE_CHECKING:
@@ -109,6 +110,7 @@ class CodexStreamParser:
 
     def configure(self, context: ParserContext) -> None:
         """Set the fixed starting baseline before streaming this invocation."""
+        self._rollout_usage = RolloutUsage(context.env, context.session_id)
         baseline = None
         if (
             context.previous_usage is not None
@@ -147,6 +149,12 @@ class CodexStreamParser:
 
     def finish(self) -> ParsedTurn:
         """Return everything the run produced."""
+        recovered = self._rollout_usage.read(self._session_id)
+        if recovered is not None:
+            self._usage = recovered
+            self._emit(UsageReport(recovered, None))
+        if self._usage.raw is None:
+            self._usage = replace(self._usage, increment_known=False)
         return ParsedTurn(
             text=self._final_text or "",
             structured_output=self._structured_payload(),

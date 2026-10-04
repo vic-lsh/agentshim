@@ -374,6 +374,8 @@ class AgentSession:
                         self._usage_by_session.get(self.session_id) if self.session_id else None
                     ),
                     resumed=resumed,
+                    env=command.env,
+                    session_id=self.session_id,
                 )
             )
         emit(RunStarted(tuple(argv)))

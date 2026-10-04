@@ -105,6 +105,8 @@ class ParserContext:
 
     previous_usage: ProviderUsage | None = None
     resumed: bool = False
+    env: Mapping[str, str] = field(default_factory=dict[str, str])
+    session_id: str | None = None
 
 
 @runtime_checkable

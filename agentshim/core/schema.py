@@ -2,7 +2,9 @@
 
 Providers disagree about which JSON Schema subset their structured-output
 flag accepts, and the failure mode is an expensive agent turn that ends in a
-CLI parse error. These checks run before the process starts.
+CLI parse error. These checks run before the process starts. Real CLI probes
+on 2026-10-04 confirmed that Codex and Claude accept descriptions, titles
+and examples; normalization preserves these annotations as model guidance.
 """
 
 from __future__ import annotations
@@ -30,8 +32,6 @@ UNSUPPORTED_KEYWORDS = frozenset(
         "$anchor",
         "$dynamicAnchor",
         "$dynamicRef",
-        "$id",
-        "$schema",
         "allOf",
         "contains",
         "dependentRequired",
@@ -41,7 +41,6 @@ UNSUPPORTED_KEYWORDS = frozenset(
         "maxContains",
         "minContains",
         "not",
-        "oneOf",
         "patternProperties",
         "prefixItems",
         "propertyNames",
@@ -53,17 +52,28 @@ UNSUPPORTED_KEYWORDS = frozenset(
 
 _SUBSCHEMA_MAPS = frozenset({"properties", "$defs", "definitions"})
 
-# Annotations that describe a schema rather than constrain a value. They are
-# what a generator such as Pydantic emits alongside the real constraints, and
-# what the strictest CLI subset refuses to read, so ``normalize`` removes
-# them. Field names are never matched against this set: ``properties`` is
-# traversed as a map of subschemas, so a property named ``title`` survives.
+# Metadata values are annotations or document identifiers, never subschemas.
+# Preserve model guidance, including annotations alongside a $ref. Field
+# names are never matched against this set: properties is a subschema map.
 _METADATA_KEYWORDS = frozenset({"$schema", "$id", "title", "description", "examples"})
 
-# ``$schema`` and ``$id`` identify the dialect and the document; a CLI that
-# accepts open-ended schemas ignores them rather than failing on them. Codex's
-# ``--output-schema`` subset does not, so ``STRICT`` keeps reporting them.
-_OPEN_DIALECT_TOLERATES = frozenset({"$schema", "$id"})
+# Dialect policy is shared by checking and normalization. Codex's strict
+# subset rejects document identifiers; open schemas tolerate them. Neither
+# dialect rejects description/title/examples in the measured CLI versions.
+_REJECTED_METADATA: dict[SchemaDialect, frozenset[str]] = {
+    SchemaDialect.STRICT: frozenset({"$schema", "$id"}),
+    SchemaDialect.OPEN: frozenset(),
+}
+
+# Claude accepts oneOf variants, while Codex's strict subset rejects oneOf.
+_DIALECT_UNSUPPORTED = {
+    SchemaDialect.STRICT: UNSUPPORTED_KEYWORDS | {"oneOf"},
+    SchemaDialect.OPEN: UNSUPPORTED_KEYWORDS,
+}
+_REF_ANNOTATIONS_ALLOWED = {
+    SchemaDialect.STRICT: False,
+    SchemaDialect.OPEN: True,
+}
 
 # Keywords whose values are data, never subschemas. ``required`` is a list of
 # field names and ``enum``/``const`` hold instance values, so a name such as
@@ -84,7 +94,10 @@ def dialect_problems(schema: Mapping[str, Any], dialect: SchemaDialect) -> list[
     ``additionalProperties: false`` and lists exactly its ``properties`` in
     ``required`` (an optional value is
     expressed as nullable instead), the root is not an ``anyOf``, and every
-    ``$ref`` resolves inside the document.
+    ``$ref`` resolves inside the document. Real CLI probes on 2026-10-04
+    confirmed both dialects accept ``description``, ``title`` and ``examples``
+    on schema nodes. ``STRICT`` rejects them beside ``$ref``; ``OPEN`` accepts
+    those siblings and ``oneOf`` variants.
     """
     root = dict(schema)
     walk = _Walk(root=root, dialect=dialect, problems=[])
@@ -125,9 +138,9 @@ class _Walk:
     def visit(self, node: object, location: str) -> None:
         """Walk one schema node, appending a problem for every unsupported construct.
 
-        A ``$ref`` node terminates the walk: its siblings are annotations the
-        strict subset ignores, and the target is checked where it is defined,
-        since every local target is inside the document this walk covers.
+        A ``$ref`` node terminates the walk after checking its metadata. The
+        target is checked where it is defined, since every local target is
+        inside the document this walk covers.
         """
         if isinstance(node, list):
             for index, value in enumerate(cast("list[object]", node)):
@@ -140,6 +153,7 @@ class _Walk:
         reference = mapping.get("$ref")
         if reference is not None:
             self._check_ref(reference, location)
+            self._check_ref_metadata(mapping, location)
             return
 
         if not self._check_properties_shape(mapping, location):
@@ -156,6 +170,17 @@ class _Walk:
             return
         if self.dialect is SchemaDialect.STRICT and not _resolves(self.root, reference):
             self.problems.append(f"{location} has a $ref {reference!r} that resolves to nothing")
+
+    def _check_ref_metadata(self, mapping: dict[str, Any], location: str) -> None:
+        """Check metadata siblings without traversing the referenced target twice."""
+        for key in mapping:
+            if key not in _METADATA_KEYWORDS:
+                continue
+            if (
+                key in _REJECTED_METADATA[self.dialect]
+                or not _REF_ANNOTATIONS_ALLOWED[self.dialect]
+            ):
+                self.problems.append(f"{location} uses unsupported keyword {key!r} beside '$ref'")
 
     def _check_properties_shape(self, mapping: dict[str, Any], location: str) -> bool:
         """Check that ``properties``, if present, is an object.
@@ -220,9 +245,9 @@ class _Walk:
         for key, value in mapping.items():
             if key in _SUBSCHEMA_MAPS:
                 self._visit_subschema_map(value, f"{location}/{key}")
-            elif key in UNSUPPORTED_KEYWORDS:
-                if self.dialect is not SchemaDialect.STRICT and key in _OPEN_DIALECT_TOLERATES:
-                    continue
+            elif (
+                key in _DIALECT_UNSUPPORTED[self.dialect] or key in _REJECTED_METADATA[self.dialect]
+            ):
                 self.problems.append(f"{location} uses unsupported keyword {key!r}")
             elif key in _METADATA_KEYWORDS or key in _NON_SCHEMA_KEYWORDS:
                 # Annotations or plain values: nothing below them is a schema.
@@ -269,10 +294,13 @@ def normalize(schema: Mapping[str, Any], dialect: SchemaDialect) -> dict[str, An
     Generators such as Pydantic omit defaulted properties from ``required``
     and leave ``additionalProperties`` unset, which the CLIs read as "any
     subset of these keys, plus anything else". This closes every object,
-    requires every declared property, drops ``default``, strips the annotation
-    siblings of a ``$ref`` that the strict subset forbids, and removes the
-    document metadata (``$schema``, ``$id``, ``title``, ``description``,
-    ``examples``) that ``dialect_problems`` reports under ``STRICT``. An open
+    requires every declared property and drops ``default``. Descriptions,
+    titles and examples are retained at every schema node: Codex and Claude
+    accepted them in real CLI probes on 2026-10-04. For ``STRICT``, annotations
+    beside ``$ref`` move to an ``anyOf`` wrapper containing the reference;
+    ``OPEN`` keeps them as siblings.
+    Only metadata rejected by the dialect is removed (``$schema`` and ``$id``
+    under ``STRICT``). Other ``$ref`` siblings are stripped as before. An open
     map (``additionalProperties`` a schema or ``true``) is kept, since closing
     it would change what the schema accepts; so ``dialect_problems`` on the
     normalized schema reports exactly what the dialect cannot express.
@@ -290,10 +318,10 @@ def _normalized(node: object, dialect: SchemaDialect) -> object:
 
     reference = mapping.get("$ref")
     if isinstance(reference, str):
-        return {"$ref": reference}
+        return _normalized_ref(mapping, dialect, reference)
 
     mapping.pop("default", None)
-    for annotation in _METADATA_KEYWORDS:
+    for annotation in _REJECTED_METADATA[dialect]:
         mapping.pop(annotation, None)
     properties = mapping.get("properties")
     if isinstance(properties, dict):
@@ -305,6 +333,8 @@ def _normalized(node: object, dialect: SchemaDialect) -> object:
         mapping["required"] = []
 
     for key, value in list(mapping.items()):
+        if key in _METADATA_KEYWORDS or key in _NON_SCHEMA_KEYWORDS:
+            continue
         if key in _SUBSCHEMA_MAPS and isinstance(value, dict):
             mapping[key] = {
                 name: _normalized(subschema, dialect)
@@ -313,6 +343,20 @@ def _normalized(node: object, dialect: SchemaDialect) -> object:
             continue
         mapping[key] = _normalized(value, dialect)
     return mapping
+
+
+def _normalized_ref(
+    mapping: dict[str, Any], dialect: SchemaDialect, reference: str
+) -> dict[str, Any]:
+    """Keep accepted annotations without introducing forbidden $ref siblings."""
+    annotations = {
+        key: value
+        for key, value in mapping.items()
+        if key in _METADATA_KEYWORDS - _REJECTED_METADATA[dialect]
+    }
+    if annotations and not _REF_ANNOTATIONS_ALLOWED[dialect]:
+        return {"anyOf": [{"$ref": reference}], **annotations}
+    return {"$ref": reference, **annotations}
 
 
 def _close_object(mapping: dict[str, Any], dialect: SchemaDialect) -> None:

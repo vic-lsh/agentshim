@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.14.0 (2026-10-04)
+
+Codex resumed turns report invocation usage. Additive.
+
+### Added
+
+- `ProviderUsage.increment_known` marks whether the invocation's token
+  increment is measurable. Unknown increments retain raw cumulative usage
+  and zero token placeholders; consumers must check the marker before
+  pricing or budgeting.
+- `previous_usage` on session creation and adoption seeds a checkpointed
+  conversation's usage baseline. `ParserContext` and `ContextualStreamParser`
+  let providers receive invocation context without changing provider factories.
+
+### Fixed
+
+- Codex `turn.completed` usage is cumulative per thread. Resumed turns now
+  subtract the prior raw usage report for every token class instead of
+  counting earlier tokens again. Repeated completion snapshots replace the
+  previous snapshot, and conversations retain independent baselines,
+  including after failed invocations.
+- Package `__version__` and its test now match the project metadata; the
+  0.13.1 release left both at 0.13.0.
+
 ## 0.13.1 (2026-10-03)
 
 Fix only.

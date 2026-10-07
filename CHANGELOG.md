@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- MIT license (`LICENSE`), declared in the package metadata.
+
 ## 0.14.1 (2026-10-04)
 
 ### Fixed

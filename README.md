@@ -238,3 +238,7 @@ uv publish        # release
 
 uv run --group docs mkdocs build --strict
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

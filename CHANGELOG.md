@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `CodexAppServerTransport`: a long-lived `codex app-server` per conversation,
+  registered as Codex's stream transport, so
+  `Agent("codex", transport=TransportKind.STREAM)` selects it (one-shot stays
+  the default). Supports read-only, workspace-write and bypass
+  permissions, always-answered server requests, per-turn usage diffing, failure
+  classification, interrupt and timeout. Test double `CodexScript` /
+  `CodexAppServerPeer` in `agentshim.testing`.
+
 ## 0.15.0 (2026-10-09)
 
 ### Added

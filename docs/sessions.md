@@ -186,3 +186,40 @@ system prompt is kept. The working directory is fixed at spawn: a turn with a
 different `cwd` raises `ProviderCapabilityError`. Test code scripts the CLI with
 `ClaudeStreamPeers` (`FakeExecutor([], peers=peers.build)`) and replays real
 recordings with `ClaudeRecordedPeer`.
+## Codex
+
+`Agent("codex", transport=TransportKind.STREAM, ...)` keeps one long-lived
+`codex app-server` per conversation (`CodexAppServerTransport`). The default,
+`TransportKind.ONE_SHOT`, is unchanged. The transport performs the `initialize`
+handshake, then `thread/start` or `thread/resume`; a turn is `turn/start` plus
+a read loop until `turn/completed`.
+
+Permissions map to a thread sandbox and approval policy:
+
+| `NativeMode`    | sandbox              | approval     |
+| --------------- | -------------------- | ------------ |
+| `BYPASS`        | `danger-full-access` | `never`      |
+| `READ_ONLY`     | `read-only`          | `on-request` |
+| `WORKSPACE_WRITE` | `workspace-write`  | `on-request` |
+
+The turn-level sandbox policy carries writable roots and network access. The
+transport checks that the server echoed what it asked for and raises
+`ProviderCapabilityError` otherwise.
+
+- Approvals. Every server request is answered. `ApprovalPolicy.DENY` declines
+  and emits `ApprovalDenied`; `FAIL_TURN` cancels the request and fails the
+  turn with `TurnFailedError`. Unknown requests get a JSON-RPC error.
+- Resume. `ConversationSpec.resume_id` is a thread id. A missing rollout is
+  `SessionResumeError`, which the session turns into `REPLACED`.
+- Usage. The server reports thread-cumulative tokens. The per-turn figure is
+  the difference from `previous_usage.raw` (zero for a new thread). Without a
+  baseline on resume the result has `increment_known=False`.
+- MCP servers are passed per thread in `config.mcp_servers`.
+- Failures are classified from `codexErrorInfo` (usage limit, transient, auth)
+  and then by the message text; `willRetry` errors do not end the turn.
+- Test double. `agentshim.testing.CodexScript` builds a reactive
+  `CodexAppServerPeer` for `FakeExecutor(peers=...)` from steps such as `Say`,
+  `RunCommand`, `Ask`, `Spend`, `Fail` and `Hang`.
+
+Exec-policy rules in `CODEX_HOME` are not ignored in sandboxed modes
+(`app-server` has no `--ignore-rules`).

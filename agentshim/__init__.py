@@ -140,6 +140,7 @@ from .oneshot import OneShotTransport
 from .providers import get_provider, provider_names
 from .providers.claude import ClaudeHook, ClaudeProvider, ClaudeStreamTransport, SandboxConfig
 from .providers.codex import CodexProvider, CodexSandboxConfig
+from .providers.codex.app_server import CodexAppServerTransport
 from .providers.copilot import CopilotProvider
 from .providers.gemini import GeminiProvider
 from .providers.opencode import OpencodeProvider
@@ -170,6 +171,7 @@ __all__ = [
     "CliNotFoundError",
     "CliTimeoutError",
     "Clock",
+    "CodexAppServerTransport",
     "CodexProvider",
     "CodexSandboxConfig",
     "CommandExecutor",

@@ -18,6 +18,7 @@ from .codex import CodexProvider
 from .codex import failure_lines as _codex_failure
 from .codex import resume_failure_lines as _codex_resume_failure
 from .codex import scripted_lines as _codex_scripted
+from .codex.app_server import CodexAppServerTransport
 from .copilot import CopilotProvider
 from .copilot import resume_failure_lines as _copilot_resume_failure
 from .copilot import scripted_lines as _copilot_scripted
@@ -150,6 +151,7 @@ _FAILURES: dict[str, FailureLines] = {
 # Providers with a long-lived transport (``Agent(name, transport=TransportKind.STREAM)``).
 _STREAM_TRANSPORTS: dict[str, StreamTransportFactory] = {
     "claude": ClaudeStreamTransport,
+    "codex": CodexAppServerTransport,
 }
 
 

@@ -29,7 +29,7 @@ from .sandbox import CodexSandboxConfig, resolve_sandbox, sandbox_overrides
 from .skills import project_scope_overrides
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Collection, Mapping, Sequence
     from pathlib import Path
 
     from agentshim.core.errors import AgentShimError, CliExitError
@@ -155,7 +155,7 @@ class CodexProvider:
         argv += ["--skip-git-repo-check", "--json"]
         if ctx.model:
             argv += ["--model", ctx.model]
-        argv += _shell_path_config(ctx.env)
+        argv += shell_path_config(ctx.env)
         if ctx.config_scope is ConfigScope.PROJECT:
             _check_config_home(ctx)
             argv += PROJECT_CONFIG_FLAGS
@@ -315,7 +315,7 @@ def _resumed_session_id(argv: Sequence[str]) -> str | None:
     return args[index + 1]
 
 
-def _shell_path_config(env: Mapping[str, str]) -> list[str]:
+def shell_path_config(env: Mapping[str, str]) -> list[str]:
     """Preserve the launcher's PATH in the commands Codex spawns."""
     path = env.get("PATH")
     if not path:
@@ -324,16 +324,35 @@ def _shell_path_config(env: Mapping[str, str]) -> list[str]:
 
 
 def _scope_overrides(ctx: ArgvContext) -> list[str]:
-    """The ``--config`` flags the session's skill and MCP scopes call for.
+    """The ``--config`` flags the session's skill and MCP scopes call for."""
+    return scope_overrides(
+        ctx.env,
+        ctx.cwd,
+        skill_scope=ctx.skill_scope,
+        mcp_scope=ctx.mcp_scope,
+        given_keys={server.name.replace("-", "_") for server in ctx.mcp_servers},
+    )
 
-    Both scopes switch ``features.plugins`` off; the flag is emitted once.
+
+def scope_overrides(
+    env: Mapping[str, str],
+    cwd: str | None,
+    *,
+    skill_scope: SkillScope,
+    mcp_scope: McpScope,
+    given_keys: Collection[str],
+) -> list[str]:
+    """The ``--config`` flags that confine skills and MCP servers to a scope.
+
+    *given_keys* are the ``mcp_servers`` keys the caller defines itself; they
+    are not disabled. Both scopes switch ``features.plugins`` off; the flag is
+    emitted once.
     """
     flags: list[str] = []
-    if ctx.skill_scope is SkillScope.PROJECT:
-        flags += project_scope_overrides(ctx.env)
-    if ctx.mcp_scope is McpScope.SESSION:
-        given = {server.name.replace("-", "_") for server in ctx.mcp_servers}
-        flags += session_scope_overrides(ctx.env, ctx.cwd, given)
+    if skill_scope is SkillScope.PROJECT:
+        flags += project_scope_overrides(env)
+    if mcp_scope is McpScope.SESSION:
+        flags += session_scope_overrides(env, cwd, given_keys)
     pairs = [flags[i : i + 2] for i in range(0, len(flags), 2)]
     return [item for pair in dict.fromkeys(map(tuple, pairs)) for item in pair]
 

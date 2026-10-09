@@ -84,3 +84,43 @@ def test_a_provider_package_does_not_export_fold_usage() -> None:
     for name in agentshim.provider_names():
         package = importlib.import_module(f"agentshim.providers.{name}")
         assert "fold_usage" not in package.__all__, name
+
+
+def test_the_process_confinement_clock_and_permission_names_are_exported() -> None:
+    for name in (
+        "ApprovalPolicy",
+        "Clock",
+        "Confinement",
+        "DockerExecConfinement",
+        "IdAllocator",
+        "NativeMode",
+        "NativePermissions",
+        "Process",
+        "ProcessClosedError",
+        "ReapError",
+        "ProcessExited",
+        "ProcessOutput",
+        "RandomIds",
+        "SpawnRequest",
+        "StderrLine",
+        "StdoutLine",
+        "StopSignal",
+        "SystemClock",
+        "confine",
+    ):
+        assert name in agentshim.__all__, name
+
+
+def test_the_new_test_doubles_are_exported() -> None:
+    for name in (
+        "EchoPeer",
+        "FakeClock",
+        "FakeConfinement",
+        "FakePeer",
+        "FakeProcess",
+        "GateMarker",
+        "ReplayGates",
+        "SequentialIds",
+        "SilentPeer",
+    ):
+        assert name in agentshim.testing.__all__, name

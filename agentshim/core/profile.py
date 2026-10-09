@@ -11,6 +11,8 @@ from enum import Enum
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
+from .permissions import NativeMode
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -172,3 +174,8 @@ class ProviderProfile:
     #: dedicated home for ``ConfigScope.PROJECT``. Empty when the provider
     #: isolates by flags alone and needs no home.
     config_home_files: tuple[str, ...] = ()
+    #: The ``NativeMode`` values the provider can enforce through its own
+    #: sandbox. Every provider supports ``BYPASS`` (that is how it runs today);
+    #: a transport that maps the other modes declares them here, and asking for
+    #: one that is missing is a ``ProviderCapabilityError``.
+    native_permission_modes: frozenset[NativeMode] = frozenset({NativeMode.BYPASS})

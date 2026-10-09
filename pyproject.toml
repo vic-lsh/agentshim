@@ -68,6 +68,7 @@ max-complexity = 10
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
+"agentshim/testing/contracts.py" = ["S101", "D102"]
 "tests/**" = ["S101", "PLR2004", "D", "INP001", "TC001", "TC002", "TC003"]
 "scripts/**" = ["T201"]
 

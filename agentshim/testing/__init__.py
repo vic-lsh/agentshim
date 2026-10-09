@@ -26,6 +26,17 @@ from agentshim.providers.copilot.provider import parse_mcp_servers as _parse_cop
 from agentshim.providers.gemini import provider as _gemini
 from agentshim.providers.opencode import provider as _opencode
 
+from .clock import FakeClock, SequentialIds
+from .confinement import FakeConfinement
+from .process import (
+    EchoPeer,
+    FakePeer,
+    FakeProcess,
+    GateMarker,
+    ReplayGates,
+    SilentPeer,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     from pathlib import Path
@@ -33,6 +44,7 @@ if TYPE_CHECKING:
     from agentshim.core.errors import FailureKind
     from agentshim.core.events import AgentEvent
     from agentshim.execution.executor import CommandRequest, CommandStreamSink
+    from agentshim.execution.process import SpawnRequest
 
 
 @dataclass
@@ -74,11 +86,15 @@ class FakeExecutor:
         runs: FakeRun | Sequence[FakeRun] | Callable[[CommandRequest], FakeRun],
         *,
         binaries: Mapping[str, str] | None = None,
+        peers: Callable[[SpawnRequest], FakePeer] | None = None,
+        gates: ReplayGates | None = None,
     ) -> None:
         """Take one run, a sequence of runs, or a callable that picks per request.
 
         *binaries* pins what ``find_binary`` answers; without it every name
-        resolves to a plausible path.
+        resolves to a plausible path. *peers* builds the far end of each
+        ``spawn`` from its request; without it ``spawn`` raises
+        ``ValueError``. *gates* is shared by every spawned ``FakeProcess``.
         """
         if isinstance(runs, FakeRun):
             runs = [runs]
@@ -88,6 +104,10 @@ class FakeExecutor:
         self.requests: list[CommandRequest] = []
         self.handles: list[FakeCommandHandle] = []
         self.checked: list[str] = []
+        self._peers = peers
+        self.gates = gates if gates is not None else ReplayGates()
+        self.spawns: list[SpawnRequest] = []
+        self.processes: list[FakeProcess] = []
 
     def find_binary(self, name: str, env: Mapping[str, str]) -> str:
         """Return the pinned path for *name*, or a plausible default one."""
@@ -124,6 +144,16 @@ class FakeExecutor:
             stdout="".join(run.stdout),
             stderr="".join(run.stderr),
         )
+
+    def spawn(self, request: SpawnRequest) -> FakeProcess:
+        """Start a ``FakeProcess`` whose peer the ``peers`` factory builds."""
+        if self._peers is None:
+            msg = "FakeExecutor.spawn needs a peers factory"
+            raise ValueError(msg)
+        self.spawns.append(request)
+        process = FakeProcess(self._peers(request), gates=self.gates)
+        self.processes.append(process)
+        return process
 
     def _next(self, request: CommandRequest) -> FakeRun:
         runs = self._runs
@@ -350,10 +380,19 @@ def _opencode_mcp_entry(raw: Mapping[str, Any]) -> dict[str, Any]:
 
 
 __all__ = [
+    "EchoPeer",
+    "FakeClock",
     "FakeCommandHandle",
+    "FakeConfinement",
     "FakeExecutor",
+    "FakePeer",
+    "FakeProcess",
     "FakeRun",
+    "GateMarker",
     "RecordingEventHandler",
+    "ReplayGates",
+    "SequentialIds",
+    "SilentPeer",
     "TokenUsage",
     "installed_mcp_servers",
     "scripted_failure",

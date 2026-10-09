@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .confinement import Confinement, confine
+from .docker import DockerExecConfinement
 from .executor import (
     CallbackCommandStreamSink,
     CommandExecutor,
@@ -11,7 +13,15 @@ from .executor import (
     CommandStreamSink,
     NullSink,
 )
-from .host import HostCommandExecutor, ProcessCommandHandle
+from .host import HostCommandExecutor, HostProcess, ProcessCommandHandle
+from .process import (
+    Process,
+    ProcessExited,
+    ProcessOutput,
+    SpawnRequest,
+    StderrLine,
+    StdoutLine,
+)
 from .transform import TransformingExecutor
 
 __all__ = [
@@ -21,8 +31,18 @@ __all__ = [
     "CommandRequest",
     "CommandResult",
     "CommandStreamSink",
+    "Confinement",
+    "DockerExecConfinement",
     "HostCommandExecutor",
+    "HostProcess",
     "NullSink",
+    "Process",
     "ProcessCommandHandle",
+    "ProcessExited",
+    "ProcessOutput",
+    "SpawnRequest",
+    "StderrLine",
+    "StdoutLine",
     "TransformingExecutor",
+    "confine",
 ]

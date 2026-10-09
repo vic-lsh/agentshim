@@ -19,6 +19,9 @@ agentshim/
     usage.py           TokenUsage, TokenWeights, ProviderUsage
     pricing.py         ModelPricing, PricingTable, price_for, cost_usd
     errors.py          exception hierarchy
+    permissions.py     NativeMode, NativePermissions, ApprovalPolicy
+    clock.py           StopSignal, Clock, SystemClock
+    ids.py             IdAllocator, RandomIds
     profile.py         ProviderProfile and capability enums
     provider.py        Provider and StreamParser protocols, McpInstallation,
                        ArgvContext, ParsedTurn
@@ -31,6 +34,9 @@ agentshim/
     executor.py        CommandRequest, CommandResult, CommandHandle, sinks, CommandExecutor
     host.py            HostCommandExecutor
     transform.py       TransformingExecutor
+    process.py         SpawnRequest, ProcessOutput, Process (long-lived processes)
+    confinement.py     Confinement protocol, confine(), PathMap
+    docker.py          DockerExecConfinement
   providers/           one folder per CLI, all with the same layout
     __init__.py        get_provider(name), provider_names(), get_scripted_lines(name)
     claude/            provider.py, parser.py, events.py, scripted.py,
@@ -42,6 +48,10 @@ agentshim/
   testing/             test doubles shipped for consumers
     __init__.py        FakeExecutor, FakeRun, RecordingEventHandler, scripted_turn,
                        scripted_resume_failure, installed_mcp_servers
+    clock.py           FakeClock, SequentialIds
+    process.py         FakeProcess, FakePeer, EchoPeer, SilentPeer, ReplayGates, GateMarker
+    confinement.py     FakeConfinement
+    contracts.py       ProcessContract, ConfinementContract, ClockContract
 ```
 
 Rules:
@@ -84,6 +94,87 @@ Rules:
   pyright strict on `agentshim/`, ruff clean.
 - No required runtime dependencies means no pydantic either: the MCP server
   specs and every other value type are plain frozen dataclasses.
+
+## Long-lived processes, confinement, clock, permissions
+
+These pieces are additive. `CliAgent` and the providers do not use them yet;
+they are the base the session and transport layers are built on.
+
+### Process
+
+`CommandExecutor.run` is one request, one result. `CommandExecutor.spawn(SpawnRequest)`
+starts a long-lived `Process` the caller writes to and reads from.
+
+```python
+class Process(Protocol):
+    def write(self, data: str) -> None: ...        # ProcessClosedError if stdin is closed or the process is gone
+    def close_stdin(self) -> None: ...             # idempotent
+    def next_output(self, timeout: float | None) -> ProcessOutput | None: ...
+    def terminate(self) -> None: ...               # idempotent, signals the process group
+    def kill(self) -> None: ...                    # idempotent, signals the process group
+    def wait(self, timeout: float | None) -> int | None: ...
+```
+
+Output is pulled, never pushed: `next_output` returns `StdoutLine`, `StderrLine`
+or `ProcessExited`, or `None` when `timeout` passes with nothing. Lines keep
+their trailing newline, as `CommandStreamSink` lines do. `ProcessExited` is
+always last (every line written before the exit is delivered first) and is
+returned again by every later call. Because the caller decides when output is
+consumed, a simulation controls the interleaving and no callback runs on a
+foreign thread. `HostCommandExecutor.spawn` starts the process in its own
+session; reader threads feed one queue inside `HostProcess`, which is the real
+I/O shell. `TransformingExecutor.spawn` applies the same transform as `run`.
+
+### Confinement
+
+A `Confinement` bounds the processes agentshim starts from outside the agent:
+`wrap(argv, cwd)` returns the host argv that runs `argv` inside it,
+`agent_path(host_path)` maps a host path to the path the agent sees, `env` is
+the environment the confined process needs, and `reap()` kills every process of
+this kind agentshim left behind, including those of an earlier host process.
+`confine(executor, confinement)` applies one to any executor: `run`, `spawn` and
+the binary health check go through `wrap`, and `find_binary` trusts the bare
+name because the binary lives inside the confinement.
+
+`DockerExecConfinement` runs `docker exec -i` into a running container. The
+container id is read on every call. Environment values are passed by name
+(`-e KEY`) with the values in the docker client's own environment, which
+`confine` merges in, so secrets never appear in the host process table.
+Every process carries `AGENTSHIM_CONFINED=1`; `reap` kills exactly the
+processes whose environment has it, so a nested daemon in the same container is
+left alone, and a missing container counts as nothing to reap.
+
+### Clock and ids
+
+`Clock` (`monotonic()`, `wait(seconds, stop)`) and `IdAllocator`
+(`new_id(prefix)`) are injected so waits can be cancelled with a `StopSignal`
+and simulations run without real time. `SystemClock` and `RandomIds` are the
+real ones; `FakeClock` and `SequentialIds` the test doubles.
+
+### Native permissions
+
+`NativePermissions` says what the agent's own sandbox allows: `bypass()`,
+`read_only()` or `workspace_write(writable_roots, network=)`. Roots and network
+are only valid with `workspace_write`; roots must be absolute. `BYPASS` turns
+the agent's sandbox and approvals off and is only safe inside an outside
+`Confinement`. `ApprovalPolicy` (`DENY`, `FAIL_TURN`) says what a transport does
+when the agent asks for permission or input: it never waits for a human.
+`ProviderProfile.native_permission_modes` lists the modes a provider supports
+(default: `BYPASS` only).
+
+### Test doubles and contract suites
+
+`FakeProcess` is driven by a `FakePeer` (`on_start`, `on_stdin`,
+`on_stdin_closed`) that answers reactively, so a protocol fake can reply by
+request id. `ReplayGates` pause a conversation: a peer emits `GateMarker(name)`
+and the process delivers nothing past it while that gate is closed.
+`FakeExecutor(peers=...)` spawns them; `FakeConfinement` records wraps and
+reaps. `agentshim.testing.contracts` holds `ProcessContract`,
+`ConfinementContract` and `ClockContract`: subclass one as `Test<Impl>`, implement
+its factories, and pytest runs the inherited tests against your implementation.
+
+`tests/unit/test_provider_name_literals.py` fails when a string constant equal
+to a provider name appears outside `providers/` and `testing/`.
 
 ## Core types
 

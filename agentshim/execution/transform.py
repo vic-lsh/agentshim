@@ -7,11 +7,13 @@ from typing import TYPE_CHECKING
 from agentshim.core.errors import CliCheckError, CliTimeoutError
 
 from .executor import CommandRequest, NullSink
+from .process import SpawnRequest
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
     from .executor import CommandExecutor, CommandResult, CommandStreamSink
+    from .process import Process
 
 
 class TransformingExecutor:
@@ -73,3 +75,17 @@ class TransformingExecutor:
     def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
         """Run the rewritten request on the inner executor."""
         return self._inner.run(self._transform(request), sink)
+
+    def spawn(self, request: SpawnRequest) -> Process:
+        """Start the rewritten request on the inner executor.
+
+        The transform sees the spawn as a ``CommandRequest`` with no stdin and
+        no timeout, and only the ``argv``, ``cwd`` and ``env`` it returns are
+        used.
+        """
+        command = self._transform(
+            CommandRequest(
+                argv=request.argv, stdin=None, cwd=request.cwd, env=request.env, timeout=None
+            )
+        )
+        return self._inner.spawn(SpawnRequest(argv=command.argv, cwd=command.cwd, env=command.env))

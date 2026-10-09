@@ -5,6 +5,28 @@
 ### Added
 
 - MIT license (`LICENSE`), declared in the package metadata.
+- Long-lived processes: `CommandExecutor.spawn(SpawnRequest) -> Process` with a
+  pull-based output model (`StdoutLine`, `StderrLine`, `ProcessExited`),
+  implemented by `HostCommandExecutor` and `TransformingExecutor`.
+  `ProcessClosedError` reports a write to a closed or exited process.
+- `Confinement` protocol, `confine(executor, confinement)` and
+  `DockerExecConfinement` (`docker exec` into a running container, with path
+  mapping and `reap()` of marked processes).
+- `Clock`/`SystemClock`/`StopSignal` and `IdAllocator`/`RandomIds`.
+- `NativeMode`, `NativePermissions`, `ApprovalPolicy` and
+  `ProviderProfile.native_permission_modes` (default `BYPASS` only).
+- Test doubles `FakeProcess`, `FakePeer`, `EchoPeer`, `SilentPeer`,
+  `ReplayGates`, `GateMarker`, `FakeConfinement`, `FakeClock`, `SequentialIds`,
+  `FakeExecutor(peers=...)`, and contract suites `ProcessContract`,
+  `ConfinementContract`, `ClockContract` in `agentshim.testing.contracts`.
+
+### Fixed
+
+- `DockerExecConfinement.reap()` raises the new `ReapError` unless the
+  container is gone or stopped, and the reap script fails when the container
+  lacks `tr`/`grep`, instead of reporting a clean sweep. `env` may not use the
+  reserved `AGENTSHIM_CONFINED` name.
+- `Process.next_output(0)` on the host polls and returns already-queued output.
 
 ## 0.14.1 (2026-10-04)
 

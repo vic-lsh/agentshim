@@ -174,6 +174,19 @@ class SchemaDialectError(ProviderCapabilityError):
         )
 
 
+class ProcessClosedError(AgentShimError):
+    """A long-lived process can no longer take input: stdin is closed or it exited."""
+
+
+class ReapError(AgentShimError):
+    """A confinement could not confirm that its processes were killed.
+
+    Raised instead of returning quietly: a reap that failed leaves agents
+    running against the workspace. A container that no longer exists is not an
+    error, because nothing in it can still run.
+    """
+
+
 class McpConfigError(AgentShimError):
     """An MCP config file is unreadable, unwritable, or is not a JSON object."""
 

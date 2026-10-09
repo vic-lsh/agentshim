@@ -17,15 +17,18 @@ from agentshim.core.errors import (
     CliExitError,
     CliNotFoundError,
     CliTimeoutError,
+    ProcessClosedError,
 )
 
 from .executor import CommandRequest, CommandResult, NullSink
+from .process import ProcessExited, ProcessOutput, StderrLine, StdoutLine
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from typing import IO
 
     from .executor import CommandStreamSink
+    from .process import Process, SpawnRequest
 
 _JOIN_TIMEOUT_S = 5.0
 _EOF = None
@@ -179,6 +182,131 @@ class HostCommandExecutor:
             raise _reader_failure(argv, returncode, stdout, stderr, failures[0])
         return CommandResult(returncode=returncode, stdout=stdout, stderr=stderr)
 
+    def spawn(self, request: SpawnRequest) -> Process:
+        """Start a long-lived process in its own session and return its handle.
+
+        Reader threads feed one queue; ``HostProcess.next_output`` drains it on
+        the caller's thread, so the threads are an implementation detail of
+        this real-I/O shell and never call back into the caller.
+        """
+        argv = list(request.argv)
+        process = subprocess.Popen(  # noqa: S603 - caller-supplied argv, list form, no shell
+            argv,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            cwd=request.cwd,
+            env=dict(request.env),
+            start_new_session=True,
+        )
+        return HostProcess(process)
+
+
+class HostProcess:
+    """A local process started by ``HostCommandExecutor.spawn``.
+
+    Output order: lines in the order the reader threads queued them (stdout
+    and stderr interleave as the OS delivered them), then one
+    ``ProcessExited`` once both streams hit EOF and the process has exited.
+    A reader failure ends that stream as if at EOF.
+    """
+
+    def __init__(self, process: subprocess.Popen[str]) -> None:
+        """Start the reader threads for *process*."""
+        self._process = process
+        self._queue: queue.Queue[tuple[str, str | None]] = queue.Queue()
+        self._failures: list[tuple[str, BaseException]] = []
+        self._open_streams = 2
+        self._exited: ProcessExited | None = None
+        self._stdin_closed = False
+        self._workers = [
+            _spawn(_pump, process.stdout, "out", self._queue, self._failures),
+            _spawn(_pump, process.stderr, "err", self._queue, self._failures),
+        ]
+
+    def write(self, data: str) -> None:
+        """Write *data* to stdin and flush, or raise ``ProcessClosedError``.
+
+        Blocks while the child is not reading and the pipe is full.
+        """
+        stream = self._process.stdin
+        if self._stdin_closed or stream is None:
+            msg = "stdin is closed"
+            raise ProcessClosedError(msg)
+        try:
+            stream.write(data)
+            stream.flush()
+        except (BrokenPipeError, ValueError, OSError) as exc:
+            msg = f"process is gone: {exc!r}"
+            raise ProcessClosedError(msg) from exc
+
+    def close_stdin(self) -> None:
+        """Close stdin; later calls do nothing."""
+        if self._stdin_closed:
+            return
+        self._stdin_closed = True
+        stream = self._process.stdin
+        if stream is not None:
+            with contextlib.suppress(BrokenPipeError, ValueError, OSError):
+                stream.close()
+
+    def next_output(self, timeout: float | None) -> ProcessOutput | None:
+        """Return the next item, or ``None`` after *timeout* seconds of nothing."""
+        if self._exited is not None:
+            return self._exited
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while self._open_streams:
+            try:
+                kind, line = _pull(self._queue, deadline)
+            except _TimedOutError:
+                return None
+            if line is None:
+                self._open_streams -= 1
+            elif kind == "out":
+                return StdoutLine(line)
+            else:
+                return StderrLine(line)
+        try:
+            _wait(self._process, deadline)
+        except _TimedOutError:
+            return None
+        return self._finish()
+
+    def _finish(self) -> ProcessExited:
+        returncode = self._process.returncode
+        self._exited = ProcessExited(returncode if returncode is not None else -1)
+        self.close_stdin()
+        _join(self._workers)
+        return self._exited
+
+    def terminate(self) -> None:
+        """Send SIGTERM to the process group."""
+        self._signal(signal.SIGTERM)
+
+    def kill(self) -> None:
+        """Send SIGKILL to the process group."""
+        self._signal(signal.SIGKILL)
+
+    def _signal(self, sig: int) -> None:
+        # The process leads its own session, so its pgid is its pid. Signalling
+        # that number directly (never via getpgid) cannot reach an unrelated
+        # process that reused the pid after this one was reaped.
+        if self._exited is not None:
+            return
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+            os.killpg(self._process.pid, sig)
+
+    def wait(self, timeout: float | None) -> int | None:
+        """Return the exit code, or ``None`` if still running after *timeout*."""
+        try:
+            return self._process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return None
+
 
 def _reader_failure(
     argv: list[str],
@@ -261,6 +389,20 @@ def _next(
         return lines.get(timeout=remaining)
     except queue.Empty:
         raise _TimedOutError from None
+
+
+def _pull(
+    lines: queue.Queue[tuple[str, str | None]],
+    deadline: float | None,
+) -> tuple[str, str | None]:
+    """Like ``_next``, but an item that is already queued wins over a spent deadline.
+
+    ``next_output(0)`` is a poll: it must return what is ready, not time out.
+    """
+    try:
+        return lines.get_nowait()
+    except queue.Empty:
+        return _next(lines, deadline)
 
 
 def _wait(process: subprocess.Popen[str], deadline: float | None) -> None:

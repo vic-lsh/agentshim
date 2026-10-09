@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
+    from .process import Process, SpawnRequest
+
 
 class CommandHandle(Protocol):
     """Executor-neutral handle for a started command.
@@ -86,6 +88,10 @@ class CommandExecutor(Protocol):
 
     def run(self, request: CommandRequest, sink: CommandStreamSink) -> CommandResult:
         """Run *request*, streaming into *sink*, or raise ``CliTimeoutError``."""
+        ...
+
+    def spawn(self, request: SpawnRequest) -> Process:
+        """Start a long-lived process the caller writes to and reads from."""
         ...
 
 

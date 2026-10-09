@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from agentshim import (
     Agent,
@@ -15,6 +17,7 @@ from agentshim import (
     TurnFailedError,
     TurnInterrupted,
     TurnRequest,
+    TurnTimeoutError,
 )
 from agentshim.core.checkpoints import Checkpoint
 from agentshim.providers.codex.app_server import CodexAppServerTransport
@@ -30,6 +33,13 @@ from agentshim.testing import (
     SequentialIds,
     Spend,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from agentshim.execution.process import SpawnRequest
+    from agentshim.testing import FakePeer
+    from agentshim.testing.process import PeerOutput
 
 ENV = {"PATH": "/usr/bin:/bin", "HOME": "/home/tester"}
 
@@ -247,6 +257,43 @@ def test_an_interrupt_ends_the_turn_and_the_session_goes_on() -> None:
         assert handler.of_type(TurnInterrupted)
         assert _run(session).result.text == "next"
         assert script.spawned == 1
+
+
+class _SilentOnTurnStart:
+    """A server that takes a turn and never says a word, like a wedged process."""
+
+    def __init__(self, inner: FakePeer) -> None:
+        self._inner = inner
+
+    def on_start(self) -> Sequence[PeerOutput]:
+        return self._inner.on_start()
+
+    def on_stdin(self, data: str) -> Sequence[PeerOutput]:
+        if '"turn/start"' in data:
+            return ()
+        return self._inner.on_stdin(data)
+
+    def on_stdin_closed(self) -> Sequence[PeerOutput]:
+        return self._inner.on_stdin_closed()
+
+
+def test_a_server_silent_to_a_turn_is_replaced_instead_of_timing_out_every_later_turn() -> None:
+    script = CodexScript()
+    script.turn(Say("heard"))
+    spawned: list[FakePeer] = []
+
+    def peers(request: SpawnRequest) -> FakePeer:
+        peer = script.peer(request)
+        wrapped: FakePeer = _SilentOnTurnStart(peer) if not spawned else peer
+        spawned.append(wrapped)
+        return wrapped
+
+    agent = _agent(script, executor=FakeExecutor([], peers=peers))
+    with agent.session("/work") as session:
+        with pytest.raises(TurnTimeoutError):
+            session.run(session.prepare_turn(TurnRequest(prompt="go", timeout=5.0)))
+        assert _run(session).result.text == "heard"
+    assert len(spawned) == 2
 
 
 def test_a_refused_resume_that_cannot_be_replaced_propagates() -> None:

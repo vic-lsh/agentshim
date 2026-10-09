@@ -12,7 +12,9 @@ What the policy decides, per turn:
 * A ``TRANSIENT`` failure is retried in place after each delay of the
   ``RetryPolicy``; the waits end early when the shell reports a stop.
 * A refused resume replaces the conversation once, unless the turn must not
-  lose its conversation (``strict`` or ``pinned``).
+  lose its conversation (``strict`` or ``pinned``). A refusal during a turn that
+  did not itself resume (the conversation was lost under it) forgets the
+  conversation without replaying the turn.
 * An unclassified failure of a resumed turn forgets the conversation.
 * After a successful turn that exhausts the provider's ``RenewalBudget`` the
   conversation is retired.
@@ -531,12 +533,21 @@ class SessionPolicy:
         if event.outcome is Outcome.TRANSIENT:
             return self._retry_transient(state, turn, event)
         if event.outcome is Outcome.RESUME_REFUSED:
-            if turn.resumed and not turn.keeps_conversation:
-                return _replace_conversation(state, turn)
-            return _give_up(state, event.now)
+            return self._on_resume_refused(state, turn, event)
         if event.outcome is Outcome.OTHER and turn.resumed and not turn.keeps_conversation:
             return _forget_conversation(state, event.now)
         return _give_up(state, event.now)
+
+    def _on_resume_refused(self, state: SessionState, turn: TurnState, event: Failed) -> Step:
+        if turn.keeps_conversation:
+            return _give_up(state, event.now)
+        if turn.resumed:
+            return _replace_conversation(state, turn)
+        # The turn began in a conversation it opened itself and the provider
+        # then lost it (a process died mid-turn and its thread could not be
+        # resumed). The turn may have run, so it is not replayed, but the
+        # conversation is gone: holding it would refuse every later turn.
+        return _forget_conversation(state, event.now)
 
     def _retry_transient(self, state: SessionState, turn: TurnState, event: Failed) -> Step:
         delays = self.config.retry.delays

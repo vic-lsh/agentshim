@@ -102,6 +102,10 @@ PROFILE = ProviderProfile(
     # not needlessly expose it to an agent process.
     auth_files=(".codex/auth.json",),
     credential_files=(".codex/auth.json",),
+    # Every turn writes a rollout under sessions/, and `resume` reads it back.
+    # The rest of the state directory (worktrees, caches, logs) is not needed
+    # to log in or resume.
+    resume_state_paths=(".codex/sessions",),
     # CLI_FLAGS: Codex takes MCP servers as --config overrides, never a file.
     mcp_config_file=None,
     # A long Codex thread slows down and costs more per turn, so a session

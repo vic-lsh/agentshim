@@ -44,6 +44,7 @@ class TestProfile:
             "auth_env_vars",
             "state_root_env",
             "config_home_files",
+            "resume_state_paths",
             "renewal",
         }
         for field in fields(ProviderProfile):

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.15.7 (2026-10-09)
+
+### Added
+
+- `ProviderProfile.resume_state_paths` (default empty): the home-relative paths, inside
+  `state_dirs`, that with `auth_files` are all the state a resumed conversation needs
+  persisted. A caller that cannot grant a whole state directory grants these instead;
+  empty means the provider is not known to run from that subset. Codex
+  `.codex/sessions`.
+
 ## 0.15.6 (2026-10-09)
 
 ### Fixed

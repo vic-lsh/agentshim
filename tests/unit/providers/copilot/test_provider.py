@@ -26,6 +26,7 @@ EMPTY_BY_DESIGN = {
     "darwin_state_dirs",
     "mcp_config_file",
     "config_home_files",
+    "resume_state_paths",
     "renewal",
 }
 

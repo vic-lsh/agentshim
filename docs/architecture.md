@@ -335,6 +335,7 @@ class ProviderProfile:
     state_root_env: str | None         # var that relocates state_dirs[0]; None if undocumented
     auth_files: tuple[str, ...]        # home-relative authentication files, inside state_dirs
     credential_files: tuple[str, ...]  # the subset of auth_files that holds refreshable credentials
+    resume_state_paths: tuple[str, ...]  # conversation history a resume reads back; empty if unknown
     mcp_config_file: str | None        # workspace-relative MCP config path; set iff mcp is CONFIG_FILE
 ```
 

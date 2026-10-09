@@ -1,0 +1,169 @@
+{
+  "client_requests": [
+    {
+      "method": "initialize",
+      "params": "InitializeParams",
+      "result": "InitializeResponse"
+    },
+    {
+      "method": "thread/start",
+      "params": "ThreadStartParams",
+      "result": "ThreadStartResponse"
+    },
+    {
+      "method": "thread/resume",
+      "params": "ThreadResumeParams",
+      "result": "ThreadResumeResponse"
+    },
+    {
+      "method": "thread/unsubscribe",
+      "params": "ThreadUnsubscribeParams",
+      "result": "ThreadUnsubscribeResponse"
+    },
+    {
+      "method": "turn/start",
+      "params": "TurnStartParams",
+      "result": "TurnStartResponse"
+    },
+    {
+      "method": "turn/steer",
+      "params": "TurnSteerParams",
+      "result": "TurnSteerResponse"
+    },
+    {
+      "method": "turn/interrupt",
+      "params": "TurnInterruptParams",
+      "result": "TurnInterruptResponse"
+    }
+  ],
+  "client_notifications": [
+    {
+      "method": "initialized"
+    }
+  ],
+  "server_notifications": [
+    {
+      "method": "error",
+      "params": "ErrorNotification"
+    },
+    {
+      "method": "warning",
+      "params": "WarningNotification"
+    },
+    {
+      "method": "thread/started",
+      "params": "ThreadStartedNotification"
+    },
+    {
+      "method": "thread/status/changed",
+      "params": "ThreadStatusChangedNotification"
+    },
+    {
+      "method": "thread/tokenUsage/updated",
+      "params": "ThreadTokenUsageUpdatedNotification"
+    },
+    {
+      "method": "turn/started",
+      "params": "TurnStartedNotification"
+    },
+    {
+      "method": "turn/completed",
+      "params": "TurnCompletedNotification"
+    },
+    {
+      "method": "item/started",
+      "params": "ItemStartedNotification"
+    },
+    {
+      "method": "item/completed",
+      "params": "ItemCompletedNotification"
+    },
+    {
+      "method": "item/agentMessage/delta",
+      "params": "AgentMessageDeltaNotification"
+    },
+    {
+      "method": "item/reasoning/summaryTextDelta",
+      "params": "ReasoningSummaryTextDeltaNotification"
+    },
+    {
+      "method": "item/reasoning/summaryPartAdded",
+      "params": "ReasoningSummaryPartAddedNotification"
+    },
+    {
+      "method": "item/reasoning/textDelta",
+      "params": "ReasoningTextDeltaNotification"
+    },
+    {
+      "method": "item/commandExecution/outputDelta",
+      "params": "CommandExecutionOutputDeltaNotification"
+    },
+    {
+      "method": "mcpServer/startupStatus/updated",
+      "params": "McpServerStatusUpdatedNotification"
+    },
+    {
+      "method": "serverRequest/resolved",
+      "params": "ServerRequestResolvedNotification"
+    },
+    {
+      "method": "account/rateLimits/updated",
+      "params": "AccountRateLimitsUpdatedNotification"
+    }
+  ],
+  "server_requests": [
+    {
+      "method": "item/commandExecution/requestApproval",
+      "params": "CommandExecutionRequestApprovalParams",
+      "response": "CommandExecutionRequestApprovalResponse"
+    },
+    {
+      "method": "item/fileChange/requestApproval",
+      "params": "FileChangeRequestApprovalParams",
+      "response": "FileChangeRequestApprovalResponse"
+    },
+    {
+      "method": "item/permissions/requestApproval",
+      "params": "PermissionsRequestApprovalParams",
+      "response": "PermissionsRequestApprovalResponse"
+    },
+    {
+      "method": "mcpServer/elicitation/request",
+      "params": "McpServerElicitationRequestParams",
+      "response": "McpServerElicitationRequestResponse"
+    },
+    {
+      "method": "item/tool/requestUserInput",
+      "params": "ToolRequestUserInputParams",
+      "response": "ToolRequestUserInputResponse"
+    },
+    {
+      "method": "item/tool/call",
+      "params": "DynamicToolCallParams",
+      "response": "DynamicToolCallResponse"
+    },
+    {
+      "method": "account/chatgptAuthTokens/refresh",
+      "params": "ChatgptAuthTokensRefreshParams",
+      "response": "ChatgptAuthTokensRefreshResponse"
+    },
+    {
+      "method": "attestation/generate",
+      "params": "AttestationGenerateParams",
+      "response": "AttestationGenerateResponse"
+    },
+    {
+      "method": "applyPatchApproval",
+      "params": "ApplyPatchApprovalParams",
+      "response": "ApplyPatchApprovalResponse"
+    },
+    {
+      "method": "execCommandApproval",
+      "params": "ExecCommandApprovalParams",
+      "response": "ExecCommandApprovalResponse"
+    }
+  ],
+  "opaque": [
+    "McpElicitationSchema"
+  ]
+}

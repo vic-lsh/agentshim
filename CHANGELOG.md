@@ -19,6 +19,12 @@
   `ReplayGates`, `GateMarker`, `FakeConfinement`, `FakeClock`, `SequentialIds`,
   `FakeExecutor(peers=...)`, and contract suites `ProcessContract`,
   `ConfinementContract`, `ClockContract` in `agentshim.testing.contracts`.
+- Generated, typed Codex `app-server` protocol (`agentshim.providers.codex.app_server`):
+  frozen dataclasses for the requests, notifications, server requests and item
+  types a transport needs, tolerant `from_wire` for server messages, strict
+  `to_wire` for client messages, and `parse_server_message`. Regenerated from
+  the CLI's own JSON Schema by `scripts/generate_codex_protocol.py` (codex-cli
+  0.160.0); not exported from the top-level package yet.
 
 ### Fixed
 

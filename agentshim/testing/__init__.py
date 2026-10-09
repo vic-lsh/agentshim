@@ -28,6 +28,17 @@ from agentshim.providers.opencode import provider as _opencode
 
 from .clock import FakeClock, SequentialIds
 from .confinement import FakeConfinement
+from .conversation import (
+    FakeCheckpointStore,
+    FakeConversation,
+    FakeOutcome,
+    FakeTransport,
+    FakeTurn,
+    fake_profile,
+    resume_refused,
+    turn_failed,
+    turn_timeout,
+)
 from .process import (
     EchoPeer,
     FakePeer,
@@ -381,21 +392,30 @@ def _opencode_mcp_entry(raw: Mapping[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "EchoPeer",
+    "FakeCheckpointStore",
     "FakeClock",
     "FakeCommandHandle",
     "FakeConfinement",
+    "FakeConversation",
     "FakeExecutor",
+    "FakeOutcome",
     "FakePeer",
     "FakeProcess",
     "FakeRun",
+    "FakeTransport",
+    "FakeTurn",
     "GateMarker",
     "RecordingEventHandler",
     "ReplayGates",
     "SequentialIds",
     "SilentPeer",
     "TokenUsage",
+    "fake_profile",
     "installed_mcp_servers",
+    "resume_refused",
     "scripted_failure",
     "scripted_resume_failure",
     "scripted_turn",
+    "turn_failed",
+    "turn_timeout",
 ]

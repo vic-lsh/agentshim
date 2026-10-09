@@ -19,6 +19,8 @@ union.
 | `Stderr` | `text` | one stderr line |
 | `RawOutput` | `text` | one stdout line that was not a provider event |
 | `ProviderError` | `message` | the provider reported an error |
+| `TurnInterrupted` | none | the turn was interrupted before it finished; the conversation is kept |
+| `ApprovalDenied` | `kind`, `detail` | the agent asked for permission or input and the `ApprovalPolicy` refused |
 
 ## Handling them
 

@@ -15,6 +15,7 @@ from agentshim.core.profile import (
     McpScope,
     OutputSchemaStyle,
     ProviderProfile,
+    RenewalBudget,
     SchemaDialect,
     SkillScope,
     SkillSignal,
@@ -102,6 +103,12 @@ PROFILE = ProviderProfile(
     auth_files=(".codex/auth.json",),
     # CLI_FLAGS: Codex takes MCP servers as --config overrides, never a file.
     mcp_config_file=None,
+    # A long Codex thread slows down and costs more per turn, so a session
+    # restarts it after two turns or one heavy turn; durable workspace state,
+    # not the thread, carries the work across the restart.
+    renewal=RenewalBudget(
+        max_turns=2, max_turn_input_tokens=10_000_000, max_turn_duration_ms=600_000
+    ),
 )
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 
 from agentshim import (
+    ApprovalDenied,
     AssistantText,
     CompositeEventHandler,
     ConsoleEventHandler,
@@ -19,6 +20,7 @@ from agentshim import (
     Stderr,
     ToolCall,
     ToolResult,
+    TurnInterrupted,
     compose_event_handlers,
 )
 from agentshim.testing import RecordingEventHandler
@@ -165,3 +167,24 @@ class TestRecordingEventHandler:
 def test_events_are_frozen_and_comparable() -> None:
     assert AssistantText("x") == AssistantText("x")
     assert RunStarted(("a",)) != RunStarted(("b",))
+
+
+class TestTurnEndEvents:
+    def _render(self, *events: object) -> str:
+        stream = io.StringIO()
+        handler = ConsoleEventHandler(stream, color=False)
+        for event in events:
+            handler.on_event(event)  # type: ignore[arg-type]
+        return stream.getvalue()
+
+    def test_an_interrupt_is_rendered(self) -> None:
+        assert self._render(TurnInterrupted()) == "[agent] [interrupted]\n"
+
+    def test_a_denied_approval_names_what_was_asked(self) -> None:
+        text = self._render(ApprovalDenied("command", "rm -rf /"))
+        assert text == "[agent] [approval denied] command: rm -rf /\n"
+
+    def test_the_new_events_are_frozen_values(self) -> None:
+        assert TurnInterrupted() == TurnInterrupted()
+        assert ApprovalDenied("a", "b") == ApprovalDenied("a", "b")
+        assert ApprovalDenied("a", "b") != ApprovalDenied("a", "c")

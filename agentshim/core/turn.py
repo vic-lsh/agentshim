@@ -66,6 +66,9 @@ class TurnResult:
     exit_code: int
     #: Skills offered and loaded during the turn, derived from its events.
     skills: SkillSummary = field(default_factory=SkillSummary)
+    #: The turn ended because it was interrupted. The conversation is kept; the
+    #: text and usage are whatever the turn produced before it stopped.
+    interrupted: bool = False
 
 
 def coerce_request(request: TurnRequest | str) -> TurnRequest:

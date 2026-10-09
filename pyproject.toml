@@ -1,6 +1,6 @@
 [project]
 name = "agentshim"
-version = "0.14.1"
+version = "0.15.0"
 description = "Provider-agnostic coding-agent CLI shims"
 readme = "README.md"
 license = "MIT"
@@ -88,7 +88,10 @@ name = "Library layers depend inward"
 type = "layers"
 layers = [
     "agentshim.testing",
+    "agentshim.runtime",
+    "agentshim.oneshot",
     "agentshim.agent",
+    "agentshim.session",
     "agentshim.providers",
     # ":" makes these non-independent siblings of one innermost layer:
     # execution raises the core error types, and neither may import outward.

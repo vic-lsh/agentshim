@@ -13,6 +13,7 @@ from agentshim import (
     OutputSchemaStyle,
     ProviderCapabilityError,
     ProviderProfile,
+    RenewalBudget,
     SchemaDialect,
     SessionResumeError,
     StdioMcpServer,
@@ -49,6 +50,11 @@ class TestProfile:
             assert value is not None, field.name
             assert value != (), field.name
             assert value != "", field.name
+
+    def test_a_codex_thread_is_renewed_on_the_documented_budget(self) -> None:
+        assert CodexProvider().profile.renewal == RenewalBudget(
+            max_turns=2, max_turn_input_tokens=10_000_000, max_turn_duration_ms=600_000
+        )
 
     def test_declared_capabilities(self) -> None:
         profile = CodexProvider().profile

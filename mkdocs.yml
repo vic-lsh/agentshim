@@ -16,6 +16,7 @@ nav:
   - Overview: index.md
   - Getting Started: getting-started.md
   - Architecture: architecture.md
+  - Sessions and Transports: sessions.md
   - Events: events.md
   - Executors: executors.md
   - MCP Servers: mcp.md

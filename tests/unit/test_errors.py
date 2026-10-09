@@ -9,10 +9,16 @@ from agentshim import (
     CliExitError,
     CliNotFoundError,
     CliTimeoutError,
+    ContinuityError,
+    FailureKind,
     McpConfigError,
     ProviderCapabilityError,
     SchemaDialectError,
     SessionResumeError,
+    SessionStateError,
+    TurnCancelledError,
+    TurnFailedError,
+    TurnTimeoutError,
 )
 
 
@@ -27,6 +33,11 @@ from agentshim import (
         ProviderCapabilityError("nope"),
         SchemaDialectError(["bad"]),
         McpConfigError("bad config"),
+        TurnFailedError("x"),
+        TurnTimeoutError(1.0),
+        ContinuityError("a", None),
+        SessionStateError("x"),
+        TurnCancelledError("x"),
     ],
 )
 def test_every_error_is_an_agentshim_error(error: Exception) -> None:
@@ -66,3 +77,38 @@ def test_not_found_error_names_the_binary() -> None:
     error = CliNotFoundError("claude")
     assert error.binary == "claude"
     assert "claude" in str(error)
+
+
+def test_turn_failed_error_carries_a_kind_and_detail() -> None:
+    error = TurnFailedError("boom", kind=FailureKind.AUTH, detail="login expired")
+    assert (error.kind, error.detail) == (FailureKind.AUTH, "login expired")
+    assert str(error) == "boom"
+    assert TurnFailedError("x").kind is FailureKind.OTHER
+
+
+def test_cli_exit_error_is_a_turn_failed_error_with_its_fields_intact() -> None:
+    error = CliExitError(["codex"], 2, "o", "e", kind=FailureKind.TRANSIENT, detail="overloaded")
+    assert isinstance(error, TurnFailedError)
+    assert (error.kind, error.detail) == (FailureKind.TRANSIENT, "overloaded")
+    assert "overloaded" in str(error)
+    assert (error.argv, error.returncode) == (("codex",), 2)
+
+
+def test_a_resume_error_is_a_turn_failed_error_of_kind_other() -> None:
+    error = SessionResumeError(["claude"], 1, "s1")
+    assert isinstance(error, TurnFailedError)
+    assert error.kind is FailureKind.OTHER
+
+
+def test_cli_timeout_error_is_a_turn_timeout_error() -> None:
+    error = CliTimeoutError(["claude"], 3.0)
+    assert isinstance(error, TurnTimeoutError)
+    assert error.timeout == 3.0
+    assert error.partial is None
+    assert TurnTimeoutError(2.0).timeout == 2.0
+
+
+def test_continuity_error_names_both_conversations() -> None:
+    error = ContinuityError("want", "have")
+    assert (error.expected, error.actual) == ("want", "have")
+    assert "want" in str(error)

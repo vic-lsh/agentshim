@@ -21,7 +21,13 @@ from agentshim.providers.copilot import CopilotProvider
 # Populated by the profile, but empty on purpose: Copilot has no output
 # schema, keeps no macOS-only state, and its ``--additional-mcp-config`` flag
 # never writes a workspace config file.
-EMPTY_BY_DESIGN = {"schema_dialect", "darwin_state_dirs", "mcp_config_file", "config_home_files"}
+EMPTY_BY_DESIGN = {
+    "schema_dialect",
+    "darwin_state_dirs",
+    "mcp_config_file",
+    "config_home_files",
+    "renewal",
+}
 
 
 def _stdio() -> StdioMcpServer:

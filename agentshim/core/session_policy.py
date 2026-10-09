@@ -407,13 +407,16 @@ class SessionPolicy:
         )
         if not acceptable:
             return state, (AdoptVerdict(accepted=False),)
-        return replace(state, conversation_id=event.conversation_id, turns=0), (
+        # Adopting the id already held keeps its turn count toward renewal.
+        turns = state.turns if held == event.conversation_id else 0
+        return replace(state, conversation_id=event.conversation_id, turns=turns), (
             AdoptVerdict(accepted=True),
         )
 
     def _on_release(self, state: SessionState, event: Release) -> Step:
         del event
-        if not state.live or _running(state):
+        if not state.live or _running(state) or state.conversation_id is None:
+            # Without an id there is nothing to reopen by: closing would lose the history.
             return state, ()
         return replace(state, live=False), (CloseConversation(),)
 
@@ -434,7 +437,7 @@ class SessionPolicy:
             return state, (Refuse(RefusalReason.CONTINUITY),)
         commands: tuple[Command, ...] = ()
         live = state.live
-        if live and self._idle_due(state, event.now):
+        if live and state.conversation_id is not None and self._idle_due(state, event.now):
             live = False
             commands = (CloseConversation(),)
         turn = TurnState(
@@ -484,9 +487,9 @@ class SessionPolicy:
             commands.append(ClearCheckpoint())
             retained_id, live, turns = None, False, 0
         else:
-            if cid is not None:
-                commands.append(SaveCheckpoint(cid))
-            retained_id, live = cid, state.live
+            retained_id, live = (cid if self.config.supports_resume else None), state.live
+            if retained_id is not None:
+                commands.append(SaveCheckpoint(retained_id))
         if turn.replaced:
             continuity = Continuity.REPLACED
         elif retire:
@@ -517,7 +520,11 @@ class SessionPolicy:
 
     def _on_failed(self, state: SessionState, event: Failed) -> Step:
         turn = _turn_in(state, Phase.OPENING, Phase.RUNNING)
-        if event.conversation_id is not None and event.outcome is not Outcome.RESUME_REFUSED:
+        if (
+            event.conversation_id is not None
+            and self.config.supports_resume
+            and event.outcome is not Outcome.RESUME_REFUSED
+        ):
             state = replace(state, conversation_id=event.conversation_id)
         if state.closed:
             return _give_up(state, event.now)

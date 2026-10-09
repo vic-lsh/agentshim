@@ -603,3 +603,47 @@ def test_negative_delays_are_rejected() -> None:
 
 def test_the_default_delays_are_the_documented_ones() -> None:
     assert RetryPolicy().delays == (30, 60, 120, 240, 480)
+
+
+def _after_unnamed_first_turn(policy: SessionPolicy) -> SessionState:
+    """A live conversation the provider never gave an id."""
+    state = policy.initial_state()
+    for event in (Prepare(0.0), RunBegan(0.0), Opened(), Succeeded(1.0, None)):
+        state, _ = policy.step(state, event)
+    return state
+
+
+def test_a_conversation_with_no_id_is_never_released_because_it_could_not_be_reopened() -> None:
+    policy = SessionPolicy(PolicyConfig(idle_release_after=10.0))
+    state = _after_unnamed_first_turn(policy)
+    assert state.live
+    released, commands = policy.step(state, Release())
+    assert (released, commands) == (state, ())
+    prepared, commands = policy.step(state, Prepare(1000.0))
+    assert commands == ()
+    assert prepared.live
+
+
+def test_a_provider_that_cannot_resume_never_retains_a_conversation_id() -> None:
+    policy = SessionPolicy(PolicyConfig(supports_resume=False))
+    state = policy.initial_state()
+    for event in (Prepare(0.0), RunBegan(0.0), Opened()):
+        state, _ = policy.step(state, event)
+    state, commands = policy.step(state, Succeeded(1.0, "x"))
+    assert state.conversation_id is None
+    assert state.last_turn_conversation_id == "x"
+    assert not any(isinstance(c, SaveCheckpoint) for c in commands)
+    state, _ = policy.step(state, Prepare(2.0))
+    _, commands = policy.step(state, RunBegan(2.0))
+    assert commands == (Execute(),)
+
+
+def test_adopting_the_held_conversation_keeps_its_turn_count() -> None:
+    policy = SessionPolicy(PolicyConfig(renewal=RenewalBudget(max_turns=2)))
+    state = policy.initial_state()
+    for event in (Prepare(0.0), RunBegan(0.0), Opened(), Succeeded(1.0, "a")):
+        state, _ = policy.step(state, event)
+    state, _ = policy.step(state, Release())
+    adopted, commands = policy.step(state, Adopt("a"))
+    assert commands == (AdoptVerdict(accepted=True),)
+    assert adopted.turns == state.turns == 1

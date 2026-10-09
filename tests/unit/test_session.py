@@ -657,3 +657,44 @@ class TestAgent:
 def test_the_checkpoint_store_protocol_is_satisfied_by_the_fake() -> None:
     store: CheckpointStore = FakeCheckpointStore()
     assert store.load("nothing") is None
+
+
+class TestShellRaces:
+    def test_closing_while_the_transport_opens_does_not_leak_the_conversation(self) -> None:
+        holder: list[Session] = []
+
+        class CloseOnOpen:
+            def __init__(self, inner: FakeTransport) -> None:
+                self.inner = inner
+                self.profile = inner.profile
+
+            def open(self, spec: ConversationSpec):  # noqa: ANN202
+                holder[0].close()
+                return self.inner.open(spec)
+
+        inner = _transport()
+        session = _agent(CloseOnOpen(inner)).session("/work")
+        holder.append(session)
+        with pytest.raises(TurnCancelledError):
+            _run(session)
+        assert inner.conversations[0].turns == []
+        assert all(conversation.closed for conversation in inner.conversations)
+
+    def test_an_interrupted_turn_keeps_the_usage_baseline_of_the_last_full_report(self) -> None:
+        holder: list[Session] = []
+        store = FakeCheckpointStore()
+
+        def interrupt() -> None:
+            holder[0].interrupt()
+
+        transport = _transport(
+            FakeTurn(input_tokens=10), FakeTurn(input_tokens=0, during=interrupt)
+        )
+        session = _session(transport, checkpoints=store, checkpoint_key="k")
+        holder.append(session)
+        _run(session)
+        assert _run(session).result.interrupted is True
+        saved = store.load("k")
+        assert saved is not None
+        assert saved.usage is not None
+        assert saved.usage.tokens.input_tokens == 10

@@ -392,7 +392,15 @@ class Session:
             self._apply(Failed(self._clock.monotonic(), Outcome.ERROR))
             raise
         with self._lock:
-            self._conversation = conversation
+            closed = self._state.closed
+            if not closed:
+                self._conversation = conversation
+        if closed:
+            # close() ran while the transport was opening: nothing else holds
+            # this conversation, so release it here instead of leaking it.
+            conversation.close()
+            attempt.error = TurnCancelledError("session closed while opening the conversation")
+            return Failed(self._clock.monotonic(), Outcome.INTERRUPTED)
         return Opened()
 
     def _execute(self, attempt: _Attempt) -> Event:
@@ -415,7 +423,9 @@ class Session:
             raise
         attempt.result = result
         cid = result.session_id or conversation.conversation_id
-        if cid is not None:
+        if cid is not None and not result.interrupted:
+            # An interrupted result carries no report, so it must not replace
+            # the baseline the next turn's usage increment is measured from.
             self._usage[cid] = result.usage
         return Succeeded(
             self._clock.monotonic(),

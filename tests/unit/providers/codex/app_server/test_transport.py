@@ -642,8 +642,7 @@ def test_a_process_that_dies_mid_turn_fails_the_turn_with_its_last_stderr() -> N
     assert caught.value.kind is FailureKind.OTHER
     assert "139" in str(caught.value)
     assert "segfault in sandbox" in caught.value.detail
-    with pytest.raises(TurnFailedError):  # and it stays dead
-        r.turn(conversation)
+    assert r.turn(conversation).text == "ok"  # the next turn runs on a resumed process
     conversation.close()
 
 
@@ -1131,3 +1130,79 @@ def test_the_binary_is_checked_once_at_construction() -> None:
 
 def test_spec_helper_builds_what_the_tests_think_it_does() -> None:
     assert spec().model == "fake-model"
+
+
+# -- a process that died is replaced by resuming its thread
+
+
+def test_a_process_killed_between_turns_is_replaced_by_resuming_its_thread() -> None:
+    script = CodexScript()
+    script.turn(Say("one")).turn(Say("two"))
+    r = rig(script)
+    conversation = r.open()
+    first = r.turn(conversation)
+    thread_id = conversation.conversation_id
+    r.executor.processes[0].kill()  # died while idle
+    second = r.turn(conversation)
+    assert second.text == "two"
+    assert script.spawned == 2
+    assert conversation.conversation_id == thread_id == first.session_id
+    assert _params(script, "thread/resume")["threadId"] == thread_id
+    assert second.resumed is True
+    conversation.close()
+    assert r.executor.processes[1].stdin_closed
+
+
+def test_a_process_that_crashed_mid_turn_fails_that_turn_and_the_next_one_resumes() -> None:
+    script = CodexScript()
+    script.turn(Say("start"), Crash(returncode=9, stderr="boom")).turn(Say("again"))
+    r = rig(script)
+    conversation = r.open()
+    with pytest.raises(TurnFailedError, match="boom"):
+        r.turn(conversation)
+    assert r.turn(conversation).text == "again"
+    assert script.spawned == 2
+    assert len(script.requests("thread/resume")) == 1
+    conversation.close()
+
+
+def test_a_replacement_keeps_the_usage_baseline_of_the_thread() -> None:
+    script = CodexScript()
+    script.turn(Spend(input_tokens=100, output_tokens=5)).turn(
+        Spend(input_tokens=40, output_tokens=2)
+    )
+    r = rig(script)
+    conversation = r.open()
+    r.turn(conversation)
+    r.executor.processes[0].kill()
+    usage = r.turn(conversation).usage
+    assert usage.tokens.input_tokens == 40
+    assert usage.increment_known
+    conversation.close()
+
+
+def test_a_replacement_that_codex_refuses_to_resume_is_a_session_resume_error() -> None:
+    script = CodexScript()
+    r = rig(script)
+    conversation = r.open()
+    r.turn(conversation)
+    thread_id = conversation.conversation_id
+    assert thread_id is not None
+    script.forget(thread_id)
+    r.executor.processes[0].kill()
+    with pytest.raises(SessionResumeError) as caught:
+        r.turn(conversation)
+    assert caught.value.session_id == thread_id
+    assert r.executor.processes[1].stdin_closed  # the process that refused was shut down
+    conversation.close()
+
+
+def test_a_conversation_closed_cannot_be_revived_by_a_dead_process() -> None:
+    r = rig()
+    conversation = r.open()
+    r.turn(conversation)
+    r.executor.processes[0].kill()
+    conversation.close()
+    with pytest.raises(SessionStateError):
+        r.turn(conversation)
+    assert r.script.spawned == 1

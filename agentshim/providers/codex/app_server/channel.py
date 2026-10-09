@@ -110,6 +110,7 @@ class Channel:
         self._pending: dict[int, str] = {}
         self._tail: deque[str] = deque(maxlen=STDERR_TAIL_LINES)
         self.returncode: int | None = None
+        self._unwritable = False
 
     @property
     def process(self) -> Process:
@@ -153,6 +154,7 @@ class Channel:
         try:
             self._process.write(json.dumps(wire, separators=(",", ":")) + "\n")
         except ProcessClosedError as error:
+            self._unwritable = True
             raise Gone(self.returncode) from error
 
     def read(self, deadline: Deadline) -> ServerMessage:
@@ -175,6 +177,31 @@ class Channel:
             if output is None:
                 deadline.silence(wait)
             elif isinstance(output, StderrLine):
+                self._on_stderr(output.text)
+            elif isinstance(output, ProcessExited):
+                self.returncode = output.returncode
+                raise Gone(output.returncode)
+            else:
+                message = self._parse(output.text)
+                if message is not None:
+                    return message
+
+    def poll(self) -> ServerMessage | None:
+        """Return a message that is already waiting, or ``None`` when nothing is.
+
+        Never blocks. Used between turns, when nobody is reading, to find out
+        whether the process is still there.
+
+        Raises:
+            Gone: The process exited.
+        """
+        while True:
+            if self.returncode is not None or self._unwritable:
+                raise Gone(self.returncode)
+            output = self._process.next_output(0.0)
+            if output is None:
+                return None
+            if isinstance(output, StderrLine):
                 self._on_stderr(output.text)
             elif isinstance(output, ProcessExited):
                 self.returncode = output.returncode

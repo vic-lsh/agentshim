@@ -201,12 +201,15 @@ class CodexAppServerTransport:
         """
         settings = self._settings_for(spec)
         request = SpawnRequest(argv=self._argv(spec, settings), cwd=spec.cwd, env=dict(self._env))
-        try:
-            process = self._executor.spawn(request)
-        except OSError as error:
-            msg = f"could not start codex app-server: {error}"
-            raise TurnFailedError(msg, kind=FailureKind.OTHER, detail=str(error)) from error
-        conversation = _Conversation(process, self._clock, spec, settings, self._timeouts())
+
+        def spawn() -> Process:
+            try:
+                return self._executor.spawn(request)
+            except OSError as error:
+                msg = f"could not start codex app-server: {error}"
+                raise TurnFailedError(msg, kind=FailureKind.OTHER, detail=str(error)) from error
+
+        conversation = _Conversation(spawn, self._clock, spec, settings, self._timeouts())
         try:
             conversation.start()
         except BaseException:
@@ -314,13 +317,14 @@ class _Conversation:
 
     def __init__(
         self,
-        process: Process,
+        spawn: Callable[[], Process],
         clock: Clock,
         spec: ConversationSpec,
         settings: _Settings,
         timeouts: _Timeouts,
     ) -> None:
-        self._channel = Channel(process, self._emit)
+        self._spawn = spawn
+        self._channel = Channel(spawn(), self._emit)
         self._clock = clock
         self._spec = spec
         self._settings = settings
@@ -376,19 +380,16 @@ class _Conversation:
             if self._closed:
                 return
             self._closed = True
-        process = self._channel.process
-        wait = self._timeouts.close
-        process.close_stdin()
-        if process.wait(wait) is None:
-            process.terminate()
-            if process.wait(wait) is None:
-                process.kill()
-                process.wait(wait)
+        _stop(self._channel.process, self._timeouts.close)
 
     # -- start-up
 
     def start(self) -> None:
         """Handshake, then start or resume the thread."""
+        self._boot()
+
+    def _boot(self) -> None:
+        """Handshake on the current channel, then start the thread or resume it."""
         deadline = Deadline(self._clock, self._timeouts.startup)
         try:
             self._handshake(deadline)
@@ -406,7 +407,7 @@ class _Conversation:
 
     def _open_thread(self, deadline: Deadline) -> None:
         spec, perms = self._spec, self._settings.permissions
-        resume_id = spec.resume_id
+        resume_id = self._thread_id or spec.resume_id
         if resume_id is None:
             result = self._call(
                 ThreadStartParams(
@@ -524,6 +525,7 @@ class _Conversation:
     def _run(
         self, request: TurnRequest, emit: Callable[[AgentEvent], None], schema: JsonValue | None
     ) -> TurnResult:
+        self._ensure_process()
         self._raise_standing_failure()
         self._skills = SkillTracker(APP_SERVER_PROFILE)
         self._sink = emit
@@ -547,6 +549,45 @@ class _Conversation:
             self._wind_down(turn)
             raise
         return self._finish(turn, thread_id)
+
+    def _ensure_process(self) -> None:
+        """Between turns, replace a process that died by resuming its thread in a new one.
+
+        A crash, a kill or an exit while idle leaves a channel that can only
+        fail. The thread lives on disk, so a new ``codex app-server`` can pick
+        it up with ``thread/resume``. If Codex refuses, ``SessionResumeError``
+        propagates and the session replaces the conversation. The token
+        baseline is kept: the resumed thread reports the same cumulative totals.
+        """
+        if self._thread_id is None:
+            return
+        try:
+            while (message := self._channel.poll()) is not None:
+                self._handle(message, None)
+            return
+        except Gone:
+            pass
+        self._channel.drain()
+        old = self._channel.process
+        process = self._spawn()
+        channel = Channel(process, self._emit)
+        with self._state:
+            closed = self._closed
+            if not closed:
+                self._channel = channel
+        if closed:
+            _stop(process, self._timeouts.close)
+            msg = "the conversation was closed during the turn"
+            raise TurnCancelledError(msg)
+        _stop(old, self._timeouts.close)
+        self._items = ItemEvents()
+        self._failed_servers.clear()
+        self._deferred_failure = None
+        try:
+            self._boot()
+        except BaseException:
+            _stop(process, self._timeouts.close)
+            raise
 
     def _raise_standing_failure(self) -> None:
         if self._failed_servers:
@@ -818,6 +859,16 @@ class _Conversation:
             self._deferred.append(event)
         else:
             sink(event)
+
+
+def _stop(process: Process, wait: float) -> None:
+    """Close stdin, then terminate and kill the process if it lingers."""
+    process.close_stdin()
+    if process.wait(wait) is None:
+        process.terminate()
+        if process.wait(wait) is None:
+            process.kill()
+            process.wait(wait)
 
 
 def _agent_messages(items: Sequence[ThreadItem]) -> list[ThreadItemAgentMessage]:

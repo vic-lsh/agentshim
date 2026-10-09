@@ -25,6 +25,33 @@ The layering contract is declared under `[tool.importlinter]` in
 `core/` reaching into `providers/`. See
 [architecture](architecture.md) for what each layer owns.
 
+## Regenerating the Codex Protocol Types
+
+`agentshim/providers/codex/app_server/protocol.py` is generated; do not edit
+it. The generator is `scripts/generate_codex_protocol.py` (standard library
+only). Its roots are listed in `scripts/codex_protocol/allowlist.json`, and
+its input is the pruned schema `scripts/codex_protocol/schema.json`.
+
+```bash
+# Regenerate protocol.py from the checked-in pruned schema (no codex needed).
+python scripts/generate_codex_protocol.py
+
+# After changing the allowlist, or to adopt a newer codex-cli: re-export the
+# schema with the installed CLI, prune it, and regenerate both files.
+python scripts/generate_codex_protocol.py --from-cli
+
+# Same, from a directory made by `codex app-server generate-json-schema --out DIR`.
+python scripts/generate_codex_protocol.py --from-export DIR --codex-version 0.160.0
+
+# Report drift instead of writing (what the drift test does).
+python scripts/generate_codex_protocol.py --check
+```
+
+`--from-cli` fails, naming the method, if the allowlist and the exported
+method table disagree. `protocol.py` is excluded from `ruff format` and keeps
+its own layout; `tests/unit/providers/codex/app_server/test_generator.py`
+fails when it differs from what the checked-in schema generates.
+
 ## End-to-End Tests
 
 `tests/e2e/` runs the real provider CLIs. Each suite is skipped unless

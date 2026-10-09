@@ -596,6 +596,12 @@ class _Conversation:
                 self._handle(self._channel.read(deadline), turn)
         except Expired:
             self._wind_down(turn)
+            if turn.turn_id is None:
+                # The server never acknowledged the turn, so it is silent or
+                # wedged and no interrupt can reach it. Stop it: the next turn
+                # replaces the process by resuming the thread, where holding
+                # it would time out every later turn too.
+                _stop(self._channel.process, self._timeouts.close)
             raise TurnTimeoutError(request.timeout or 0.0) from None
         except Gone as gone:
             raise self._gone_error(gone) from None

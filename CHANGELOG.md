@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.15.5 (2026-10-09)
+
+### Fixed
+
+- A conversation whose provider thread was lost under it is no longer wedged. When a
+  turn that did not itself resume (its conversation was opened during the turn)
+  failed with `SessionResumeError` (the Codex app-server died mid-turn and its thread
+  could not be resumed in the new process), the session kept the dead conversation
+  open and every later turn raised the same error. The session now closes and forgets
+  it, still without replaying the turn that may have run.
+- A Codex app-server that never acknowledges a turn (silent or wedged) is stopped when
+  the turn times out, so the next turn replaces it by resuming the thread instead of
+  timing out against the same process forever. (The Claude stream transport already
+  killed a process that ignored its interrupt.)
+
 ## 0.15.4 (2026-10-09)
 
 ### Added

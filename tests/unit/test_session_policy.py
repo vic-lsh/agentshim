@@ -324,6 +324,18 @@ def test_a_strict_or_pinned_turn_never_loses_its_conversation(played: Played) ->
 
 
 @given(scenarios())
+def test_a_refused_resume_never_leaves_the_refused_conversation_held(played: Played) -> None:
+    """A turn that keeps nothing drops a conversation the provider refused, resumed or not."""
+    for state, trace in completed(played):
+        if trace.keeps or not trace.failed or not trace.steps:
+            continue
+        last_event = trace.steps[-1][0]
+        if isinstance(last_event, Failed) and last_event.outcome is Outcome.RESUME_REFUSED:
+            assert not state.live
+            assert state.conversation_id is None
+
+
+@given(scenarios())
 def test_at_most_one_fresh_retry_per_turn(played: Played) -> None:
     for _, trace in completed(played):
         assert _fresh_retries(trace) <= 1

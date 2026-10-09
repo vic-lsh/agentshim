@@ -154,7 +154,9 @@ class ProviderProfile:
     the home-relative paths, each inside a ``state_dirs`` entry, whose
     contents are the minimal set to copy so the CLI is logged in elsewhere;
     ``credential_files`` (0.15.3+, default empty) is the subset of them that
-    holds refreshable login credentials rather than settings.
+    holds refreshable login credentials rather than settings;
+    ``resume_state_paths`` (0.15.7+, default empty) names the conversation
+    history a resume reads back.
     ``mcp_config_file`` is the workspace-relative path a ``CONFIG_FILE``
     provider writes its MCP config to for a turn, and ``None`` for
     ``CLI_FLAGS``/``NONE`` providers.
@@ -182,6 +184,14 @@ class ProviderProfile:
     #: writable so a token refresh there is not lost, and keeps the rest of
     #: ``auth_files`` read-only. Every entry is also in ``auth_files``.
     credential_files: tuple[str, ...] = ()
+    #: Home-relative paths, each inside a ``state_dirs`` entry, that together
+    #: with ``auth_files`` are all the state a resumed conversation needs
+    #: persisted: the conversation history the resume flag reads back. A caller
+    #: that cannot grant the whole state directory (it also holds checkouts or
+    #: other tasks' data) grants just ``auth_files`` and these. Empty means the
+    #: provider is not known to run from that subset, so the caller must grant
+    #: the whole state directory.
+    resume_state_paths: tuple[str, ...] = ()
     mcp_config_file: str | None = None
     #: Whether the stream lists the skills offered (``SkillsDiscovered``).
     skill_discovery: SkillSignal = SkillSignal.NONE

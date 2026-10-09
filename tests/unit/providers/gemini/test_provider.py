@@ -45,6 +45,7 @@ class TestProfile:
             "darwin_state_dirs",
             "state_root_env",
             "config_home_files",
+            "resume_state_paths",
             "renewal",
         }
         for field in fields(ProviderProfile):

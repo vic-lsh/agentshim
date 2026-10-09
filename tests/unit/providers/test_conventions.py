@@ -73,7 +73,9 @@ RAISES_SESSION_RESUME_ERROR = frozenset({"claude", "codex", "gemini", "opencode"
 #: Fields a profile may legitimately leave empty.
 #: ``config_home_files`` is empty for a provider that isolates user
 #: configuration by flags, or cannot isolate it at all.
-_MAY_BE_EMPTY = frozenset({"darwin_state_dirs", "auth_env_vars", "config_home_files"})
+_MAY_BE_EMPTY = frozenset(
+    {"darwin_state_dirs", "auth_env_vars", "config_home_files", "resume_state_paths"}
+)
 
 #: Fields a profile may legitimately leave unset: not every provider's CLI
 #: documents a state-relocation variable, and only CONFIG_FILE providers
@@ -154,6 +156,15 @@ class TestEnvAndAuthConventions:
         assert profile.credential_files
         assert set(profile.credential_files) <= set(profile.auth_files)
         assert len(set(profile.credential_files)) == len(profile.credential_files)
+
+    def test_resume_state_paths_lie_inside_state_dirs_without_overlapping_credentials(
+        self, name: str
+    ) -> None:
+        profile = get_provider(name).profile
+        assert len(set(profile.resume_state_paths)) == len(profile.resume_state_paths)
+        for path in profile.resume_state_paths:
+            assert any(path.startswith(f"{state_dir}/") for state_dir in profile.state_dirs), path
+            assert path not in profile.auth_files
 
     def test_mcp_config_file_is_set_exactly_for_config_file_providers(self, name: str) -> None:
         profile = get_provider(name).profile

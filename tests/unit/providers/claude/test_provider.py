@@ -44,7 +44,7 @@ class TestProfile:
             value = getattr(profile, field.name)
             assert value is not None, field.name
             # Claude isolates user configuration by flags and needs no home.
-            if field.name not in {"schema_dialect", "config_home_files"}:
+            if field.name not in {"schema_dialect", "config_home_files", "resume_state_paths"}:
                 assert value != (), field.name
                 assert value != "", field.name
 

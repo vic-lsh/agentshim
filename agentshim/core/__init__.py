@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from .checkpoints import Checkpoint, CheckpointStore, InMemoryCheckpointStore
 from .clock import Clock, StopSignal, SystemClock
-from .conversation import Conversation, ConversationSpec, Transport
+from .conversation import Conversation, ConversationSpec, Transport, TransportKind
 from .env import interactive_env
 from .errors import (
     AgentShimError,
@@ -182,6 +182,7 @@ __all__ = [
     "ToolResult",
     "ToolTracker",
     "Transport",
+    "TransportKind",
     "TurnCancelledError",
     "TurnFailedError",
     "TurnInterrupted",

@@ -31,6 +31,28 @@
   `ConversationContract`, `CheckpointStoreContract`.
 - Docs: [sessions](https://vic-lsh.github.io/agentshim/sessions/).
 
+### Added (Claude stream transport)
+
+- `ClaudeStreamTransport`: Claude Code over one long-lived
+  `claude --input-format stream-json --output-format stream-json` process per
+  conversation (no `claude-agent-sdk`). `Agent("claude", transport=TransportKind.STREAM,
+  ...)` selects it; `TransportKind.ONE_SHOT` stays the default for now.
+  Supports `NativeMode.BYPASS` and `NativeMode.WORKSPACE_WRITE` (Claude's bash
+  sandbox plus a write-confinement hook for its file tools, no network);
+  `READ_ONLY` and network access are rejected with `ProviderCapabilityError`.
+  Permission prompts are denied by the CLI (`--permission-prompts none`) and any
+  request that arrives anyway is answered at once per `ApprovalPolicy`. A turn
+  whose output schema, MCP servers, effort or extra arguments differ from the
+  running process restarts it with `--resume` (the conversation id is unchanged).
+- `TransportKind`, `agentshim.providers.get_stream_transport`.
+- Test doubles `ClaudeStreamPeers` / `ClaudeStreamPeer` (a reactive fake CLI
+  scripted with `ClaudePeerTurn`, `ClaudeApiError`, `ClaudeCrash`) and
+  `ClaudeRecordedPeer` (replays recorded frames), plus recordings under
+  `tests/fixtures/claude_stream`.
+- `ClaudeStreamParser(..., cost_baseline_usd=)` and `.total_cost_usd` for
+  per-turn cost on a process that reports cumulative totals; `ResultFrame`
+  gains `terminal_reason` and `permission_denials`.
+
 ### Added (process layer)
 
 - MIT license (`LICENSE`), declared in the package metadata.

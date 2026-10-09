@@ -9,8 +9,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from agentshim.providers.claude import SandboxConfig, build_settings, resolve_sandbox
-from agentshim.providers.claude.sandbox import CONFINE_READS_HOOK
+from agentshim.providers.claude import ClaudeHook, SandboxConfig, build_settings, resolve_sandbox
+from agentshim.providers.claude.sandbox import CONFINE_READS_HOOK, workspace_write_settings
 
 
 class TestResolveSandbox:
@@ -168,3 +168,51 @@ class TestConfineReadsHook:
         )
         assert proc.returncode == 0
         assert proc.stdout == ""
+
+
+class TestWorkspaceWriteSettings:
+    def _command(self, settings: dict[str, object]) -> list[str]:
+        entry = settings["hooks"]["PreToolUse"][0]  # type: ignore[index]
+        return shlex.split(entry["hooks"][0]["command"])
+
+    def _run(self, settings: dict[str, object], payload: dict[str, object]) -> str:
+        return subprocess.run(  # noqa: S603 - fixed argv from the settings, no shell
+            self._command(settings),
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+        ).stdout
+
+    def test_the_sandbox_writes_to_the_roots_and_allows_no_network(self) -> None:
+        settings = workspace_write_settings("/work", ["/data/out"])
+        sandbox = settings["sandbox"]
+        assert sandbox["filesystem"] == {"allowWrite": ["/data/out"]}
+        assert sandbox["failIfUnavailable"] is True
+        assert sandbox["allowUnsandboxedCommands"] is False
+        assert "network" not in sandbox
+
+    def test_only_the_write_tools_are_confined(self) -> None:
+        matcher = workspace_write_settings("/work", [])["hooks"]["PreToolUse"][0]["matcher"]
+        tools = set(matcher.split("|"))
+        assert tools == {"Edit", "Write", "NotebookEdit", "MultiEdit"}
+
+    def test_a_write_outside_the_workspace_and_its_roots_is_denied(self, tmp_path: Path) -> None:
+        work, extra = tmp_path / "work", tmp_path / "extra"
+        work.mkdir()
+        extra.mkdir()
+        settings = workspace_write_settings(str(work), [str(extra)])
+        denied = self._run(
+            settings, {"tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "x")}}
+        )
+        assert json.loads(denied)["hookSpecificOutput"]["permissionDecision"] == "deny"
+        for root in (work, extra):
+            allowed = self._run(
+                settings, {"tool_name": "Edit", "tool_input": {"file_path": str(root / "f")}}
+            )
+            assert allowed == ""
+
+    def test_caller_hooks_follow_the_confinement_hook(self) -> None:
+        hook = ClaudeHook(event="PreToolUse", command=["/bin/true"], matcher="Bash")
+        entries = workspace_write_settings("/work", [], hooks=[hook])["hooks"]["PreToolUse"]
+        assert [entry["matcher"] for entry in entries][1:] == ["Bash"]

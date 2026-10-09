@@ -10,6 +10,7 @@ nothing else changes.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING, Protocol
 
 from .profile import ConfigScope, McpScope, SkillScope
@@ -23,6 +24,16 @@ if TYPE_CHECKING:
     from .profile import ProviderProfile
     from .turn import TurnRequest, TurnResult
     from .usage import ProviderUsage
+
+
+class TransportKind(Enum):
+    """Which way an ``Agent`` reaches a provider by name."""
+
+    #: One CLI process per turn (today's behaviour, the default for now).
+    ONE_SHOT = "one_shot"
+    #: One long-lived process per conversation, over the provider's structured
+    #: streaming protocol.
+    STREAM = "stream"
 
 
 @dataclass(frozen=True)

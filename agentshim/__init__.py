@@ -93,6 +93,7 @@ from .core import (
     ToolResult,
     ToolTracker,
     Transport,
+    TransportKind,
     TurnCancelledError,
     TurnFailedError,
     TurnInterrupted,
@@ -137,7 +138,7 @@ from .execution import (
 )
 from .oneshot import OneShotTransport
 from .providers import get_provider, provider_names
-from .providers.claude import ClaudeHook, ClaudeProvider, SandboxConfig
+from .providers.claude import ClaudeHook, ClaudeProvider, ClaudeStreamTransport, SandboxConfig
 from .providers.codex import CodexProvider, CodexSandboxConfig
 from .providers.copilot import CopilotProvider
 from .providers.gemini import GeminiProvider
@@ -162,6 +163,7 @@ __all__ = [
     "CheckpointStore",
     "ClaudeHook",
     "ClaudeProvider",
+    "ClaudeStreamTransport",
     "CliAgent",
     "CliCheckError",
     "CliExitError",
@@ -264,6 +266,7 @@ __all__ = [
     "ToolTracker",
     "TransformingExecutor",
     "Transport",
+    "TransportKind",
     "Turn",
     "TurnCancelledError",
     "TurnFailedError",

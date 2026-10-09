@@ -169,3 +169,17 @@ def test_the_session_test_doubles_are_exported() -> None:
         "turn_timeout",
     ):
         assert name in agentshim.testing.__all__, name
+
+
+def test_the_claude_stream_transport_surface_is_exported() -> None:
+    for name in ("ClaudeStreamTransport", "TransportKind"):
+        assert name in agentshim.__all__, name
+    for name in (
+        "ClaudeApiError",
+        "ClaudeCrash",
+        "ClaudePeerTurn",
+        "ClaudeRecordedPeer",
+        "ClaudeStreamPeer",
+        "ClaudeStreamPeers",
+    ):
+        assert name in agentshim.testing.__all__, name

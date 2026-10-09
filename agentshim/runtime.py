@@ -10,13 +10,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from agentshim.core.clock import SystemClock
-from agentshim.core.conversation import ConversationSpec
+from agentshim.core.conversation import ConversationSpec, TransportKind
 from agentshim.core.ids import RandomIds
 from agentshim.core.profile import ConfigScope, McpScope, SkillScope
 from agentshim.core.session_policy import PolicyConfig, RetryPolicy
 from agentshim.execution.confinement import confine
 from agentshim.execution.host import HostCommandExecutor
 from agentshim.oneshot import OneShotTransport
+from agentshim.providers import get_stream_transport
 from agentshim.session import Session, map_mcp_servers
 
 if TYPE_CHECKING:
@@ -61,15 +62,19 @@ class Agent:
         env: Mapping[str, str] | None = None,
         log: Callable[[str], None] | None = None,
         check_timeout: float = 15.0,
+        transport: TransportKind = TransportKind.ONE_SHOT,
     ) -> None:
         """Build the transport and bind the policy inputs.
 
-        With a provider *name*, the transport is a ``OneShotTransport`` on
+        With a provider *name*, the transport is chosen by *transport*: the
+        ``OneShotTransport`` (one process per turn, the default for now) or
+        the provider's long-lived ``TransportKind.STREAM`` transport, on
         *executor* (the local host by default). A *confinement* wraps that
         executor so every command runs inside it, and its ``env`` becomes the
         agent's environment, so *env* may not also be given. With a ready-made
         ``Transport`` none of *executor*, *confinement*, *env* applies and
-        passing one is an error: they would be silently ignored.
+        passing one, or a *transport* kind, is an error: they would be silently
+        ignored.
         """
         self._permissions = permissions
         self._approvals = approvals
@@ -81,18 +86,28 @@ class Agent:
         self._event_handlers = tuple(event_handlers)
         self._log = log
         if isinstance(provider, str):
-            self._transport: Transport = self._one_shot(
-                provider, executor, confinement, env, check_timeout
+            self._transport: Transport = self._by_name(
+                provider, transport, executor, confinement, env, check_timeout
             )
         else:
-            if executor is not None or confinement is not None or env is not None:
-                msg = "executor, confinement and env belong to the transport that was passed in"
+            if (
+                executor is not None
+                or confinement is not None
+                or env is not None
+                or transport is not TransportKind.ONE_SHOT
+            ):
+                msg = (
+                    "executor, confinement, env and transport belong to the transport "
+                    "that was passed in"
+                )
                 raise ValueError(msg)
             self._transport = provider
 
-    def _one_shot(
+    # Each argument is an independent constructor option, passed through.
+    def _by_name(  # noqa: PLR0913
         self,
         provider: str,
+        kind: TransportKind,
         executor: CommandExecutor | None,
         confinement: Confinement | None,
         env: Mapping[str, str] | None,
@@ -107,6 +122,16 @@ class Agent:
                 raise ValueError(msg)
             base = confine(base, confinement)
             env = dict(confinement.env)
+        if kind is TransportKind.STREAM:
+            return get_stream_transport(
+                provider,
+                executor=base,
+                env=env,
+                clock=self._clock,
+                ids=self._ids,
+                check_timeout=check_timeout,
+                log=self._log,
+            )
         return OneShotTransport(
             provider, executor=base, env=env, check_timeout=check_timeout, log=self._log
         )

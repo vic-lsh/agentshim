@@ -26,6 +26,14 @@ from agentshim.providers.copilot.provider import parse_mcp_servers as _parse_cop
 from agentshim.providers.gemini import provider as _gemini
 from agentshim.providers.opencode import provider as _opencode
 
+from .claude_stream import (
+    ClaudeApiError,
+    ClaudeCrash,
+    ClaudePeerTurn,
+    ClaudeRecordedPeer,
+    ClaudeStreamPeer,
+    ClaudeStreamPeers,
+)
 from .clock import FakeClock, SequentialIds
 from .confinement import FakeConfinement
 from .conversation import (
@@ -391,6 +399,12 @@ def _opencode_mcp_entry(raw: Mapping[str, Any]) -> dict[str, Any]:
 
 
 __all__ = [
+    "ClaudeApiError",
+    "ClaudeCrash",
+    "ClaudePeerTurn",
+    "ClaudeRecordedPeer",
+    "ClaudeStreamPeer",
+    "ClaudeStreamPeers",
     "EchoPeer",
     "FakeCheckpointStore",
     "FakeClock",

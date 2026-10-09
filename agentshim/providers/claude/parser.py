@@ -33,6 +33,7 @@ from .events import (
     parse_frame,
 )
 from .failures import SCHEMA_RETRIES_SUBTYPE, classify_failure
+from .rate_limits import RateLimitFrame
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -221,6 +222,9 @@ class ClaudeStreamParser:
             self._assistant(frame)
         elif isinstance(frame, ToolResultBlock):
             self._tool_result(frame)
+        elif isinstance(frame, RateLimitFrame):
+            for status in frame.statuses:
+                self._emit(status)
         elif isinstance(frame, ResultFrame):
             self._result(frame)
 

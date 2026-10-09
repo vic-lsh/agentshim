@@ -23,6 +23,7 @@ from agentshim import (
     ProviderCapabilityError,
     ProviderError,
     ProviderUsage,
+    RateLimitStatus,
     Reasoning,
     SchemaDialectError,
     SessionResumeError,
@@ -50,6 +51,7 @@ from agentshim.testing import (
     Crash,
     Fail,
     Hang,
+    ReportRateLimits,
     Retrying,
     RunCommand,
     Say,
@@ -319,6 +321,42 @@ def test_stderr_lines_and_warnings_are_events() -> None:
     conversation = r.open()
     r.turn(conversation)
     assert Stderr("PATH aliases under /tmp") in r.events
+    conversation.close()
+
+
+def test_rate_limit_notifications_become_one_status_per_window() -> None:
+    script = CodexScript()
+    script.turn(
+        ReportRateLimits(primary=(8, 10080, 1791954019), secondary=(40, 300, None)),
+        Say("ok"),
+    )
+    r = rig(script)
+    conversation = r.open()
+    r.turn(conversation)
+    statuses = [e for e in r.events if isinstance(e, RateLimitStatus)]
+    assert [
+        (s.window, s.limit, s.used_fraction, s.resets_at, s.window_minutes) for s in statuses
+    ] == [
+        ("primary", "codex", 0.08, 1791954019.0, 10080),
+        ("secondary", "codex", 0.4, None, 300),
+    ]
+    assert all(s.exhausted is False for s in statuses)
+    assert statuses[0].raw["limitId"] == "codex"
+    conversation.close()
+
+
+def test_a_reached_limit_is_exhausted_even_without_a_window() -> None:
+    script = CodexScript()
+    script.turn(
+        ReportRateLimits(primary=None, reached="rate_limit_reached"),
+        ReportRateLimits(primary=None),
+        Say("ok"),
+    )
+    r = rig(script)
+    conversation = r.open()
+    r.turn(conversation)
+    statuses = [e for e in r.events if isinstance(e, RateLimitStatus)]
+    assert [(s.window, s.used_fraction, s.exhausted) for s in statuses] == [(None, None, True)]
     conversation.close()
 
 

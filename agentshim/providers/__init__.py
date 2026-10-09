@@ -14,20 +14,25 @@ from .claude import ClaudeProvider, ClaudeStreamTransport
 from .claude import failure_lines as _claude_failure
 from .claude import resume_failure_lines as _claude_resume_failure
 from .claude import scripted_lines as _claude_scripted
+from .claude.probe import PROBE as _CLAUDE_PROBE
 from .codex import CodexProvider
 from .codex import failure_lines as _codex_failure
 from .codex import resume_failure_lines as _codex_resume_failure
 from .codex import scripted_lines as _codex_scripted
 from .codex.app_server import CodexAppServerTransport
+from .codex.probe import PROBE as _CODEX_PROBE
 from .copilot import CopilotProvider
 from .copilot import resume_failure_lines as _copilot_resume_failure
 from .copilot import scripted_lines as _copilot_scripted
+from .copilot.probe import PROBE as _COPILOT_PROBE
 from .gemini import GeminiProvider
 from .gemini import resume_failure_lines as _gemini_resume_failure
 from .gemini import scripted_lines as _gemini_scripted
+from .gemini.probe import PROBE as _GEMINI_PROBE
 from .opencode import OpencodeProvider
 from .opencode import resume_failure_lines as _opencode_resume_failure
 from .opencode import scripted_lines as _opencode_scripted
+from .opencode.probe import PROBE as _OPENCODE_PROBE
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -37,6 +42,7 @@ if TYPE_CHECKING:
     from agentshim.core.errors import FailureKind
     from agentshim.core.ids import IdAllocator
     from agentshim.core.provider import Provider
+    from agentshim.core.status import ProbeSpec
     from agentshim.core.usage import TokenUsage
     from agentshim.execution.executor import CommandExecutor
 
@@ -148,6 +154,15 @@ _FAILURES: dict[str, FailureLines] = {
 }
 
 
+_PROBES: dict[str, ProbeSpec] = {
+    "claude": _CLAUDE_PROBE,
+    "codex": _CODEX_PROBE,
+    "copilot": _COPILOT_PROBE,
+    "gemini": _GEMINI_PROBE,
+    "opencode": _OPENCODE_PROBE,
+}
+
+
 # Providers with a long-lived transport (``Agent(name, transport=TransportKind.STREAM)``).
 _STREAM_TRANSPORTS: dict[str, StreamTransportFactory] = {
     "claude": ClaudeStreamTransport,
@@ -198,6 +213,15 @@ def get_failure_lines(name: str) -> FailureLines:
     return failure
 
 
+def get_probe_spec(name: str) -> ProbeSpec:
+    """Return the readiness checks of provider *name*."""
+    probe = _PROBES.get(name)
+    if probe is None:
+        msg = f"no readiness probe for provider {name!r}; available: {sorted(_PROBES)}"
+        raise ValueError(msg)
+    return probe
+
+
 # Mirrors the transport factories: independent keyword options.
 def get_stream_transport(  # noqa: PLR0913
     name: str,
@@ -230,6 +254,7 @@ __all__ = [
     "ScriptedLines",
     "StreamTransportFactory",
     "get_failure_lines",
+    "get_probe_spec",
     "get_provider",
     "get_resume_failure_lines",
     "get_scripted_lines",

@@ -61,6 +61,7 @@ from .permissions import check_applied, codex_permissions
 from .profile import APP_SERVER_PROFILE
 from .protocol import (
     INITIALIZED,
+    AccountRateLimitsUpdatedNotification,
     ClientInfo,
     ErrorNotification,
     ErrorResponse,
@@ -87,6 +88,7 @@ from .protocol import (
     UserInputText,
     WarningNotification,
 )
+from .rate_limits import rate_limit_statuses
 from .usage import Totals, baseline_from, totals_of, turn_usage, zero_totals
 
 if TYPE_CHECKING:
@@ -656,6 +658,9 @@ class _Conversation:
             self._on_mcp_status(params, turn)
         elif isinstance(params, WarningNotification):
             self._emit(Lifecycle("warning", params.message))
+        elif isinstance(params, AccountRateLimitsUpdatedNotification):
+            for status in rate_limit_statuses(params.rate_limits):
+                self._emit(status)
         elif turn is not None:
             self._on_turn_notification(params, turn)
 

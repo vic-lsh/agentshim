@@ -143,6 +143,20 @@ class Spend:
 
 
 @dataclass(frozen=True)
+class ReportRateLimits:
+    """The server reports the account's rate limits: ``account/rateLimits/updated``.
+
+    ``primary`` and ``secondary`` are ``(used_percent, window_minutes,
+    resets_at)`` or ``None`` for a window the server does not report.
+    """
+
+    primary: tuple[int, int | None, int | None] | None = (8, 10080, 1791954019)
+    secondary: tuple[int, int | None, int | None] | None = None
+    limit_id: str | None = "codex"
+    reached: str | None = None
+
+
+@dataclass(frozen=True)
 class Retrying:
     """The stream broke and Codex is reconnecting: a non-terminal ``error``."""
 
@@ -191,6 +205,7 @@ CodexStep = (
     | CallMcp
     | Ask
     | Spend
+    | ReportRateLimits
     | Retrying
     | Fail
     | Hang
@@ -655,6 +670,7 @@ class CodexAppServerPeer:
             CallMcp: self._mcp_call,
             Ask: self._ask,
             Spend: self._spend,
+            ReportRateLimits: self._report_rate_limits,
             Retrying: self._retrying,
             Fail: self._fail,
             Hang: self._hang,
@@ -844,6 +860,25 @@ class CodexAppServerPeer:
         self._notify(
             out, "thread/tokenUsage/updated", self._usage_wire(run.thread, run.turn_id, step)
         )
+
+    def _report_rate_limits(self, run: _Run, step: ReportRateLimits, out: list[PeerOutput]) -> None:
+        del run
+
+        def window(spec: tuple[int, int | None, int | None] | None) -> object:
+            if spec is None:
+                return None
+            used, minutes, resets = spec
+            return {"usedPercent": used, "windowDurationMins": minutes, "resetsAt": resets}
+
+        snapshot = {
+            "limitId": step.limit_id,
+            "limitName": None,
+            "primary": window(step.primary),
+            "secondary": window(step.secondary),
+            "credits": None,
+            "rateLimitReachedType": step.reached,
+        }
+        self._notify(out, "account/rateLimits/updated", {"rateLimits": snapshot})
 
     def _usage_wire(self, thread: _Thread, turn_id: str, last: Spend) -> Mapping[str, object]:
         last_wire = {

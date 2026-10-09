@@ -10,6 +10,8 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from .rate_limits import RateLimitFrame, parse_rate_limit
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -99,7 +101,7 @@ class ResultFrame:
     permission_denials: tuple[Mapping[str, Any], ...] = ()
 
 
-ClaudeFrame = SystemInit | AssistantMessage | ToolResultBlock | ResultFrame
+ClaudeFrame = SystemInit | AssistantMessage | ToolResultBlock | ResultFrame | RateLimitFrame
 
 
 def parse_frame(data: Mapping[str, Any]) -> ClaudeFrame | None:
@@ -115,6 +117,8 @@ def parse_frame(data: Mapping[str, Any]) -> ClaudeFrame | None:
         return _assistant(data)
     if kind == "user":
         return _tool_result(data)
+    if kind == "rate_limit_event":
+        return parse_rate_limit(data)
     if kind == "result":
         return ResultFrame(
             text=_text(data.get("result")),

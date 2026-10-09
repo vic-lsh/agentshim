@@ -41,6 +41,7 @@ from .events import (
     Lifecycle,
     NullEventHandler,
     ProviderError,
+    RateLimitStatus,
     RawOutput,
     Reasoning,
     RunFinished,
@@ -92,6 +93,7 @@ from .provider import (
 from .schema import compact_json, dialect_problems, materialize, normalize
 from .session_policy import Continuity, PolicyConfig, RetryPolicy, SessionPolicy, SessionState
 from .skills import SkillSummary, SkillTracker
+from .status import AuthState, ProviderStatus
 from .stream import ToolTracker, parse_json_object
 from .turn import OutputSchema, TurnRequest, TurnResult
 from .usage import ProviderUsage, TokenUsage, TokenWeights, normalized_usage
@@ -104,6 +106,7 @@ __all__ = [
     "ApprovalPolicy",
     "ArgvContext",
     "AssistantText",
+    "AuthState",
     "Checkpoint",
     "CheckpointStore",
     "CliCheckError",
@@ -149,8 +152,10 @@ __all__ = [
     "ProviderCapabilityError",
     "ProviderError",
     "ProviderProfile",
+    "ProviderStatus",
     "ProviderUsage",
     "RandomIds",
+    "RateLimitStatus",
     "RawOutput",
     "ReapError",
     "Reasoning",

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from agentshim.core.errors import CliNotFoundError, CliTimeoutError
 from agentshim.core.profile import McpMechanism
+from agentshim.core.status import AuthState
 from agentshim.core.usage import TokenUsage
 from agentshim.execution.executor import CommandResult
 from agentshim.providers import (
@@ -48,6 +49,7 @@ from .codex_app_server import (
     Crash,
     Fail,
     Hang,
+    ReportRateLimits,
     Retrying,
     RunCommand,
     Say,
@@ -66,6 +68,7 @@ from .conversation import (
     turn_failed,
     turn_timeout,
 )
+from .probe import probe_run
 from .process import (
     EchoPeer,
     FakePeer,
@@ -110,6 +113,34 @@ class FakeCommandHandle:
     def kill(self) -> None:
         """Record a kill call."""
         self.killed = True
+
+
+def probe_executor(
+    provider: str,
+    *,
+    version: str = "1.2.3",
+    auth: AuthState = AuthState.KNOWN_OK,
+    installed: bool = True,
+) -> FakeExecutor:
+    """A ``FakeExecutor`` that answers *provider*'s probe commands like the real CLI.
+
+    ``installed=False`` makes the binary missing. A command the probe is not
+    declared to run exits 2 with a usage error, so a probe that strays shows
+    up in ``executor.requests`` and in the status.
+    """
+    binary = get_provider(provider).profile.binary
+
+    def pick(request: CommandRequest) -> FakeRun:
+        argv = list(request.argv)
+        # A confinement puts its launcher before the binary; the CLI's own
+        # arguments are whatever follows the binary's name.
+        named = [i for i, arg in enumerate(argv) if arg.rsplit("/", 1)[-1] == binary]
+        args = argv[named[0] + 1 :] if named else argv[1:]
+        out = probe_run(provider, args, version=version, auth=auth)
+        return FakeRun(stdout=[out.stdout], stderr=[out.stderr], returncode=out.returncode)
+
+    binaries = {binary: f"/usr/local/bin/{binary}"} if installed else {"": ""}
+    return FakeExecutor(pick, binaries=binaries)
 
 
 class FakeExecutor:
@@ -452,6 +483,7 @@ __all__ = [
     "Hang",
     "RecordingEventHandler",
     "ReplayGates",
+    "ReportRateLimits",
     "Retrying",
     "RunCommand",
     "Say",
@@ -462,6 +494,7 @@ __all__ = [
     "TokenUsage",
     "fake_profile",
     "installed_mcp_servers",
+    "probe_executor",
     "resume_refused",
     "scripted_failure",
     "scripted_resume_failure",

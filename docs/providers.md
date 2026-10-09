@@ -329,6 +329,41 @@ from agentshim import CliAgent, interactive_env
 agent = CliAgent("claude", env={**interactive_env(), "ANTHROPIC_API_KEY": "..."})
 ```
 
+## Readiness probe
+
+`probe_provider(name)` (or `Agent.probe()`) reports whether a provider could
+start a turn, without running one and without calling a model. It returns a
+`ProviderStatus`: `binary_found`, `path`, `version` (from `--version`), and
+`auth` as an `AuthState` with an `auth_detail` that names the fix.
+
+```python
+from agentshim import AuthState, probe_provider
+
+status = probe_provider("codex")          # local host; pass executor=/confinement= to probe elsewhere
+if not status.binary_found:
+    raise SystemExit(status.auth_detail)  # "codex was not found on PATH"
+if status.auth is AuthState.FAILED:
+    raise SystemExit(status.auth_detail)  # "codex is not logged in; run `codex login`"
+```
+
+`UNKNOWN` is not `FAILED`: it means the CLI has no cheap way to tell, or the
+check could not run, and a caller must not stop on it. A missing binary is a
+result, not an exception, so one pass can report every provider. The commands
+run through the executor and environment a turn would use, so a confinement or
+container is probed where the agent would run. `Agent.probe()` needs an agent
+built from a provider name (constructing it already requires the binary).
+
+| provider | version | authentication mechanism | states |
+|---|---|---|---|
+| claude | `claude --version` | `claude auth status` (JSON `loggedIn`; also honours `ANTHROPIC_API_KEY` and OAuth-token variables) | `KNOWN_OK`, `FAILED`, `UNKNOWN` for unrecognised output |
+| codex | `codex --version` | `codex login status` (`Logged in ...` / `Not logged in`); with `CODEX_API_KEY` or `OPENAI_API_KEY` set, "not logged in" is `UNKNOWN` because the command ignores them | `KNOWN_OK`, `FAILED`, `UNKNOWN` |
+| gemini | `gemini --version` | none | always `UNKNOWN` |
+| copilot | `copilot --version` | none (`copilot login` is interactive only) | always `UNKNOWN` |
+| opencode | `opencode --version` | none that proves a usable model (`opencode auth list` shows stored keys only) | always `UNKNOWN` |
+
+`agentshim.testing.probe_executor(provider, version=..., auth=..., installed=...)`
+is a `FakeExecutor` that answers these commands the way each CLI does.
+
 ## Token usage
 
 Every provider normalizes its counts into `TokenUsage`; see

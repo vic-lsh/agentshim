@@ -13,6 +13,7 @@ from agentshim import (
     Lifecycle,
     NullEventHandler,
     ProviderError,
+    RateLimitStatus,
     RawOutput,
     Reasoning,
     RunFinished,
@@ -188,3 +189,26 @@ class TestTurnEndEvents:
         assert TurnInterrupted() == TurnInterrupted()
         assert ApprovalDenied("a", "b") == ApprovalDenied("a", "b")
         assert ApprovalDenied("a", "b") != ApprovalDenied("a", "c")
+
+
+class TestRateLimitStatus:
+    def _render(self, event: RateLimitStatus) -> str:
+        stream = io.StringIO()
+        ConsoleEventHandler(stream, color=False).on_event(event)
+        return stream.getvalue()
+
+    def test_remaining_is_the_complement_of_use_and_unknown_stays_unknown(self) -> None:
+        assert RateLimitStatus("w", 0.25, None).remaining_fraction == 0.75
+        assert RateLimitStatus("w", 1.5, None).remaining_fraction == 0.0
+        assert RateLimitStatus("w", None, None).remaining_fraction is None
+
+    def test_the_console_names_the_window_and_leaves_out_what_is_unknown(self) -> None:
+        text = self._render(RateLimitStatus("five_hour", 0.35, 1791511200))
+        assert text == "[agent] [rate limit] five_hour, 35% used, resets at epoch 1791511200\n"
+        assert (
+            self._render(RateLimitStatus(None, None, None)) == "[agent] [rate limit] rate limit\n"
+        )
+
+    def test_a_reached_limit_says_so(self) -> None:
+        text = self._render(RateLimitStatus("primary", 1.0, None, limit="codex", exhausted=True))
+        assert text == "[agent] [rate limit] codex primary, 100% used, reached\n"

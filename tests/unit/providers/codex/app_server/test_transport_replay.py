@@ -19,6 +19,7 @@ from agentshim import (
     NativePermissions,
     OutputSchema,
     ProviderUsage,
+    RateLimitStatus,
     SessionResumeError,
     StdioMcpServer,
     TokenUsage,
@@ -111,6 +112,19 @@ def test_a_plain_turn_answers_and_reports_the_threads_usage(s1: list[Entry]) -> 
         input_tokens=13634, output_tokens=5, cache_read_input_tokens=11008, turns=1
     )
     assert peer.finished
+    conversation.close()
+
+
+def test_the_recorded_rate_limit_notification_becomes_a_status(s1: list[Entry]) -> None:
+    transport, _ = _served([*s1[0:3], *s1[8:28]])
+    conversation = _open(transport, reasoning_effort="low")
+    events: list[AgentEvent] = []
+    _turn(conversation, "reply with the word ok", events)
+    statuses = [e for e in events if isinstance(e, RateLimitStatus)]
+    assert statuses
+    first = statuses[0]
+    assert (first.window, first.limit, first.used_fraction) == ("primary", "codex", 0.08)
+    assert (first.resets_at, first.window_minutes, first.exhausted) == (1791954019.0, 10080, False)
     conversation.close()
 
 

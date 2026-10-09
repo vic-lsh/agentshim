@@ -183,3 +183,26 @@ def test_the_claude_stream_transport_surface_is_exported() -> None:
         "ClaudeStreamPeers",
     ):
         assert name in agentshim.testing.__all__, name
+
+
+def test_the_codex_app_server_transport_and_its_test_double_are_public() -> None:
+    for name in ("CodexAppServerTransport", "TransportKind"):
+        assert name in agentshim.__all__, name
+    for name in (
+        "CodexScript",
+        "CodexAppServerPeer",
+        "Say",
+        "Think",
+        "RunCommand",
+        "ChangeFile",
+        "CallMcp",
+        "Ask",
+        "AskKind",
+        "Spend",
+        "Retrying",
+        "Fail",
+        "Hang",
+        "Crash",
+        "Complain",
+    ):
+        assert name in agentshim.testing.__all__, name

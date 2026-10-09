@@ -555,8 +555,11 @@ written verbatim, and the returned note is logged through the agent's `log`.
 `scripts/generate_codex_protocol.py` from the JSON Schema that the CLI itself
 exports (`codex app-server generate-json-schema`), never edited by hand.
 `_wire.py` is the hand-written runtime it calls (decoder combinators,
-`CodexProtocolError`, `encode`). Nothing outside `providers/` imports the
-package yet; the transport that speaks the protocol builds on it later.
+`CodexProtocolError`, `encode`). `transport.py` (`CodexAppServerTransport`) speaks the protocol, with
+`channel.py` (JSON-RPC framing and deadlines), `permissions.py`,
+`approvals.py`, `errors.py`, `usage.py`, `mcp.py`, `items.py` and
+`profile.py` as its pure pieces. Its test double is
+`testing/codex_app_server.py`.
 
 What is generated is decided by `scripts/codex_protocol/allowlist.json`: the
 requests the client sends and their responses, the server notifications and

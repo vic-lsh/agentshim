@@ -961,15 +961,16 @@ def test_a_turn_that_overruns_its_timeout_is_interrupted_and_the_conversation_ke
     conversation.close()
 
 
-def test_a_server_that_ignores_the_interrupt_writes_the_conversation_off() -> None:
+def test_a_server_that_ignores_the_interrupt_is_stopped_and_replaced_by_the_next_turn() -> None:
     script = CodexScript()
     script.turn(Hang(ignores_interrupt=True))
+    script.turn(Say("after"))
     r = rig(script, interrupt_grace=3.0)
     conversation = r.open()
     with pytest.raises(TurnTimeoutError):
         r.turn(conversation, timeout=2.0)
-    with pytest.raises(TurnFailedError, match="did not stop"):
-        r.turn(conversation)
+    assert r.turn(conversation).text == "after"
+    assert script.spawned == 2
     conversation.close()
 
 

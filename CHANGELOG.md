@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.15.6 (2026-10-09)
+
+### Fixed
+
+- A Codex app-server that ignores the interrupt of a timed-out turn is stopped, and the
+  next turn replaces it by resuming the thread, as the Claude stream transport already
+  does. Before, the conversation was written off: the next turn failed with "the previous
+  turn did not stop" and the session then forgot the thread, so one hung turn cost two
+  failed turns and the conversation's history.
+
 ## 0.15.5 (2026-10-09)
 
 ### Fixed

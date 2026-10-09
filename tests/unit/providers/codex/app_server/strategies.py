@@ -60,7 +60,9 @@ def hints(cls: type) -> dict[str, Any]:
 
 def for_type(tp: Any, depth: int) -> st.SearchStrategy[Any]:  # noqa: C901, PLR0911
     """A strategy for values of the annotation ``tp``."""
-    if isinstance(tp, typing.ForwardRef):
+    # A recursive alias such as ``list["JsonValue"]`` leaves a ForwardRef on
+    # Python 3.11+ but a bare string on 3.10.
+    if isinstance(tp, (typing.ForwardRef, str)):
         return json_values
     if tp is type(None):
         return st.none()

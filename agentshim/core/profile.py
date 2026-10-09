@@ -198,3 +198,7 @@ class ProviderProfile:
     #: When a session should retire a conversation of this provider; ``None``
     #: means never.
     renewal: RenewalBudget | None = None
+    #: Whether a conversation on this provider takes ``steer(text)`` while a
+    #: turn runs. A provider that does not (every one-shot transport) rejects
+    #: it with ``ProviderCapabilityError`` instead of delaying the message.
+    supports_steer: bool = False

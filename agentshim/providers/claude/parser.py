@@ -148,6 +148,7 @@ class ClaudeStreamParser:
         self._structured: object | None = None
         self._final_text: str | None = None
         self._usage = ProviderUsage(provider=PROVIDER_NAME)
+        self._results = 0
         self._cost_usd: float | None = None
         self._error: str | None = None
         # What the stream said about a failed API request, for classifying it.
@@ -281,8 +282,14 @@ class ClaudeStreamParser:
             None if frame.total_cost_usd is None else frame.total_cost_usd - self._cost_baseline
         )
         self._structured = self._structured_payload(frame)
+        tokens = fold_usage(frame.usage, turns=frame.num_turns or 0)
+        if self._results:
+            # A steered message can start a follow-on turn inside this run; its
+            # ``result`` reports only its own tokens, so the run sums them.
+            tokens = self._usage.tokens + tokens
+        self._results += 1
         self._usage = ProviderUsage(
-            tokens=fold_usage(frame.usage, turns=frame.num_turns or 0),
+            tokens=tokens,
             total_cost_usd=self._cost_usd,
             provider=PROVIDER_NAME,
             raw=frame.usage,

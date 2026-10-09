@@ -21,6 +21,8 @@ from agentshim import (
     ConversationSpec,
     FailureKind,
     NativePermissions,
+    NoRunningTurnError,
+    ProviderCapabilityError,
     ProviderUsage,
     RenewalBudget,
     RetryPolicy,
@@ -698,3 +700,48 @@ class TestShellRaces:
         assert saved is not None
         assert saved.usage is not None
         assert saved.usage.tokens.input_tokens == 10
+
+
+class TestSteer:
+    def _transport(self, *, steerable: bool = True, **kwargs: object) -> FakeTransport:
+        return FakeTransport(profile=fake_profile(supports_steer=steerable), **kwargs)  # type: ignore[arg-type]
+
+    def test_a_steer_during_run_reaches_the_conversation_and_reports_events(self) -> None:
+        handlers = RecordingEventHandler()
+        session_box: list[Session] = []
+        transport = FakeTransport(
+            [FakeTurn(during=lambda: session_box[0].steer("change course"))],
+            profile=fake_profile(supports_steer=True),
+        )
+        session = _agent(transport, handlers=handlers).session("/work")
+        session_box.append(session)
+        _run(session)
+        assert transport.conversations[0].steers == ["change course"]
+        assert [type(e).__name__ for e in handlers.events if "Steer" in type(e).__name__] == [
+            "SteerDelivered",
+            "SteerConsumed",
+        ]
+
+    def test_steer_with_no_turn_running_raises(self) -> None:
+        session = _agent(self._transport()).session("/work")
+        with pytest.raises(NoRunningTurnError):
+            session.steer("early")
+
+    def test_steer_after_the_turn_raises(self) -> None:
+        session = _agent(self._transport()).session("/work")
+        _run(session)
+        with pytest.raises(NoRunningTurnError):
+            session.steer("late")
+
+    def test_an_unsupported_provider_is_rejected_even_without_a_turn(self) -> None:
+        session = _agent(self._transport(steerable=False)).session("/work")
+        with pytest.raises(ProviderCapabilityError, match="cannot take a message"):
+            session.steer("x")
+
+    def test_an_unsupported_provider_is_rejected_during_a_turn(self) -> None:
+        box: list[Session] = []
+        transport = FakeTransport([FakeTurn(during=lambda: box[0].steer("x"))])
+        session = _agent(transport).session("/work")
+        box.append(session)
+        with pytest.raises(ProviderCapabilityError):
+            _run(session)

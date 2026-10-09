@@ -19,9 +19,12 @@ from typing import TYPE_CHECKING
 
 from agentshim.core.checkpoints import Checkpoint
 from agentshim.core.clock import StopSignal
+from agentshim.core.conversation import SteerableConversation
 from agentshim.core.errors import (
     AgentShimError,
     ContinuityError,
+    NoRunningTurnError,
+    ProviderCapabilityError,
     SessionStateError,
     TurnCancelledError,
 )
@@ -123,7 +126,7 @@ class Session:
     """One logical conversation, kept alive by a recovery policy.
 
     Normally made by ``Agent.session``. One turn at a time: ``prepare_turn``
-    then ``run``. ``interrupt`` may be called from any thread; everything else
+    then ``run``. ``interrupt`` and ``steer`` may be called from any thread; everything else
     belongs to the thread driving the session.
     """
 
@@ -289,6 +292,34 @@ class Session:
         stop.set()
         if conversation is not None:
             conversation.interrupt()
+
+    def steer(self, text: str) -> None:
+        """Send *text* into the turn that is running now. Thread-safe.
+
+        The provider folds the message into the running turn instead of
+        waiting for the next one. It does not queue: the message goes out now
+        or this raises. Raises ``ProviderCapabilityError`` when the provider
+        cannot take a message mid-turn (``profile.supports_steer`` is false),
+        and ``NoRunningTurnError`` when no turn is running, the conversation
+        is between attempts (a retry wait), or the provider's turn has not
+        started or is finishing. Whether and when the provider took the
+        message is reported as ``SteerDelivered``, ``SteerConsumed`` and
+        ``SteerRejected`` events to the turn's handlers.
+        """
+        profile = self._transport.profile
+        if not profile.supports_steer:
+            msg = f"{profile.name} cannot take a message while a turn runs"
+            raise ProviderCapabilityError(msg)
+        with self._lock:
+            running = self._stop is not None
+            conversation = self._conversation
+        if not running or conversation is None:
+            msg = "no turn is running in this session"
+            raise NoRunningTurnError(msg)
+        if not isinstance(conversation, SteerableConversation):
+            msg = f"{profile.name} declares steering but its conversation does not provide it"
+            raise ProviderCapabilityError(msg)
+        conversation.steer(text)
 
     def release(self) -> None:
         """Close the live conversation but keep its id, so the next turn resumes it."""

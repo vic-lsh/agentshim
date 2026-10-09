@@ -21,6 +21,21 @@ in ``tests/fixtures/claude_stream``):
 * A refused ``--resume`` makes the CLI write one error ``result`` and exit
   before it answers ``initialize``; that is a ``SessionResumeError`` from
   ``open``.
+* Steering (verified live against Claude Code): a user message written while a
+  turn runs is *folded into the running turn* if the model is at a tool
+  boundary (the tool finishes first, the message then enters the context, and
+  the same turn ends in one ``result``). Otherwise the CLI *queues* it and
+  runs it as a turn of its own after the current ``result``, with its own
+  ``system/init`` and ``result``. With ``--replay-user-messages`` the CLI echoes
+  each user message (``isReplay``, carrying the ``uuid`` it was sent with) at the
+  moment it takes it into a turn, so the echo is both the consumption signal
+  and what tells the two cases apart. A ``turn()`` that has steers outstanding
+  when a ``result`` arrives therefore keeps reading until the follow-on turn
+  its steers started has produced its ``result``: one ``turn()`` still returns
+  exactly one ``TurnResult`` (the last ``result``'s text, the summed usage) and
+  no ``result`` leaks into the next turn. An interrupt does not cancel a queued
+  message either, so a steer that starts after the caller interrupted is
+  interrupted again at once.
 """
 
 from __future__ import annotations
@@ -38,6 +53,7 @@ from agentshim.core.errors import (
     AgentShimError,
     CliExitError,
     FailureKind,
+    NoRunningTurnError,
     ProcessClosedError,
     ProviderCapabilityError,
     SchemaDialectError,
@@ -47,7 +63,13 @@ from agentshim.core.errors import (
     TurnFailedError,
     TurnTimeoutError,
 )
-from agentshim.core.events import ApprovalDenied, TurnInterrupted
+from agentshim.core.events import (
+    ApprovalDenied,
+    SteerConsumed,
+    SteerDelivered,
+    SteerRejected,
+    TurnInterrupted,
+)
 from agentshim.core.ids import RandomIds
 from agentshim.core.permissions import ApprovalPolicy, NativeMode
 from agentshim.core.profile import SchemaDialect
@@ -100,7 +122,9 @@ _NO_CONVERSATION = "No conversation found"
 #: promised for what the agent runs.
 STREAM_PERMISSION_MODES = frozenset({NativeMode.BYPASS, NativeMode.WORKSPACE_WRITE})
 
-STREAM_PROFILE: ProviderProfile = replace(PROFILE, native_permission_modes=STREAM_PERMISSION_MODES)
+STREAM_PROFILE: ProviderProfile = replace(
+    PROFILE, native_permission_modes=STREAM_PERMISSION_MODES, supports_steer=True
+)
 
 
 @dataclass(frozen=True)
@@ -116,6 +140,7 @@ class _Runtime:
     startup_timeout_s: float
     interrupt_grace_s: float
     close_grace_s: float
+    steer_grace_s: float
 
 
 class ClaudeStreamTransport:
@@ -141,6 +166,7 @@ class ClaudeStreamTransport:
         startup_timeout_s: float = 60.0,
         interrupt_grace_s: float = 10.0,
         close_grace_s: float = 5.0,
+        steer_grace_s: float = 10.0,
         log: Callable[[str], None] | None = None,
     ) -> None:
         """Check the install of ``claude`` on *executor* (the local host by default).
@@ -148,7 +174,10 @@ class ClaudeStreamTransport:
         ``startup_timeout_s`` bounds the wait for a new process to answer
         ``initialize``; ``interrupt_grace_s`` how long a timed-out turn gets to
         wind down after its interrupt before the process is killed;
-        ``close_grace_s`` each step of a shutdown (EOF, terminate, kill).
+        ``close_grace_s`` each step of a shutdown (EOF, terminate, kill);
+        ``steer_grace_s`` how long, after a ``result``, the CLI has to start the
+        turn for a message it queued before that message is reported
+        ``SteerRejected`` and the turn ends.
         """
         executor = executor if executor is not None else HostCommandExecutor()
         base_env = dict(env) if env is not None else interactive_env()
@@ -166,6 +195,7 @@ class ClaudeStreamTransport:
             startup_timeout_s=startup_timeout_s,
             interrupt_grace_s=interrupt_grace_s,
             close_grace_s=close_grace_s,
+            steer_grace_s=steer_grace_s,
         )
 
     @property
@@ -227,6 +257,21 @@ class _TurnRun:
     denied: set[str] = field(default_factory=_names)
     #: Set when a permission request ended the turn (``ApprovalPolicy.FAIL_TURN``).
     approval_failure: str | None = None
+    #: A ``result`` arrived while steers were outstanding, so the turn goes on
+    #: until the follow-on turn those steers started has ended too.
+    chained: bool = False
+    #: Until when the CLI may take to start the turn of a queued steer.
+    chain_deadline: float | None = None
+    #: The latest ``result`` of a chained turn, returned if its steers never start.
+    last_frame: ResultFrame | None = None
+
+
+@dataclass(frozen=True)
+class _Steer:
+    """A message sent into a running turn that the CLI has not yet taken."""
+
+    uuid: str
+    text: str
 
 
 class _StreamConversation:
@@ -249,6 +294,12 @@ class _StreamConversation:
         self._turn_seq = 0
         self._prompt_sent = False
         self._interrupt_requested = False
+        #: Steers written but not yet echoed back; guarded by ``_lock``.
+        self._steers: list[_Steer] = []
+        #: Steer events waiting for the turn's thread to emit them.
+        self._steer_events: list[AgentEvent] = []
+        #: Set once the turn's last ``result`` is taken: no steer can follow.
+        self._steer_closed = False
 
     # -- Conversation protocol
 
@@ -279,6 +330,39 @@ class _StreamConversation:
         if sent:
             self._send_interrupt(seq)
 
+    def steer(self, text: str) -> None:
+        """Write *text* as a user message to the process while the turn runs.
+
+        The CLI folds it into the turn at the next tool boundary, or queues it
+        as a turn of its own; either way this ``turn()`` call ends only after
+        it (see the module docstring). Raises ``NoRunningTurnError`` outside a
+        running turn, once the turn has taken its last ``result``, and when the
+        pipe is closed.
+        """
+        with self._lock:
+            process = self._process
+            if (
+                self._closed
+                or not self._running
+                or not self._prompt_sent
+                or self._steer_closed
+                or process is None
+            ):
+                msg = "no turn is running that can take a message"
+                raise NoRunningTurnError(msg)
+            steer = _Steer(self._rt.ids.new_id("steer"), text)
+            # Registered before the write so a ``result`` read in between sees it.
+            self._steers.append(steer)
+            self._steer_events.append(SteerDelivered(text))
+        try:
+            self._write(process, _user_envelope(text, steer.uuid))
+        except ProcessClosedError as error:
+            with self._lock:
+                self._steers.remove(steer)
+                self._steer_events = [e for e in self._steer_events if e != SteerDelivered(text)]
+            msg = "the claude process is gone, so the message was not delivered"
+            raise NoRunningTurnError(msg) from error
+
     def close(self) -> None:
         """End stdin, wait a bounded time, then terminate and kill. Idempotent."""
         with self._lock:
@@ -303,10 +387,15 @@ class _StreamConversation:
             self._turn_seq += 1
             self._prompt_sent = False
             self._interrupt_requested = False
+            self._steers = []
+            self._steer_events = []
+            self._steer_closed = False
 
     def _end_turn(self) -> None:
         with self._lock:
             self._running = False
+            self._steer_closed = True
+            self._steers = []
 
     def _run_turn(self, request: TurnRequest, emit: Callable[[AgentEvent], None]) -> TurnResult:
         config = self._config_for(request)
@@ -513,14 +602,8 @@ class _StreamConversation:
     def _send_prompt(self, prompt: str) -> None:
         """Write the user message; a pipe the process already closed ends the turn."""
         process = self._live_process()
-        envelope = {
-            "type": "user",
-            "message": {"role": "user", "content": prompt},
-            "parent_tool_use_id": None,
-            "session_id": "default",
-        }
         try:
-            self._write(process, envelope)
+            self._write(process, _user_envelope(prompt))
         except ProcessClosedError as error:
             self._forget(process)
             process.kill()  # a closed pipe does not mean the process exited
@@ -601,20 +684,86 @@ class _StreamConversation:
         """Pump output until this turn's ``result`` frame, or fail the turn."""
         process = self._live_process()
         while True:
+            self._flush_steer_events(run)
             self._check_deadline(run, process)
+            expired = self._unstarted_steers_expired(run)
+            if expired is not None:
+                return expired
             item = self._poll(process)
             if item is None:
                 continue
             if isinstance(item, StdoutLine):
                 frame = self._on_stdout(item.text, run)
                 if frame is not None:
-                    return frame
+                    ended = self._end_or_chain(frame, run)
+                    if ended is not None:
+                        return ended
             elif isinstance(item, StderrLine):
                 self._note_stderr(item.text)
                 run.parser.feed_stderr(item.text)
             else:
                 self._forget(process)
                 raise self._died_error(run, returncode=item.returncode)
+
+    def _end_or_chain(self, frame: ResultFrame, run: _TurnRun) -> ResultFrame | None:
+        """The frame if it ends the turn; ``None`` when steers are still outstanding.
+
+        An outstanding steer is a message the CLI queued: it runs as the next
+        turn, so the turn goes on. Closing the turn to steers happens under the
+        same lock a steer registers under, so none can slip in after this.
+        """
+        with self._lock:
+            outstanding = bool(self._steers)
+            if not outstanding:
+                self._steer_closed = True
+        if not outstanding:
+            self._flush_steer_events(run)
+            return frame
+        self._report_denials(run, frame)
+        run.chained = True
+        run.last_frame = frame
+        run.chain_deadline = self._rt.clock.monotonic() + self._rt.steer_grace_s
+        return None
+
+    def _unstarted_steers_expired(self, run: _TurnRun) -> ResultFrame | None:
+        """End a chained turn whose queued steers the CLI never started."""
+        if run.chain_deadline is None or run.last_frame is None:
+            return None
+        if self._rt.clock.monotonic() < run.chain_deadline:
+            return None
+        with self._lock:
+            lost, self._steers = self._steers, []
+            self._steer_closed = True
+        self._flush_steer_events(run)
+        for steer in lost:
+            run.emit(
+                SteerRejected(steer.text, "claude did not start a turn for the queued message")
+            )
+        return run.last_frame
+
+    def _flush_steer_events(self, run: _TurnRun) -> None:
+        """Emit, on the turn's thread, the steer events other threads queued."""
+        with self._lock:
+            events, self._steer_events = self._steer_events, []
+        for event in events:
+            run.emit(event)
+
+    def _on_echo(self, data: Mapping[str, Any], run: _TurnRun) -> None:
+        """The CLI took a steered message into a turn: report it, cancel it if the caller stopped."""
+        uuid = data.get("uuid")
+        with self._lock:
+            steer = next((s for s in self._steers if s.uuid == uuid), None)
+            if steer is None:
+                return
+            self._steers.remove(steer)
+            if not self._steers:
+                run.chain_deadline = None
+            stopping = self._interrupt_requested or run.expired
+            seq = self._turn_seq
+        self._flush_steer_events(run)
+        run.emit(SteerConsumed(steer.text))
+        if stopping and run.chained:
+            self._send_interrupt(seq)
 
     def _check_deadline(self, run: _TurnRun, process: Process) -> None:
         """Interrupt a turn that ran out of time; kill the process if it will not stop."""
@@ -639,6 +788,9 @@ class _StreamConversation:
             self._answer(data, run)
             return None
         if data is not None and kind in ("control_response", "control_cancel_request"):
+            return None
+        if data is not None and kind == "user" and data.get("isReplay") is True:
+            self._on_echo(data, run)
             return None
         if data is not None and kind == "system":
             self._learn_id(data.get("session_id"))
@@ -788,6 +940,19 @@ def _interrupted(frame: ResultFrame) -> bool:
         and frame.terminal_reason is not None
         and frame.terminal_reason.startswith(_ABORTED_PREFIX)
     )
+
+
+def _user_envelope(text: str, uuid: str | None = None) -> dict[str, Any]:
+    """A user message as ``stream-json`` input; the CLI echoes *uuid* back when it takes it."""
+    envelope: dict[str, Any] = {
+        "type": "user",
+        "message": {"role": "user", "content": text},
+        "parent_tool_use_id": None,
+        "session_id": "default",
+    }
+    if uuid is not None:
+        envelope["uuid"] = uuid
+    return envelope
 
 
 def _control_request(request_id: str, request: Mapping[str, Any]) -> dict[str, Any]:

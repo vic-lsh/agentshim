@@ -75,6 +75,9 @@ def stream_argv(
         "stream-json",
         "--permission-prompts",
         "none",
+        # Echoes each user message when the CLI takes it into a turn: the signal
+        # that a steered message was consumed (see ``stream_transport``).
+        "--replay-user-messages",
     ]
     if spec.model:
         argv += ["--model", spec.model]

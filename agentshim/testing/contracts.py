@@ -19,8 +19,14 @@ from typing import TYPE_CHECKING
 
 from agentshim.core.checkpoints import Checkpoint
 from agentshim.core.clock import StopSignal
-from agentshim.core.conversation import ConversationSpec
-from agentshim.core.errors import AgentShimError, ProcessClosedError, ProviderCapabilityError
+from agentshim.core.conversation import ConversationSpec, SteerableConversation
+from agentshim.core.errors import (
+    AgentShimError,
+    NoRunningTurnError,
+    ProcessClosedError,
+    ProviderCapabilityError,
+)
+from agentshim.core.events import SteerConsumed, SteerDelivered
 from agentshim.core.permissions import ApprovalPolicy, NativeMode, NativePermissions
 from agentshim.core.turn import TurnRequest
 from agentshim.execution.process import ProcessExited, StderrLine, StdoutLine
@@ -32,6 +38,7 @@ if TYPE_CHECKING:
     from agentshim.core.clock import Clock
     from agentshim.core.conversation import Conversation, Transport
     from agentshim.core.events import AgentEvent
+    from agentshim.core.turn import TurnResult
     from agentshim.execution.confinement import Confinement
     from agentshim.execution.process import Process, ProcessOutput
 
@@ -329,6 +336,91 @@ class ConversationContract:
         except AgentShimError:
             return
         msg = "a turn on a closed conversation did not raise AgentShimError"
+        raise AssertionError(msg)
+
+
+class SteerableConversationContract(ConversationContract):
+    """Behavior every ``SteerableConversation`` has, on top of a conversation's.
+
+    The checks steer from inside the event handler, which runs on the turn's
+    thread while the turn is running, at the first event the conversation will
+    take a steer at. So a turn of the conversation ``make_conversation``
+    returns must stay steerable for at least one event, and must accept the
+    message into the turn (a fake provider that finishes at once would not).
+    """
+
+    def make_steerable_conversation(self) -> Conversation:
+        """A fresh conversation whose first turn stays steerable until it is steered.
+
+        Defaults to ``make_conversation``; override it when the turn a steer
+        needs (one that waits for the message) would hang the plain checks.
+        """
+        return self.make_conversation()
+
+    def _steerable(self) -> Conversation:
+        conversation = self.make_steerable_conversation()
+        self._made().append(conversation)
+        return conversation
+
+    def _steered_turn(
+        self, conversation: Conversation, text: str
+    ) -> tuple[TurnResult, list[AgentEvent]]:
+        assert isinstance(conversation, SteerableConversation)
+        seen: list[AgentEvent] = []
+        sent: list[str] = []
+
+        def on_event(event: AgentEvent) -> None:
+            seen.append(event)
+            if sent:
+                return
+            try:
+                conversation.steer(text)
+            except NoRunningTurnError:
+                return  # a provider may not take a message until its turn has started
+            sent.append(text)
+
+        result = conversation.turn(TurnRequest(prompt="hello"), on_event)
+        assert sent, "the turn emitted no event to steer from"
+        return result, seen
+
+    def test_steering_an_idle_conversation_raises(self) -> None:
+        conversation = self._steerable()
+        assert isinstance(conversation, SteerableConversation)
+        try:
+            conversation.steer("too early")
+        except NoRunningTurnError:
+            return
+        msg = "steer with no turn running did not raise NoRunningTurnError"
+        raise AssertionError(msg)
+
+    def test_a_steer_during_a_turn_leaves_one_ordinary_result(self) -> None:
+        result, _ = self._steered_turn(self._steerable(), "change course")
+        assert result.interrupted is False
+
+    def test_steer_events_name_the_text_and_delivery_comes_first(self) -> None:
+        _, seen = self._steered_turn(self._steerable(), "change course")
+        steer_events = [e for e in seen if isinstance(e, (SteerDelivered, SteerConsumed))]
+        assert steer_events, "a steer that was accepted reported nothing"
+        assert all(e.text == "change course" for e in steer_events)
+        assert isinstance(steer_events[0], SteerDelivered)
+
+    def test_a_steer_does_not_leak_into_the_next_turn(self) -> None:
+        conversation = self._steerable()
+        self._steered_turn(conversation, "change course")
+        later: list[AgentEvent] = []
+        result = conversation.turn(TurnRequest(prompt="next"), later.append)
+        assert result.interrupted is False
+        assert not [e for e in later if isinstance(e, (SteerDelivered, SteerConsumed))]
+
+    def test_steering_after_the_turn_ended_raises(self) -> None:
+        conversation = self._steerable()
+        self._steered_turn(conversation, "change course")
+        assert isinstance(conversation, SteerableConversation)
+        try:
+            conversation.steer("late")
+        except NoRunningTurnError:
+            return
+        msg = "steer after the turn ended did not raise NoRunningTurnError"
         raise AssertionError(msg)
 
 

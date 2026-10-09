@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15.4 (2026-10-09)
+
+### Added
+
+- `stream_provider_names()`: the providers that have a long-lived transport
+  (today `claude` and `codex`), so a caller picks `TransportKind.STREAM` from
+  the registry instead of naming providers.
+
 ## 0.15.3 (2026-10-09)
 
 ### Added

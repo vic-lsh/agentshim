@@ -11,12 +11,14 @@ from typing import TYPE_CHECKING
 
 from agentshim.core.clock import SystemClock
 from agentshim.core.conversation import ConversationSpec, TransportKind
+from agentshim.core.env import interactive_env
 from agentshim.core.ids import RandomIds
 from agentshim.core.profile import ConfigScope, McpScope, SkillScope
 from agentshim.core.session_policy import PolicyConfig, RetryPolicy
 from agentshim.execution.confinement import confine
 from agentshim.execution.host import HostCommandExecutor
 from agentshim.oneshot import OneShotTransport
+from agentshim.probe import probe_on
 from agentshim.providers import get_stream_transport
 from agentshim.session import Session, map_mcp_servers
 
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
     from agentshim.core.mcp import McpServer
     from agentshim.core.permissions import ApprovalPolicy, NativePermissions
     from agentshim.core.profile import ProviderProfile
+    from agentshim.core.status import ProviderStatus
     from agentshim.core.usage import ProviderUsage
     from agentshim.execution.confinement import Confinement
     from agentshim.execution.executor import CommandExecutor
@@ -85,6 +88,7 @@ class Agent:
         self._retry = retry if retry is not None else RetryPolicy()
         self._event_handlers = tuple(event_handlers)
         self._log = log
+        self._probe_target: tuple[str, CommandExecutor, Mapping[str, str] | None] | None = None
         if isinstance(provider, str):
             self._transport: Transport = self._by_name(
                 provider, transport, executor, confinement, env, check_timeout
@@ -122,6 +126,7 @@ class Agent:
                 raise ValueError(msg)
             base = confine(base, confinement)
             env = dict(confinement.env)
+        self._probe_target = (provider, base, env)
         if kind is TransportKind.STREAM:
             return get_stream_transport(
                 provider,
@@ -135,6 +140,23 @@ class Agent:
         return OneShotTransport(
             provider, executor=base, env=env, check_timeout=check_timeout, log=self._log
         )
+
+    def probe(self, *, timeout: float = 15.0) -> ProviderStatus:
+        """Report this agent's provider readiness without running a turn.
+
+        The checks run on the executor and environment the agent's turns use,
+        so a confinement or container is probed where the agent would run. No
+        model is called. Only an agent built from a provider name can probe;
+        one built from a ready-made ``Transport`` raises ``ValueError``.
+
+        Constructing an ``Agent`` already requires the binary, so use
+        ``probe_provider`` to find out whether a provider is installed at all.
+        """
+        if self._probe_target is None:
+            msg = "probe needs an Agent built from a provider name, not from a Transport"
+            raise ValueError(msg)
+        provider, executor, env = self._probe_target
+        return probe_on(provider, executor, env if env is not None else interactive_env(), timeout)
 
     @property
     def transport(self) -> Transport:

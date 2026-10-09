@@ -15,6 +15,7 @@ from .core import (
     ApprovalPolicy,
     ArgvContext,
     AssistantText,
+    AuthState,
     Checkpoint,
     CheckpointStore,
     CliCheckError,
@@ -60,6 +61,7 @@ from .core import (
     ProviderCapabilityError,
     ProviderError,
     ProviderProfile,
+    ProviderStatus,
     ProviderUsage,
     RandomIds,
     RateLimitStatus,
@@ -138,6 +140,7 @@ from .execution import (
     confine,
 )
 from .oneshot import OneShotTransport
+from .probe import probe_provider
 from .providers import get_provider, provider_names
 from .providers.claude import ClaudeHook, ClaudeProvider, ClaudeStreamTransport, SandboxConfig
 from .providers.codex import CodexProvider, CodexSandboxConfig
@@ -160,6 +163,7 @@ __all__ = [
     "ApprovalPolicy",
     "ArgvContext",
     "AssistantText",
+    "AuthState",
     "CallbackCommandStreamSink",
     "Checkpoint",
     "CheckpointStore",
@@ -230,6 +234,7 @@ __all__ = [
     "ProviderCapabilityError",
     "ProviderError",
     "ProviderProfile",
+    "ProviderStatus",
     "ProviderUsage",
     "RandomIds",
     "RateLimitStatus",
@@ -297,5 +302,6 @@ __all__ = [
     "parse_json_object",
     "prepare_config_home",
     "price_for",
+    "probe_provider",
     "provider_names",
 ]

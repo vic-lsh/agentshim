@@ -11,6 +11,13 @@
   Claude stream transport and one-shot parser (`rate_limit_event`) and by the
   Codex app-server transport (`account/rateLimits/updated`). Test doubles:
   `ClaudePeerTurn(rate_limit=...)` and the `ReportRateLimits` Codex script step.
+- Provider readiness probe. `probe_provider(name, *, executor, confinement, env,
+  timeout)` and `Agent.probe()` return a `ProviderStatus` (`binary_found`,
+  `path`, `version`, `auth: AuthState`, `auth_detail`) without running a turn or
+  calling a model, through the executor and confinement a turn would use. Claude
+  uses `claude auth status`, Codex `codex login status`; Gemini, Copilot and
+  opencode have no status command and report `AuthState.UNKNOWN`. A missing
+  binary is a result, not an error. Test double `agentshim.testing.probe_executor`.
 
 ## 0.15.1 (2026-10-09)
 

@@ -207,3 +207,14 @@ def test_the_codex_app_server_transport_and_its_test_double_are_public() -> None
         "Complain",
     ):
         assert name in agentshim.testing.__all__, name
+
+
+def test_the_probe_surface_is_exported() -> None:
+    for name in ("AuthState", "ProviderStatus", "probe_provider"):
+        assert name in agentshim.__all__, name
+    assert "probe_executor" in agentshim.testing.__all__
+
+
+def test_the_rate_limit_event_is_exported() -> None:
+    assert "RateLimitStatus" in agentshim.__all__
+    assert "ReportRateLimits" in agentshim.testing.__all__

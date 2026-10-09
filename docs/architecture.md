@@ -334,6 +334,7 @@ class ProviderProfile:
     container_env: Mapping[str, str]   # env a root container run needs beyond auth; default empty
     state_root_env: str | None         # var that relocates state_dirs[0]; None if undocumented
     auth_files: tuple[str, ...]        # home-relative authentication files, inside state_dirs
+    credential_files: tuple[str, ...]  # the subset of auth_files that holds refreshable credentials
     mcp_config_file: str | None        # workspace-relative MCP config path; set iff mcp is CONFIG_FILE
 ```
 
@@ -358,7 +359,9 @@ credentials (Claude Code's `IS_SANDBOX=1`, required before it accepts
 `state_dirs[0]` (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`); it is
 `None` where the CLI documents none, rather than guessed. `auth_files` are
 the minimal home-relative files to copy elsewhere so the CLI is already
-logged in; every entry lies inside a `state_dirs` entry. `mcp_config_file` is
+logged in; every entry lies inside a `state_dirs` entry. `credential_files` is the
+subset of them that holds refreshable login credentials rather than settings, for
+callers that share those writable so a token refresh is not lost. `mcp_config_file` is
 the workspace-relative path a `CONFIG_FILE` provider writes its MCP config
 to for a turn (`.mcp.json`, `.gemini/settings.json`, `opencode.json`); the
 provider module defines it as the same constant `install_mcp` writes to, so

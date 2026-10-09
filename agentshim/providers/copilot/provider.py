@@ -58,6 +58,9 @@ PROFILE = ProviderProfile(
     # install held only ``versions.json``, which is not credential-bearing,
     # so it is left out.
     auth_files=(".copilot/config.json", ".copilot/settings.json"),
+    # config.json carries the logged-in users and, without a keychain, the
+    # tokens; the CLI rewrites it in place on login and refresh.
+    credential_files=(".copilot/config.json",),
     # CLI_FLAGS: Copilot takes MCP servers as one --additional-mcp-config
     # flag, never a file.
     mcp_config_file=None,

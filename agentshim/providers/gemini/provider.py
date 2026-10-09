@@ -80,6 +80,7 @@ PROFILE = ProviderProfile(
         ".gemini/settings.json",
         ".gemini/.env",
     ),
+    credential_files=(".gemini/oauth_creds.json",),
     mcp_config_file=MCP_CONFIG_FILENAME,
 )
 

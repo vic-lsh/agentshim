@@ -152,7 +152,9 @@ class ProviderProfile:
     ``state_root_env`` is the documented variable that relocates
     ``state_dirs[0]``, or ``None`` when the CLI names none. ``auth_files`` are
     the home-relative paths, each inside a ``state_dirs`` entry, whose
-    contents are the minimal set to copy so the CLI is logged in elsewhere.
+    contents are the minimal set to copy so the CLI is logged in elsewhere;
+    ``credential_files`` (0.15.3+, default empty) is the subset of them that
+    holds refreshable login credentials rather than settings.
     ``mcp_config_file`` is the workspace-relative path a ``CONFIG_FILE``
     provider writes its MCP config to for a turn, and ``None`` for
     ``CLI_FLAGS``/``NONE`` providers.
@@ -174,6 +176,12 @@ class ProviderProfile:
     container_env: Mapping[str, str] = field(default_factory=_no_container_env)
     state_root_env: str | None = None
     auth_files: tuple[str, ...] = ()
+    #: The subset of ``auth_files`` that holds login credentials (OAuth tokens
+    #: the CLI itself refreshes and rewrites), as opposed to settings. A caller
+    #: that lends a login to another process shares exactly these files
+    #: writable so a token refresh there is not lost, and keeps the rest of
+    #: ``auth_files`` read-only. Every entry is also in ``auth_files``.
+    credential_files: tuple[str, ...] = ()
     mcp_config_file: str | None = None
     #: Whether the stream lists the skills offered (``SkillsDiscovered``).
     skill_discovery: SkillSignal = SkillSignal.NONE

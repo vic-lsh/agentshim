@@ -78,6 +78,7 @@ class TestProfile:
         assert profile.state_root_env == "CODEX_HOME"
         assert profile.auth_files == (".codex/auth.json",)
         assert ".codex/config.toml" not in profile.auth_files
+        assert profile.credential_files == (".codex/auth.json",)
         assert profile.mcp_config_file is None
         assert profile.container_env == {}
 

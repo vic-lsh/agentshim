@@ -73,6 +73,7 @@ class TestProfile:
         assert profile.auth_env_vars == ()
         assert profile.skill_dirs == (".opencode/skills",)
         assert profile.state_root_env is None
+        assert profile.credential_files == (".local/share/opencode/auth.json",)
         assert profile.auth_files == (
             ".local/share/opencode/auth.json",
             ".config/opencode/opencode.json",

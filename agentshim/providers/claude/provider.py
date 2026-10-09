@@ -102,6 +102,7 @@ PROFILE = ProviderProfile(
         ".claude/settings.local.json",
         ".claude.json",
     ),
+    credential_files=(".claude/.credentials.json",),
     mcp_config_file=MCP_CONFIG_FILENAME,
 )
 

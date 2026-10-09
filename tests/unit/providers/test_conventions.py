@@ -149,6 +149,12 @@ class TestEnvAndAuthConventions:
                 for state_dir in profile.state_dirs
             ), auth_file
 
+    def test_credential_files_are_a_nonempty_subset_of_auth_files(self, name: str) -> None:
+        profile = get_provider(name).profile
+        assert profile.credential_files
+        assert set(profile.credential_files) <= set(profile.auth_files)
+        assert len(set(profile.credential_files)) == len(profile.credential_files)
+
     def test_mcp_config_file_is_set_exactly_for_config_file_providers(self, name: str) -> None:
         profile = get_provider(name).profile
         if profile.mcp is McpMechanism.CONFIG_FILE:

@@ -81,6 +81,7 @@ PROFILE = ProviderProfile(
         ".config/opencode/config.jsonc",
         ".config/opencode/.env",
     ),
+    credential_files=(".local/share/opencode/auth.json",),
     mcp_config_file=MCP_CONFIG_FILENAME,
 )
 

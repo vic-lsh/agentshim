@@ -175,6 +175,15 @@ def provider_names() -> list[str]:
     return sorted(_FACTORIES)
 
 
+def stream_provider_names() -> list[str]:
+    """Return the providers that have a long-lived transport, sorted.
+
+    These accept ``Agent(name, transport=TransportKind.STREAM)``; every other
+    provider in ``provider_names()`` is reached only one process per turn.
+    """
+    return sorted(_STREAM_TRANSPORTS)
+
+
 def get_provider(name: str) -> Provider:
     """Construct the provider registered under *name* with its defaults."""
     factory = _FACTORIES.get(name)
@@ -260,4 +269,5 @@ __all__ = [
     "get_scripted_lines",
     "get_stream_transport",
     "provider_names",
+    "stream_provider_names",
 ]

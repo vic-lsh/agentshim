@@ -26,7 +26,7 @@ def test_testing_module_exports() -> None:
 
 
 def test_version_is_reported() -> None:
-    assert agentshim.__version__ == "0.15.3"
+    assert agentshim.__version__ == "0.15.4"
 
 
 def test_core_and_execution_do_not_import_providers_at_module_level() -> None:
@@ -55,6 +55,26 @@ def test_core_and_execution_do_not_import_providers_at_module_level() -> None:
                         if "providers" in alias.name
                     )
     assert offenders == []
+
+
+def test_stream_provider_names_are_exactly_the_providers_that_build_a_stream_agent() -> None:
+    def builds(name: str) -> bool:
+        try:
+            agentshim.Agent(
+                name,
+                permissions=agentshim.NativePermissions.bypass(),
+                approvals=agentshim.ApprovalPolicy.DENY,
+                executor=agentshim.testing.FakeExecutor([]),
+                transport=agentshim.TransportKind.STREAM,
+            )
+        except ValueError:
+            return False
+        return True
+
+    assert agentshim.stream_provider_names() == [
+        name for name in agentshim.provider_names() if builds(name)
+    ]
+    assert agentshim.stream_provider_names() == ["claude", "codex"]
 
 
 def test_provider_names_lists_the_ported_providers() -> None:

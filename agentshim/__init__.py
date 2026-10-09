@@ -146,7 +146,7 @@ from .execution import (
 )
 from .oneshot import OneShotTransport
 from .probe import probe_provider
-from .providers import get_provider, provider_names
+from .providers import get_provider, provider_names, stream_provider_names
 from .providers.claude import ClaudeHook, ClaudeProvider, ClaudeStreamTransport, SandboxConfig
 from .providers.codex import CodexProvider, CodexSandboxConfig
 from .providers.codex.app_server import CodexAppServerTransport
@@ -156,7 +156,7 @@ from .providers.opencode import OpencodeProvider
 from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 
-__version__ = "0.15.3"
+__version__ = "0.15.4"
 
 __all__ = [
     "Agent",
@@ -314,4 +314,5 @@ __all__ = [
     "price_for",
     "probe_provider",
     "provider_names",
+    "stream_provider_names",
 ]

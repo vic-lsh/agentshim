@@ -153,7 +153,7 @@ class CodexAppServerTransport:
     The timeouts are in seconds on *clock*: ``startup_timeout`` bounds the
     handshake, ``close_timeout`` each step of shutting the process down, and
     ``interrupt_grace`` how long an interrupted or timed-out turn may take to
-    wind down before the conversation is written off.
+    wind down before its process is stopped.
     """
 
     # Each argument is an independent documented option of the public constructor.
@@ -369,7 +369,6 @@ class _Conversation:
         self._skills: SkillTracker | None = None
         self._failed_servers: dict[str, str] = {}
         self._deferred_failure: TurnFailedError | None = None
-        self._stuck = False
 
     # -- Conversation protocol
 
@@ -559,9 +558,6 @@ class _Conversation:
             if self._running:
                 msg = "a turn is already running in this conversation"
                 raise SessionStateError(msg)
-            if self._stuck:
-                msg = "the previous turn did not stop, so this conversation cannot take another"
-                raise TurnFailedError(msg, kind=FailureKind.OTHER, detail=msg)
             self._running = True
             self._turn_id = None
             self._interrupt_asked = False
@@ -859,8 +855,10 @@ class _Conversation:
     def _wind_down(self, turn: _Turn) -> None:
         """Stop a turn that is being abandoned and wait, within bounds, for the server to agree.
 
-        If the server never reports the turn over, the conversation is written
-        off: another ``turn/start`` on it could collide with the one still running.
+        If the server never reports the turn over, the process is stopped:
+        another ``turn/start`` on it could collide with the one still running.
+        The next turn replaces it by resuming the thread, as the Claude stream
+        transport does for a process that ignores its interrupt.
         """
         if turn.turn_id is None or turn.completed is not None:
             return
@@ -871,7 +869,7 @@ class _Conversation:
             while turn.completed is None:
                 self._handle(self._channel.read(deadline), turn)
         except (Expired, Gone, AgentShimError):
-            self._stuck = True
+            _stop(self._channel.process, self._timeouts.close)
 
     # -- finishing
 

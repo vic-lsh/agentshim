@@ -91,6 +91,12 @@ class ResultFrame:
     api_error_status: int | None = None
     #: The messages an ``error_*`` subtype reports instead of ``result`` text.
     errors: tuple[str, ...] = ()
+    #: Why the CLI stopped (``completed``, ``aborted_streaming``,
+    #: ``aborted_tools``, ``max_turns``, ...); ``None`` on builds that omit it.
+    terminal_reason: str | None = None
+    #: The tool calls the CLI refused for want of permission, as it reported
+    #: them (``tool_name``, ``tool_use_id``, ``tool_input``).
+    permission_denials: tuple[Mapping[str, Any], ...] = ()
 
 
 ClaudeFrame = SystemInit | AssistantMessage | ToolResultBlock | ResultFrame
@@ -121,6 +127,8 @@ def parse_frame(data: Mapping[str, Any]) -> ClaudeFrame | None:
             subtype=_str_or_none(data.get("subtype")),
             api_error_status=_int_or_none(data.get("api_error_status")),
             errors=_str_tuple_or_none(data.get("errors")) or (),
+            terminal_reason=_str_or_none(data.get("terminal_reason")),
+            permission_denials=_mapping_tuple(data.get("permission_denials")),
         )
     return None
 
@@ -242,6 +250,16 @@ def _float_or_none(value: object) -> float | None:
     if isinstance(value, (int, float)):
         return float(value)
     return None
+
+
+def _mapping_tuple(value: object) -> tuple[Mapping[str, Any], ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(
+        cast("Mapping[str, Any]", item)
+        for item in cast("list[object]", value)
+        if isinstance(item, dict)
+    )
 
 
 def _mapping_or_none(value: object) -> Mapping[str, Any] | None:

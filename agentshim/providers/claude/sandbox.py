@@ -37,6 +37,9 @@ CONFINE_READS_HOOK = str(Path(__file__).absolute().parent / "hooks" / "confine_r
 SANDBOX_ENV: dict[str, str] = {"CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"}
 
 _CONFINED_TOOLS = "Read|Glob|Grep|Edit|Write|NotebookEdit"
+#: The tools that change files; ``workspace_write_settings`` confines these
+#: and leaves reads alone.
+_WRITE_TOOLS = "Edit|Write|NotebookEdit|MultiEdit"
 
 
 def _strings() -> list[str]:
@@ -156,8 +159,34 @@ def _sandbox_block(config: SandboxConfig) -> dict[str, Any]:
     return sandbox
 
 
+def workspace_write_settings(
+    cwd: str, writable_roots: Sequence[str], *, hooks: Sequence[ClaudeHook] = ()
+) -> dict[str, Any]:
+    """Build the inline settings of ``NativeMode.WORKSPACE_WRITE``.
+
+    Claude Code's OS sandbox wraps bash: the working directory plus
+    *writable_roots* are writable, the sandbox must start (``failIfUnavailable``)
+    and there is no unsandboxed escape hatch. The OS sandbox does not wrap
+    Claude's own file tools, so a ``PreToolUse`` hook denies ``Edit``,
+    ``Write`` and ``NotebookEdit`` outside the same roots. Reads stay open.
+    Network access stays off: no domain is allowed.
+    """
+    config = SandboxConfig(allow_write=list(writable_roots))
+    settings: dict[str, Any] = {"sandbox": _sandbox_block(config)}
+    own = _confine_hook([cwd, *writable_roots], _WRITE_TOOLS)
+    merged = merge_hooks(own, render_hooks(hooks))
+    if merged:
+        settings["hooks"] = merged
+    return settings
+
+
 def _confine_reads_hook(roots: list[str]) -> dict[str, Any]:
-    """Build the ``hooks`` block denying native-tool reads outside ``roots``.
+    """Build the ``hooks`` block denying native-tool reads outside ``roots``."""
+    return _confine_hook(roots, _CONFINED_TOOLS)
+
+
+def _confine_hook(roots: Sequence[str], tools: str) -> dict[str, Any]:
+    """Build the ``hooks`` block denying the *tools* outside ``roots``.
 
     The hook runs through ``sys.executable`` so it uses the interpreter that
     ships agentshim, not whatever ``python3`` the agent's PATH resolves to
@@ -172,7 +201,7 @@ def _confine_reads_hook(roots: list[str]) -> dict[str, Any]:
     return {
         "PreToolUse": [
             {
-                "matcher": _CONFINED_TOOLS,
+                "matcher": tools,
                 "hooks": [{"type": "command", "command": command}],
             }
         ]

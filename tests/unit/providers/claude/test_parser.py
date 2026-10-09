@@ -439,3 +439,62 @@ class TestErrorResults:
             _line({"type": "result", "subtype": "error_during_execution", "is_error": True})
         )
         assert parser.finish().error == "error_during_execution"
+
+
+class TestCumulativeCost:
+    """A long-lived process reports ``total_cost_usd`` for the whole process."""
+
+    @staticmethod
+    def _result(total: float | None) -> str:
+        payload: dict[str, Any] = {"type": "result", "subtype": "success", "result": "ok"}
+        if total is not None:
+            payload["total_cost_usd"] = total
+        return _line(payload)
+
+    def test_without_a_baseline_the_total_is_the_turns_cost(self) -> None:
+        parser, _ = _parser()
+        parser.feed_stdout(self._result(0.5))
+        assert parser.finish().cost_usd == 0.5
+        assert parser.total_cost_usd == 0.5
+
+    def test_with_a_baseline_the_turn_reports_the_difference_and_keeps_the_total(self) -> None:
+        events: list[AgentEvent] = []
+        parser = ClaudeStreamParser(events.append, cost_baseline_usd=0.25)
+        parser.feed_stdout(self._result(0.75))
+        parsed = parser.finish()
+        assert parsed.cost_usd == 0.5
+        assert parsed.usage.total_cost_usd == 0.5
+        assert parser.total_cost_usd == 0.75
+        report = next(e for e in events if isinstance(e, UsageReport))
+        assert report.cost_usd == 0.5
+
+    def test_a_result_without_a_cost_reports_none(self) -> None:
+        events: list[AgentEvent] = []
+        parser = ClaudeStreamParser(events.append, cost_baseline_usd=0.25)
+        parser.feed_stdout(self._result(None))
+        assert parser.finish().cost_usd is None
+        assert parser.total_cost_usd is None
+
+
+class TestResultFrameFields:
+    def test_terminal_reason_and_permission_denials_are_read(self) -> None:
+        from agentshim.providers.claude.events import ResultFrame, parse_frame  # noqa: PLC0415
+
+        frame = parse_frame(
+            {
+                "type": "result",
+                "terminal_reason": "aborted_tools",
+                "permission_denials": [{"tool_name": "Bash"}, "junk"],
+            }
+        )
+        assert isinstance(frame, ResultFrame)
+        assert frame.terminal_reason == "aborted_tools"
+        assert frame.permission_denials == ({"tool_name": "Bash"},)
+
+    def test_both_default_to_absent(self) -> None:
+        from agentshim.providers.claude.events import ResultFrame, parse_frame  # noqa: PLC0415
+
+        frame = parse_frame({"type": "result"})
+        assert isinstance(frame, ResultFrame)
+        assert frame.terminal_reason is None
+        assert frame.permission_denials == ()

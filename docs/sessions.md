@@ -158,3 +158,31 @@ the agent sees them (`c.agent_path`).
 runs one CLI process per turn exactly as `CliAgent` / `AgentSession` do and
 supports `NativeMode.BYPASS` only. It is transitional: the long-lived transports
 replace it, and the scope arguments of `Agent.session` go with it.
+
+## The Claude stream transport
+
+`Agent("claude", transport=TransportKind.STREAM, ...)` (or
+`ClaudeStreamTransport(executor=..., clock=..., ids=...)` passed to `Agent`)
+keeps one `claude --input-format stream-json --output-format stream-json
+--verbose` process per conversation. `open` spawns it, sends `initialize` and
+waits for the reply, so a refused `--resume` surfaces there as
+`SessionResumeError` (the CLI writes one error `result` and exits before it
+answers). A turn writes one user message and reads until that turn's `result`
+frame; the process keeps its context between turns.
+
+| Concern | Behaviour |
+| --- | --- |
+| Permissions | `BYPASS` is `--permission-mode bypassPermissions`. `WORKSPACE_WRITE` is `acceptEdits` plus `--add-dir` for each writable root, Claude's OS sandbox for bash (writable: working directory and roots; `failIfUnavailable`; no unsandboxed escape; no network) and a `PreToolUse` hook denying `Edit`/`Write`/`NotebookEdit` outside those roots. `READ_ONLY` and `network=True` raise `ProviderCapabilityError`: Claude's sandbox always grants the working directory and temp directories to commands, so "read but not write" cannot be promised. |
+| Approvals | The process runs with `--permission-prompts none`, so the CLI denies anything that would prompt and lists it in the result's `permission_denials`. Those become `ApprovalDenied` events; with `FAIL_TURN` the turn then fails. A `can_use_tool` request that arrives anyway is denied at once (`FAIL_TURN`: with `interrupt: true`, then the turn fails); `hook_callback`, `mcp_message` and unknown requests get an error answer. The transport never leaves a request unanswered. |
+| Schema, MCP servers, effort | These are flags of the process, but a schema is chosen per turn. A turn whose set differs from the running process's restarts the process with `--resume=<id>`; the conversation id is unchanged, so the session reports `CONTINUED`. A fresh conversation whose first turn carries a schema therefore costs one extra process start. |
+| Cost and usage | `total_cost_usd` is cumulative over the process; the turn's cost is the difference from the previous result (reset by a restart). `usage` is per turn. |
+| Errors | An API failure arrives as a `result` with subtype `success` and `is_error` true; every `is_error` result is classified (`TRANSIENT`, `USAGE_LIMIT`, `AUTH`, `SCHEMA`, `OTHER`) by the same rules as the one-shot path. A process that dies mid-turn raises `CliExitError` (a `TurnFailedError`) with its stderr; the next turn resumes in a new process. |
+| Interrupt | `interrupt()` sends a control request; the turn's `result` is `error_during_execution` with `terminal_reason` `aborted_*`, which becomes `TurnResult.interrupted` and `TurnInterrupted`. The process and conversation survive. |
+| Timeouts | `TurnRequest.timeout` is measured on the injected `Clock`. An overrun interrupts the turn, waits `interrupt_grace_s` for its result, then raises `TurnTimeoutError` (killing the process if it ignored the interrupt; the next turn resumes). |
+| Close | stdin is closed, then terminate, then kill, each after `close_grace_s`. |
+
+`CLAUDECODE` is removed from the child's environment, and Claude Code's own
+system prompt is kept. The working directory is fixed at spawn: a turn with a
+different `cwd` raises `ProviderCapabilityError`. Test code scripts the CLI with
+`ClaudeStreamPeers` (`FakeExecutor([], peers=peers.build)`) and replays real
+recordings with `ClaudeRecordedPeer`.

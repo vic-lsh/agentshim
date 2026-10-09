@@ -126,12 +126,19 @@ class ClaudeStreamParser:
         emit: Callable[[AgentEvent], None],
         *,
         expect_structured: bool = False,
+        cost_baseline_usd: float = 0.0,
     ) -> None:
         """Start a parser for one run.
 
         Set *expect_structured* when the turn asked for a schema: it enables
-        the fallback that reads the payload out of the result text.
+        the fallback that reads the payload out of the result text. A
+        long-lived process reports ``total_cost_usd`` cumulatively; pass the
+        total its previous turn ended at as *cost_baseline_usd* and this
+        parser reports the turn's own cost (``total_cost_usd`` then still
+        holds the cumulative figure).
         """
+        self._cost_baseline = cost_baseline_usd
+        self.total_cost_usd: float | None = None
         self._emit = emit
         self._expect_structured = expect_structured
         self._tools = ToolTracker()
@@ -265,15 +272,18 @@ class ClaudeStreamParser:
 
     def _result(self, frame: ResultFrame) -> None:
         self._final_text = frame.text
-        self._cost_usd = frame.total_cost_usd
+        self.total_cost_usd = frame.total_cost_usd
+        self._cost_usd = (
+            None if frame.total_cost_usd is None else frame.total_cost_usd - self._cost_baseline
+        )
         self._structured = self._structured_payload(frame)
         self._usage = ProviderUsage(
             tokens=fold_usage(frame.usage, turns=frame.num_turns or 0),
-            total_cost_usd=frame.total_cost_usd,
+            total_cost_usd=self._cost_usd,
             provider=PROVIDER_NAME,
             raw=frame.usage,
         )
-        self._emit(UsageReport(self._usage, frame.total_cost_usd))
+        self._emit(UsageReport(self._usage, self._cost_usd))
         if frame.is_error:
             self._api_error_status = frame.api_error_status
             self._subtype = frame.subtype

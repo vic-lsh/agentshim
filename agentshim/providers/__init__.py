@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol
 
-from .claude import ClaudeProvider
+from .claude import ClaudeProvider, ClaudeStreamTransport
 from .claude import failure_lines as _claude_failure
 from .claude import resume_failure_lines as _claude_resume_failure
 from .claude import scripted_lines as _claude_scripted
@@ -31,9 +31,13 @@ from .opencode import scripted_lines as _opencode_scripted
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
+    from agentshim.core.clock import Clock
+    from agentshim.core.conversation import Transport
     from agentshim.core.errors import FailureKind
+    from agentshim.core.ids import IdAllocator
     from agentshim.core.provider import Provider
     from agentshim.core.usage import TokenUsage
+    from agentshim.execution.executor import CommandExecutor
 
 
 class ScriptedLines(Protocol):
@@ -91,6 +95,23 @@ class FailureLines(Protocol):
         ...
 
 
+class StreamTransportFactory(Protocol):
+    """Builds a provider's long-lived transport on an executor."""
+
+    def __call__(  # noqa: PLR0913  # mirrors the transport constructors' independent options
+        self,
+        *,
+        executor: CommandExecutor,
+        env: Mapping[str, str] | None,
+        clock: Clock,
+        ids: IdAllocator,
+        check_timeout: float,
+        log: Callable[[str], None] | None,
+    ) -> Transport:
+        """Return a transport, having checked the install on *executor*."""
+        ...
+
+
 # To add a provider: implement providers/<name>/ (provider.py, parser.py,
 # events.py, scripted.py) and add one entry to each dict below.
 _FACTORIES: dict[str, Callable[[], Provider]] = {
@@ -123,6 +144,12 @@ _RESUME_FAILURES: dict[str, ResumeFailureLines] = {
 _FAILURES: dict[str, FailureLines] = {
     "claude": _claude_failure,
     "codex": _codex_failure,
+}
+
+
+# Providers with a long-lived transport (``Agent(name, transport=TransportKind.STREAM)``).
+_STREAM_TRANSPORTS: dict[str, StreamTransportFactory] = {
+    "claude": ClaudeStreamTransport,
 }
 
 
@@ -169,6 +196,27 @@ def get_failure_lines(name: str) -> FailureLines:
     return failure
 
 
+# Mirrors the transport factories: independent keyword options.
+def get_stream_transport(  # noqa: PLR0913
+    name: str,
+    *,
+    executor: CommandExecutor,
+    env: Mapping[str, str] | None,
+    clock: Clock,
+    ids: IdAllocator,
+    check_timeout: float,
+    log: Callable[[str], None] | None,
+) -> Transport:
+    """Build the long-lived transport of provider *name* on *executor*."""
+    factory = _STREAM_TRANSPORTS.get(name)
+    if factory is None:
+        msg = f"provider {name!r} has no stream transport; available: {sorted(_STREAM_TRANSPORTS)}"
+        raise ValueError(msg)
+    return factory(
+        executor=executor, env=env, clock=clock, ids=ids, check_timeout=check_timeout, log=log
+    )
+
+
 __all__ = [
     "ClaudeProvider",
     "CodexProvider",
@@ -178,9 +226,11 @@ __all__ = [
     "OpencodeProvider",
     "ResumeFailureLines",
     "ScriptedLines",
+    "StreamTransportFactory",
     "get_failure_lines",
     "get_provider",
     "get_resume_failure_lines",
     "get_scripted_lines",
+    "get_stream_transport",
     "provider_names",
 ]

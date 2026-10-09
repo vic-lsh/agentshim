@@ -44,9 +44,11 @@ agentshim/
     confinement.py     Confinement protocol, confine(), PathMap
     docker.py          DockerExecConfinement
   providers/           one folder per CLI, all with the same layout
-    __init__.py        get_provider(name), provider_names(), get_scripted_lines(name)
+    __init__.py        get_provider(name), provider_names(), get_scripted_lines(name),
+                       get_stream_transport(name, ...)
     claude/            provider.py, parser.py, events.py, scripted.py,
-                       sandbox.py, hooks/
+                       sandbox.py, hooks/, stream_transport.py (ClaudeStreamTransport),
+                       stream_argv.py
     codex/             provider.py, parser.py, events.py, scripted.py,
                        app_server/ (generated protocol types, see below)
     copilot/           provider.py, parser.py, events.py, scripted.py
@@ -57,6 +59,7 @@ agentshim/
                        scripted_resume_failure, installed_mcp_servers
     clock.py           FakeClock, SequentialIds
     process.py         FakeProcess, FakePeer, EchoPeer, SilentPeer, ReplayGates, GateMarker
+    claude_stream.py   ClaudeStreamPeers, ClaudeStreamPeer, ClaudePeerTurn, ClaudeRecordedPeer
     confinement.py     FakeConfinement
     contracts.py       ProcessContract, ConfinementContract, ClockContract
 ```

@@ -97,6 +97,7 @@ def test_the_process_confinement_clock_and_permission_names_are_exported() -> No
         "NativePermissions",
         "Process",
         "ProcessClosedError",
+        "ReapError",
         "ProcessExited",
         "ProcessOutput",
         "RandomIds",

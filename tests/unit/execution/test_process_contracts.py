@@ -95,3 +95,20 @@ class TestFakeExecutorSpawn(ProcessContract):
         return FakeExecutor([], peers=lambda _request: SilentPeer()).spawn(
             SpawnRequest(argv=["sleep"], cwd=None, env={})
         )
+
+
+def test_a_zero_timeout_polls_and_returns_output_that_is_already_queued() -> None:
+    process = _spawn("import sys\nsys.stdout.write('ready\\n')\n")
+    try:
+        # Once the child has exited, the line is in (or about to reach) the
+        # queue; a poll must hand it over instead of reporting a timeout.
+        assert process.wait(READ_TIMEOUT_S) == 0
+        item = None
+        for _ in range(2_000_000):
+            item = process.next_output(0)
+            if item is not None:
+                break
+        assert item == StdoutLine("ready\n")
+    finally:
+        process.kill()
+        process.wait(READ_TIMEOUT_S)

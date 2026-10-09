@@ -10,11 +10,13 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 from agentshim import (
+    AgentShimError,
     CliNotFoundError,
     CommandRequest,
     Confinement,
     DockerExecConfinement,
     NullSink,
+    ReapError,
     SpawnRequest,
     TransformingExecutor,
     confine,
@@ -173,11 +175,31 @@ class TestReap:
         confinement.reap()
         assert len(runner.requests) == 2
 
-    def test_a_missing_docker_client_is_nothing_to_reap(self) -> None:
+    def test_a_stopped_container_is_nothing_to_reap(self) -> None:
+        run = FakeRun(
+            stderr=["Error response from daemon: Container abc is not running\n"], returncode=1
+        )
+        _docker(FakeExecutor(run)).reap()
+
+    def test_a_missing_docker_client_is_an_error(self) -> None:
         def run(request: CommandRequest) -> FakeRun:
             raise FileNotFoundError(request.argv[0])
 
-        _docker(FakeExecutor(run)).reap()
+        with pytest.raises(ReapError):
+            _docker(FakeExecutor(run)).reap()
+
+    def test_a_daemon_error_is_an_error(self) -> None:
+        run = FakeRun(stderr=["Cannot connect to the Docker daemon\n"], returncode=1)
+        with pytest.raises(ReapError, match="Cannot connect"):
+            _docker(FakeExecutor(run)).reap()
+
+    def test_a_timeout_is_an_error(self) -> None:
+        with pytest.raises(AgentShimError):
+            _docker(FakeExecutor(FakeRun(timeout=True))).reap()
+
+    def test_the_marker_name_cannot_be_overridden_by_env(self) -> None:
+        with pytest.raises(ValueError, match="AGENTSHIM_CONFINED"):
+            _docker(env={"AGENTSHIM_CONFINED": "0"})
 
     @pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="needs /proc")
     def test_the_script_kills_marked_processes_and_spares_the_rest(self) -> None:
@@ -253,3 +275,18 @@ class TestTransformingSpawn:
         executor.spawn(SpawnRequest(argv=["x"], cwd="/h", env={"A": "1"}))
         (request,) = inner.spawns
         assert (list(request.argv), request.cwd, dict(request.env)) == (["env", "x"], "/c", {})
+
+
+@pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="needs /proc")
+def test_the_script_fails_loudly_when_the_container_lacks_its_tools() -> None:
+    runner = FakeExecutor(FakeRun())
+    _docker(runner).reap()
+    script = runner.requests[0].argv[5]
+    result = subprocess.run(  # noqa: S603
+        [shutil.which("sh") or "sh", "-c", script],
+        env={"PATH": "/nonexistent"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 127

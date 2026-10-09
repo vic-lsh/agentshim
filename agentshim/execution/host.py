@@ -261,7 +261,7 @@ class HostProcess:
         deadline = None if timeout is None else time.monotonic() + timeout
         while self._open_streams:
             try:
-                kind, line = _next(self._queue, deadline)
+                kind, line = _pull(self._queue, deadline)
             except _TimedOutError:
                 return None
             if line is None:
@@ -389,6 +389,20 @@ def _next(
         return lines.get(timeout=remaining)
     except queue.Empty:
         raise _TimedOutError from None
+
+
+def _pull(
+    lines: queue.Queue[tuple[str, str | None]],
+    deadline: float | None,
+) -> tuple[str, str | None]:
+    """Like ``_next``, but an item that is already queued wins over a spent deadline.
+
+    ``next_output(0)`` is a poll: it must return what is ready, not time out.
+    """
+    try:
+        return lines.get_nowait()
+    except queue.Empty:
+        return _next(lines, deadline)
 
 
 def _wait(process: subprocess.Popen[str], deadline: float | None) -> None:

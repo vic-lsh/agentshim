@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import contextlib
 import os
-import subprocess
 from typing import TYPE_CHECKING
 
-from agentshim.core.errors import AgentShimError
+from agentshim.core.errors import ReapError
 
 from .confinement import PathMap
 from .executor import CommandRequest, NullSink
@@ -22,12 +20,17 @@ CONFINED_MARKER = "AGENTSHIM_CONFINED"
 
 _REAP_TIMEOUT_S = 60.0
 
-# Kills every process whose environment carries the marker, except this shell
-# and its own parents. /proc/<pid>/environ is the process's initial
-# environment, so the marker survives however the agent later changes its own.
-# Anything without the marker (a nested dockerd, the container's init) is left
-# alone. The final ``true`` keeps "nothing matched" a success.
+# Kills every process whose environment carries the marker. The reaper's own
+# shell and its helpers are not marked (``reap`` does not pass the marker to
+# ``docker exec``), so they are never candidates; ``$$`` is skipped as well.
+# /proc/<pid>/environ is the process's initial environment, so the marker
+# survives however the agent later changes its own. Anything without the marker
+# (a nested dockerd, the container's init) is left alone. "Nothing matched" is
+# success, but a container without ``tr`` or ``grep`` cannot reap at all and
+# must say so (exit 127) rather than report a clean sweep.
 _REAP_SCRIPT = (
+    "command -v tr >/dev/null && command -v grep >/dev/null "
+    "|| { echo 'reap needs tr and grep in the container' >&2; exit 127; }; "
     "self=$$; "
     "for d in /proc/[0-9]*; do "
     'pid=${d#/proc/}; [ "$pid" = "$self" ] && continue; '
@@ -35,6 +38,10 @@ _REAP_SCRIPT = (
     '&& kill -9 "$pid" 2>/dev/null; '
     "done; true"
 )
+
+# What the docker (or podman) client says when the container is gone or
+# stopped: either way none of its processes can still be running.
+_NO_CONTAINER = ("no such container", "is not running", "no container with name or id")
 
 
 class DockerExecConfinement:
@@ -50,7 +57,8 @@ class DockerExecConfinement:
             ``-e KEY`` (name only) and the value rides in the docker client's
             environment (``confine`` merges ``env`` into the launch
             environment), so values never appear in the host process table.
-            A key with an empty name or ``=``/NUL in it is rejected.
+            A key with an empty name or ``=``/NUL in it, or the reserved
+            marker name, is rejected.
         user: Passed as ``-u`` when set.
         docker: The docker client binary.
     """
@@ -67,7 +75,7 @@ class DockerExecConfinement:
     ) -> None:
         """Validate and freeze the configuration."""
         for key in env:
-            if not key or "=" in key or "\x00" in key:
+            if not key or "=" in key or "\x00" in key or key == CONFINED_MARKER:
                 msg = f"invalid environment variable name: {key!r}"
                 raise ValueError(msg)
         self._container_id = container_id
@@ -101,12 +109,26 @@ class DockerExecConfinement:
         return [*command, self._container_id(), *argv]
 
     def reap(self) -> None:
-        """Kill every marked process in the container; a missing container is fine."""
+        """Kill every marked process in the container.
+
+        A container that is gone or stopped is nothing to reap. Any other
+        failure (no docker client, a daemon error, a timeout, a container
+        missing ``sh``/``tr``/``grep``) raises ``ReapError``: the agents may
+        still be running.
+        """
         argv = [self._docker, "exec", self._container_id(), "sh", "-c", _REAP_SCRIPT]
         request = CommandRequest(
             argv=argv, stdin=None, cwd=None, env=dict(os.environ), timeout=_REAP_TIMEOUT_S
         )
-        # No container, no docker client, or a daemon that is down all mean
-        # there is nothing of ours left running to kill.
-        with contextlib.suppress(AgentShimError, OSError, subprocess.SubprocessError):
-            self._runner.run(request, NullSink())
+        try:
+            result = self._runner.run(request, NullSink())
+        except OSError as exc:
+            msg = f"could not run {self._docker!r} to reap: {exc}"
+            raise ReapError(msg) from exc
+        if result.returncode == 0:
+            return
+        stderr = result.stderr.lower()
+        if any(text in stderr for text in _NO_CONTAINER):
+            return
+        msg = f"reap exited {result.returncode}: {result.stderr.strip()}"
+        raise ReapError(msg)

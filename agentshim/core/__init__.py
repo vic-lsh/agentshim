@@ -19,6 +19,7 @@ from .errors import (
     McpConfigError,
     ProcessClosedError,
     ProviderCapabilityError,
+    ReapError,
     SchemaDialectError,
     SessionResumeError,
 )
@@ -131,6 +132,7 @@ __all__ = [
     "ProviderUsage",
     "RandomIds",
     "RawOutput",
+    "ReapError",
     "Reasoning",
     "RunFinished",
     "RunStarted",

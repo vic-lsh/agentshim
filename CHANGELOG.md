@@ -20,6 +20,14 @@
   `FakeExecutor(peers=...)`, and contract suites `ProcessContract`,
   `ConfinementContract`, `ClockContract` in `agentshim.testing.contracts`.
 
+### Fixed
+
+- `DockerExecConfinement.reap()` raises the new `ReapError` unless the
+  container is gone or stopped, and the reap script fails when the container
+  lacks `tr`/`grep`, instead of reporting a clean sweep. `env` may not use the
+  reserved `AGENTSHIM_CONFINED` name.
+- `Process.next_output(0)` on the host polls and returns already-queued output.
+
 ## 0.14.1 (2026-10-04)
 
 ### Fixed

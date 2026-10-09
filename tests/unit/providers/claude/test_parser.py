@@ -8,6 +8,7 @@ from typing import Any
 from agentshim import (
     AssistantText,
     ProviderError,
+    RateLimitStatus,
     RawOutput,
     Reasoning,
     SessionStarted,
@@ -18,6 +19,8 @@ from agentshim import (
 )
 from agentshim.core.events import AgentEvent
 from agentshim.providers.claude import ClaudeStreamParser
+from hypothesis import given
+from hypothesis import strategies as st
 
 
 def _parser(*, expect_structured: bool = False) -> tuple[ClaudeStreamParser, list[AgentEvent]]:
@@ -498,3 +501,98 @@ class TestResultFrameFields:
         assert isinstance(frame, ResultFrame)
         assert frame.terminal_reason is None
         assert frame.permission_denials == ()
+
+
+class TestRateLimitEvents:
+    def _info(self, **changes: object) -> str:
+        info: dict[str, Any] = {
+            "status": "allowed",
+            "resetsAt": 1791511200,
+            "rateLimitType": "five_hour",
+            "unifiedWindows": {
+                "five_hour": {"utilization": 0.35, "resetsAt": 1791511200},
+                "seven_day": {"utilization": 0.09, "resetsAt": 1792094400},
+            },
+            **changes,
+        }
+        return _line({"type": "rate_limit_event", "rate_limit_info": info})
+
+    def test_each_window_becomes_one_status(self) -> None:
+        parser, events = _parser()
+        parser.feed_stdout(self._info())
+        assert [(e.window, e.used_fraction, e.resets_at, e.exhausted) for e in events] == [  # type: ignore[union-attr]
+            ("five_hour", 0.35, 1791511200.0, False),
+            ("seven_day", 0.09, 1792094400.0, None),
+        ]
+        assert events[0].raw["rateLimitType"] == "five_hour"  # type: ignore[union-attr]
+
+    def test_a_rejected_status_marks_the_named_window_reached(self) -> None:
+        parser, events = _parser()
+        parser.feed_stdout(self._info(status="rejected"))
+        assert [e.exhausted for e in events] == [True, None]  # type: ignore[union-attr]
+
+    def test_a_frame_without_windows_reports_only_what_it_states(self) -> None:
+        parser, events = _parser()
+        parser.feed_stdout(
+            _line(
+                {
+                    "type": "rate_limit_event",
+                    "rate_limit_info": {"status": "rejected", "rateLimitType": "seven_day"},
+                }
+            )
+        )
+        (status,) = events
+        assert status == RateLimitStatus(
+            "seven_day",
+            None,
+            None,
+            exhausted=True,
+            raw={"status": "rejected", "rateLimitType": "seven_day"},
+        )
+
+    def test_a_frame_that_says_nothing_emits_nothing(self) -> None:
+        parser, events = _parser()
+        parser.feed_stdout(_line({"type": "rate_limit_event"}))
+        parser.feed_stdout(
+            _line({"type": "rate_limit_event", "rate_limit_info": {"status": "allowed"}})
+        )
+        parser.feed_stdout(
+            _line(
+                {"type": "rate_limit_event", "rate_limit_info": {"unifiedWindows": {"x": "junk"}}}
+            )
+        )
+        assert [e for e in events if isinstance(e, RateLimitStatus) and e.used_fraction == 0] == []
+        assert all(
+            e.used_fraction is None and e.resets_at is None
+            for e in events
+            if isinstance(e, RateLimitStatus)
+        )
+
+    @given(
+        st.dictionaries(
+            st.sampled_from(["five_hour", "seven_day", "x"]),
+            st.one_of(
+                st.none(),
+                st.text(max_size=3),
+                st.fixed_dictionaries(
+                    {},
+                    optional={
+                        "utilization": st.one_of(st.none(), st.text(), st.floats(0, 3)),
+                        "resetsAt": st.one_of(st.none(), st.integers(0, 2**31)),
+                    },
+                ),
+            ),
+        ),
+    )
+    def test_an_unstated_value_is_never_reported_as_zero(self, windows: dict[str, Any]) -> None:
+        parser, events = _parser()
+        parser.feed_stdout(
+            _line({"type": "rate_limit_event", "rate_limit_info": {"unifiedWindows": windows}})
+        )
+        for event in events:
+            assert isinstance(event, RateLimitStatus)
+            stated = windows.get(event.window)  # type: ignore[arg-type]
+            if not isinstance(stated, dict) or not isinstance(stated.get("utilization"), float):
+                assert event.used_fraction is None
+            if not isinstance(stated, dict) or not isinstance(stated.get("resetsAt"), int):
+                assert event.resets_at is None

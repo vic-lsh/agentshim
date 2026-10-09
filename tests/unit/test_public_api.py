@@ -130,6 +130,7 @@ def test_the_session_tier_names_are_exported() -> None:
     for name in (
         "Agent",
         "ApprovalDenied",
+        "RateLimitStatus",
         "Checkpoint",
         "CheckpointStore",
         "Continuity",

@@ -8,7 +8,7 @@ the session sees it.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -156,6 +156,46 @@ class ApprovalDenied:
     detail: str
 
 
+def _no_raw() -> Mapping[str, Any]:
+    return {}
+
+
+@dataclass(frozen=True)
+class RateLimitStatus:
+    """The provider's view of one rate-limit window, as it just reported it.
+
+    Optional: a provider that has no such signal emits nothing, and a field the
+    provider did not state is ``None``, never zero. One event describes one
+    window, so a provider that reports several (a five-hour and a weekly one)
+    emits several events. A consumer reads the newest event per
+    ``(limit, window)``.
+
+    ``window`` names the window in the provider's words (``five_hour``,
+    ``primary``). ``limit`` names the limit it belongs to when the provider
+    has more than one (Codex ``limit_id``). ``used_fraction`` is the share of
+    the window already used, ``0.0`` to ``1.0`` (it may exceed 1 when the
+    provider reports over-use). ``resets_at`` is epoch seconds.
+    ``exhausted`` is ``True`` when the provider says this limit is reached,
+    ``False`` when it says it is not, ``None`` when it does not say.
+    ``raw`` is the provider's own mapping, for diagnostics.
+    """
+
+    window: str | None
+    used_fraction: float | None
+    resets_at: float | None
+    limit: str | None = None
+    window_minutes: int | None = None
+    exhausted: bool | None = None
+    raw: Mapping[str, Any] = field(default_factory=_no_raw)
+
+    @property
+    def remaining_fraction(self) -> float | None:
+        """The share of the window still available, or ``None`` when usage is unknown."""
+        if self.used_fraction is None:
+            return None
+        return max(0.0, 1.0 - self.used_fraction)
+
+
 AgentEvent = (
     RunStarted
     | RunFinished
@@ -173,6 +213,7 @@ AgentEvent = (
     | ProviderError
     | TurnInterrupted
     | ApprovalDenied
+    | RateLimitStatus
 )
 
 
@@ -258,6 +299,19 @@ def _truncate_lines(content: str, max_lines: int = _TOOL_OUTPUT_MAX_LINES) -> st
     if len(lines) > max_lines * 2:
         return "\n".join([*lines[:max_lines], "... (truncated) ...", *lines[-max_lines:]])
     return content
+
+
+def _describe_rate_limit(event: RateLimitStatus) -> str:
+    """One console line for a rate-limit window; unknown parts are left out."""
+    name = " ".join(part for part in (event.limit, event.window) if part) or "rate limit"
+    parts = [f"[rate limit] {name}"]
+    if event.used_fraction is not None:
+        parts.append(f"{event.used_fraction:.0%} used")
+    if event.exhausted:
+        parts.append("reached")
+    if event.resets_at is not None:
+        parts.append(f"resets at epoch {event.resets_at:.0f}")
+    return ", ".join(parts)
 
 
 class ConsoleEventHandler:
@@ -408,5 +462,7 @@ class ConsoleEventHandler:
             self._line(self._paint("[interrupted]", self._DIM))
         elif isinstance(event, ApprovalDenied):
             self._line(f"[approval denied] {event.kind}: {event.detail}")
+        elif isinstance(event, RateLimitStatus):
+            self._line(self._paint(_describe_rate_limit(event), self._DIM))
         elif isinstance(event, Lifecycle) and self._show_lifecycle:
             self._line(self._paint(f"[{event.kind}] {event.detail}", self._DIM))

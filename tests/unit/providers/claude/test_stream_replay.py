@@ -12,6 +12,7 @@ from agentshim import (
     ConversationSpec,
     NativePermissions,
     OutputSchema,
+    RateLimitStatus,
     SessionResumeError,
     SkillsDiscovered,
     TurnInterrupted,
@@ -127,3 +128,15 @@ def test_every_recorded_frame_is_handled_without_a_raw_output_leak() -> None:
     events = RecordingEventHandler()
     conversation.turn(TurnRequest(prompt="a"), events.on_event)
     assert events.of_type(RawOutput) == []
+
+
+def test_the_recorded_rate_limit_events_become_one_status_per_window() -> None:
+    conversation = _transport("a_two_turns").open(_spec())
+    events = RecordingEventHandler()
+    conversation.turn(TurnRequest(prompt="Reply with just: ok"), events.on_event)
+    statuses = events.of_type(RateLimitStatus)
+    assert [(s.window, s.used_fraction, s.resets_at) for s in statuses] == [  # type: ignore[attr-defined]
+        ("five_hour", 0.34, 1791511200.0),
+        ("seven_day", 0.09, 1792094400.0),
+    ]
+    assert all(s.raw["rateLimitType"] == "five_hour" for s in statuses)  # type: ignore[attr-defined]

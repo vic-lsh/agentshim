@@ -25,6 +25,7 @@ from agentshim import (
     NativePermissions,
     OutputSchema,
     ProviderCapabilityError,
+    RateLimitStatus,
     SchemaDialectError,
     SessionResumeError,
     SessionStateError,
@@ -349,6 +350,21 @@ class TestTurns:
         assert "ToolCall" in kinds
         assert "ToolResult" in kinds
         assert events.of_type(AssistantText)[0].text == "hello"  # type: ignore[attr-defined]
+
+    def test_a_rate_limit_event_reaches_the_handler_before_the_turn_ends(self) -> None:
+        info = {
+            "status": "allowed_warning",
+            "rateLimitType": "five_hour",
+            "unifiedWindows": {"five_hour": {"utilization": 0.9, "resetsAt": 1791511200}},
+        }
+        rigged = rig([ClaudePeerTurn(rate_limit=info), ClaudePeerTurn()])
+        conversation = rigged.transport.open(spec())
+        _, events = run(conversation)
+        assert events.of_type(RateLimitStatus) == [
+            RateLimitStatus("five_hour", 0.9, 1791511200.0, exhausted=False, raw=info)
+        ]
+        _, quiet = run(conversation)
+        assert quiet.of_type(RateLimitStatus) == []  # no signal, no event
 
     def test_usage_is_per_turn_and_cost_is_the_difference(self) -> None:
         script = [

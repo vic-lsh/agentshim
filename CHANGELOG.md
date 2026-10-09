@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `RateLimitStatus` event (also in `AgentEvent` and `ConsoleEventHandler`):
+  the provider's report of one rate-limit window, with `window`, `limit`,
+  `used_fraction`, `remaining_fraction`, `resets_at`, `window_minutes`,
+  `exhausted` and `raw`. Unstated values are `None`, never zero. Emitted by the
+  Claude stream transport and one-shot parser (`rate_limit_event`) and by the
+  Codex app-server transport (`account/rateLimits/updated`). Test doubles:
+  `ClaudePeerTurn(rate_limit=...)` and the `ReportRateLimits` Codex script step.
+
 ## 0.15.1 (2026-10-09)
 
 ### Added

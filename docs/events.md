@@ -21,6 +21,7 @@ union.
 | `ProviderError` | `message` | the provider reported an error |
 | `TurnInterrupted` | none | the turn was interrupted before it finished; the conversation is kept |
 | `ApprovalDenied` | `kind`, `detail` | the agent asked for permission or input and the `ApprovalPolicy` refused |
+| `RateLimitStatus` | `window`, `used_fraction`, `resets_at`, `limit`, `window_minutes`, `exhausted`, `raw` | the provider reported where one rate-limit window stands (optional, see below) |
 
 ## Handling them
 
@@ -96,6 +97,31 @@ missed). See [Providers](providers.md) for the per-provider matrix.
 Which skills are offered at all is a session option:
 `start_session(skill_scope=SkillScope.PROJECT)` limits it to the workspace's
 skills (see [Providers](providers.md)).
+
+## Rate limits
+
+`RateLimitStatus` is the provider's own report of one rate-limit window, so a
+caller can pause before a limit is hit instead of learning of it from a failed
+turn. It is optional: a provider that has no such signal emits nothing, and a
+field the provider did not state is `None`, never zero. One event describes
+one window, so a provider with several windows emits several events; keep the
+newest per `(limit, window)`.
+
+| Field | Meaning |
+|---|---|
+| `window` | the window in the provider's words (`five_hour`, `seven_day`, `primary`, `secondary`) |
+| `limit` | the limit it belongs to when there is more than one (Codex `limitId`) |
+| `used_fraction` | share used, `0.0` to `1.0` (`remaining_fraction` is its complement) |
+| `resets_at` | epoch seconds when the window resets |
+| `window_minutes` | window length when the provider states it |
+| `exhausted` | `True` reached, `False` not reached, `None` not stated |
+| `raw` | the provider's own mapping, for diagnostics |
+
+| Provider | Source | Emitted |
+|---|---|---|
+| Claude (stream transport and one-shot) | `rate_limit_event` | once per `unifiedWindows` entry; `exhausted` follows `status` for the window named by `rateLimitType` |
+| Codex (app-server transport) | `account/rateLimits/updated` | once per reported `primary` / `secondary` window, also between turns; `exhausted` is true when `rateLimitReachedType` or `spendControlReached` is set |
+| Others | none | never |
 
 ## Usage
 

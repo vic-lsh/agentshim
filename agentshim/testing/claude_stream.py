@@ -89,6 +89,9 @@ class ClaudePeerTurn:
     ignores_interrupt: bool = False
     fail_subtype: str | None = None
     crash: ClaudeCrash | None = None
+    #: The ``rate_limit_info`` of a ``rate_limit_event`` frame written just
+    #: before the turn's result, as the real CLI does; ``None`` writes none.
+    rate_limit: Mapping[str, Any] | None = None
 
 
 class ClaudeStreamPeers:
@@ -276,6 +279,13 @@ class ClaudeStreamPeer:
         return [*out, *self._finish(turn)]
 
     def _finish(self, turn: ClaudePeerTurn) -> list[PeerOutput]:
+        out = self._conclude(turn)
+        if turn.rate_limit is None:
+            return out
+        frame = {"type": "rate_limit_event", "rate_limit_info": dict(turn.rate_limit)}
+        return [_stdout(frame), *out]
+
+    def _conclude(self, turn: ClaudePeerTurn) -> list[PeerOutput]:
         self._turn = None
         self._cumulative_cost += turn.cost_usd
         if turn.fail_subtype is not None:

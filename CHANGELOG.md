@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.15.3 (2026-10-09)
+
+### Added
+
+- `ProviderProfile.credential_files` (default empty): the subset of `auth_files`
+  that holds refreshable login credentials, as opposed to settings. A caller that
+  lends a login to another process shares these files writable so a token
+  refresh there reaches the original login. Claude `.claude/.credentials.json`,
+  Codex `.codex/auth.json`, Gemini `.gemini/oauth_creds.json`, opencode
+  `.local/share/opencode/auth.json`, Copilot `.copilot/config.json`.
+
 ## 0.15.2 (2026-10-09)
 
 ### Added

@@ -79,6 +79,7 @@ class TestProfile:
         assert profile.skill_dirs == (".github/skills",)
         assert any("@github/copilot" in command for command in profile.container_install)
         assert profile.state_root_env == "COPILOT_HOME"
+        assert profile.credential_files == (".copilot/config.json",)
         assert profile.auth_files == (".copilot/config.json", ".copilot/settings.json")
         assert profile.mcp_config_file is None
         assert profile.container_env == {}

@@ -70,6 +70,7 @@ class TestProfile:
         assert any("claude.ai/install.sh" in command for command in profile.container_install)
         assert profile.container_env == {"IS_SANDBOX": "1"}
         assert profile.state_root_env == "CLAUDE_CONFIG_DIR"
+        assert profile.credential_files == (".claude/.credentials.json",)
         assert profile.auth_files == (
             ".claude/.credentials.json",
             ".claude/settings.json",

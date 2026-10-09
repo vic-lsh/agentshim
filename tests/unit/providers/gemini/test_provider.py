@@ -74,6 +74,7 @@ class TestProfile:
         assert profile.auth_env_vars == ("GEMINI_API_KEY", "GOOGLE_API_KEY")
         assert profile.skill_dirs == (".gemini/skills",)
         assert profile.state_root_env is None
+        assert profile.credential_files == (".gemini/oauth_creds.json",)
         assert profile.auth_files == (
             ".gemini/oauth_creds.json",
             ".gemini/google_accounts.json",

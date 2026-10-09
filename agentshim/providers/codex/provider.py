@@ -101,6 +101,7 @@ PROFILE = ProviderProfile(
     # policy and preferences, so consumers that copy or mount auth state must
     # not needlessly expose it to an agent process.
     auth_files=(".codex/auth.json",),
+    credential_files=(".codex/auth.json",),
     # CLI_FLAGS: Codex takes MCP servers as --config overrides, never a file.
     mcp_config_file=None,
     # A long Codex thread slows down and costs more per turn, so a session

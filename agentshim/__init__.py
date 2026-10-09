@@ -147,7 +147,7 @@ from .providers.opencode import OpencodeProvider
 from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 
-__version__ = "0.15.0"
+__version__ = "0.15.1"
 
 __all__ = [
     "Agent",

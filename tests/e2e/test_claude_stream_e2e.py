@@ -6,7 +6,6 @@ Skipped unless ``AGENTSHIM_E2E=1`` and ``claude`` is on PATH. Set
 
 from __future__ import annotations
 
-import threading
 from typing import TYPE_CHECKING
 
 import pytest
@@ -17,6 +16,7 @@ from agentshim import (
     NativePermissions,
     OutputSchema,
     SessionResumeError,
+    ToolCall,
     TurnInterrupted,
     TurnRequest,
 )
@@ -111,15 +111,18 @@ def test_an_output_schema_restarts_the_process_and_returns_the_payload(
 
 def test_interrupt_ends_the_turn_and_the_conversation_survives(conversation: Conversation) -> None:
     events: list[AgentEvent] = []
-    timer = threading.Timer(4.0, conversation.interrupt)
-    timer.start()
-    try:
-        interrupted = conversation.turn(
-            TurnRequest(prompt="Run the bash command `sleep 120`, then say done."),
-            events.append,
-        )
-    finally:
-        timer.cancel()
+
+    def interrupt_at_first_tool_call(event: AgentEvent) -> None:
+        # Interrupting on an event, not after a delay, ends the turn however
+        # fast the model is (it may background a slow command on its own).
+        events.append(event)
+        if isinstance(event, ToolCall):
+            conversation.interrupt()
+
+    interrupted = conversation.turn(
+        TurnRequest(prompt="Run the bash command `sleep 120`, then say done."),
+        interrupt_at_first_tool_call,
+    )
     assert interrupted.interrupted is True
     assert any(isinstance(event, TurnInterrupted) for event in events)
     after = conversation.turn(TurnRequest(prompt="Reply with exactly: alive"), _ignore)

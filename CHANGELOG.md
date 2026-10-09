@@ -5,6 +5,20 @@
 ### Added
 
 - MIT license (`LICENSE`), declared in the package metadata.
+- Long-lived processes: `CommandExecutor.spawn(SpawnRequest) -> Process` with a
+  pull-based output model (`StdoutLine`, `StderrLine`, `ProcessExited`),
+  implemented by `HostCommandExecutor` and `TransformingExecutor`.
+  `ProcessClosedError` reports a write to a closed or exited process.
+- `Confinement` protocol, `confine(executor, confinement)` and
+  `DockerExecConfinement` (`docker exec` into a running container, with path
+  mapping and `reap()` of marked processes).
+- `Clock`/`SystemClock`/`StopSignal` and `IdAllocator`/`RandomIds`.
+- `NativeMode`, `NativePermissions`, `ApprovalPolicy` and
+  `ProviderProfile.native_permission_modes` (default `BYPASS` only).
+- Test doubles `FakeProcess`, `FakePeer`, `EchoPeer`, `SilentPeer`,
+  `ReplayGates`, `GateMarker`, `FakeConfinement`, `FakeClock`, `SequentialIds`,
+  `FakeExecutor(peers=...)`, and contract suites `ProcessContract`,
+  `ConfinementContract`, `ClockContract` in `agentshim.testing.contracts`.
 
 ## 0.14.1 (2026-10-04)
 

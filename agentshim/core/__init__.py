@@ -7,6 +7,7 @@ this package may not do.
 
 from __future__ import annotations
 
+from .clock import Clock, StopSignal, SystemClock
 from .env import interactive_env
 from .errors import (
     AgentShimError,
@@ -16,6 +17,7 @@ from .errors import (
     CliTimeoutError,
     FailureKind,
     McpConfigError,
+    ProcessClosedError,
     ProviderCapabilityError,
     SchemaDialectError,
     SessionResumeError,
@@ -44,6 +46,7 @@ from .events import (
     compose_event_handlers,
 )
 from .home import prepare_config_home
+from .ids import IdAllocator, RandomIds
 from .mcp import (
     ConfigFileInstallation,
     FlagsInstallation,
@@ -54,6 +57,7 @@ from .mcp import (
     StdioMcpServer,
     install_config_file,
 )
+from .permissions import ApprovalPolicy, NativeMode, NativePermissions
 from .pricing import ModelPricing, PricingTable, cost_usd, default_pricing, price_for
 from .profile import (
     ConfigScope,
@@ -84,12 +88,14 @@ __all__ = [
     "AgentEvent",
     "AgentEventHandler",
     "AgentShimError",
+    "ApprovalPolicy",
     "ArgvContext",
     "AssistantText",
     "CliCheckError",
     "CliExitError",
     "CliNotFoundError",
     "CliTimeoutError",
+    "Clock",
     "CompositeEventHandler",
     "ConfigFileInstallation",
     "ConfigScope",
@@ -99,6 +105,7 @@ __all__ = [
     "FailureKind",
     "FlagsInstallation",
     "HttpMcpServer",
+    "IdAllocator",
     "Lifecycle",
     "McpConfigError",
     "McpInstallation",
@@ -107,6 +114,8 @@ __all__ = [
     "McpServer",
     "McpTransport",
     "ModelPricing",
+    "NativeMode",
+    "NativePermissions",
     "NoopInstallation",
     "NullEventHandler",
     "OutputSchema",
@@ -114,11 +123,13 @@ __all__ = [
     "ParsedTurn",
     "ParserContext",
     "PricingTable",
+    "ProcessClosedError",
     "Provider",
     "ProviderCapabilityError",
     "ProviderError",
     "ProviderProfile",
     "ProviderUsage",
+    "RandomIds",
     "RawOutput",
     "Reasoning",
     "RunFinished",
@@ -135,7 +146,9 @@ __all__ = [
     "SkillsDiscovered",
     "Stderr",
     "StdioMcpServer",
+    "StopSignal",
     "StreamParser",
+    "SystemClock",
     "TokenUsage",
     "TokenWeights",
     "ToolCall",

@@ -39,6 +39,8 @@ class TestProfile:
     def test_every_profile_field_is_populated(self) -> None:
         profile = ClaudeProvider().profile
         for field in fields(ProviderProfile):
+            if field.name == "renewal":  # only Codex declares a renewal budget
+                continue
             value = getattr(profile, field.name)
             assert value is not None, field.name
             # Claude isolates user configuration by flags and needs no home.

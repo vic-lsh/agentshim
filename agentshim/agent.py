@@ -7,6 +7,7 @@ neither of them has to know that agents exist.
 
 from __future__ import annotations
 
+import copy
 import posixpath
 import threading
 import time
@@ -115,6 +116,19 @@ class CliAgent:
         self.binary_path = self.executor.find_binary(self.profile.binary, self.env)
         self.executor.check_binary(self.binary_path, self.env, timeout=check_timeout)
         self.log(f"{self.profile.display_name} ready at {self.binary_path}")
+
+    def derive(self, *, model: str | None, event_handler: AgentEventHandler) -> CliAgent:
+        """Return a copy that uses *model* and reports events to *event_handler*.
+
+        The binary lookup and health check are not repeated: the copy shares
+        the executor, environment and resolved binary of this agent. That is
+        what lets one checked install serve many conversations, each with its
+        own event routing.
+        """
+        clone = copy.copy(self)
+        clone.model = model
+        clone.event_handler = event_handler
+        return clone
 
     def start_session(  # noqa: PLR0913 - one keyword per independent session option
         self,

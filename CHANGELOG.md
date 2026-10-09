@@ -1,8 +1,37 @@
 # Changelog
 
-## Unreleased
+## 0.15.0 (Unreleased)
 
 ### Added
+
+- Session tier. `Agent(provider, *, permissions, approvals, ...)` hands out
+  `Session`s: `prepare_turn(request, *, expect_conversation=None, pin=False) ->
+  TurnTicket` (the turn id exists before dispatch), `run(ticket, *, on_event=None)
+  -> Turn(result, continuity, turn_id, conversation_id)`, `interrupt()`,
+  `release()`, `adopt()`, `close()`. `Continuity` is `CONTINUED`, `RESET` or
+  `REPLACED`. Recovery is a pure `SessionPolicy` state machine: transient
+  retries on `RetryPolicy(delays)`, one fresh retry of a refused resume, a
+  backstop that forgets a resumed conversation after an unclassified failure,
+  renewal by `ProviderProfile.renewal` (`RenewalBudget`; Codex: 2 turns,
+  10M input tokens or 600 s), idle release, and checkpoints through
+  `CheckpointStore` / `InMemoryCheckpointStore` / `Checkpoint`.
+- Transport tier. `Transport.open(ConversationSpec) -> Conversation` with
+  `turn`, `interrupt`, `close`; `OneShotTransport` wraps the one-shot path
+  (bypass permissions only) and behaves exactly like `AgentSession`.
+  `CliAgent.derive(model=, event_handler=)` copies a checked agent.
+- Errors: `TurnFailedError(kind, detail)` (now the base of `CliExitError`),
+  `TurnTimeoutError` (now the base of `CliTimeoutError`), `ContinuityError`,
+  `SessionStateError`, `TurnCancelledError`. Session code catches the base
+  types only.
+- Events `TurnInterrupted` and `ApprovalDenied(kind, detail)`;
+  `TurnResult.interrupted` (default `False`).
+- Test doubles `FakeTransport`, `FakeConversation`, `FakeTurn`,
+  `FakeCheckpointStore`, `fake_profile`, `turn_failed`, `resume_refused`,
+  `turn_timeout`, and contract suites `TransportContract`,
+  `ConversationContract`, `CheckpointStoreContract`.
+- Docs: [sessions](https://vic-lsh.github.io/agentshim/sessions/).
+
+### Added (process layer)
 
 - MIT license (`LICENSE`), declared in the package metadata.
 - Long-lived processes: `CommandExecutor.spawn(SpawnRequest) -> Process` with a

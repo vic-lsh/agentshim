@@ -44,6 +44,7 @@ class TestProfile:
             "auth_env_vars",
             "state_root_env",
             "config_home_files",
+            "renewal",
         }
         for field in fields(ProviderProfile):
             value = getattr(profile, field.name)

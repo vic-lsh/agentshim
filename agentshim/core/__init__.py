@@ -7,7 +7,9 @@ this package may not do.
 
 from __future__ import annotations
 
+from .checkpoints import Checkpoint, CheckpointStore, InMemoryCheckpointStore
 from .clock import Clock, StopSignal, SystemClock
+from .conversation import Conversation, ConversationSpec, Transport
 from .env import interactive_env
 from .errors import (
     AgentShimError,
@@ -15,6 +17,7 @@ from .errors import (
     CliExitError,
     CliNotFoundError,
     CliTimeoutError,
+    ContinuityError,
     FailureKind,
     McpConfigError,
     ProcessClosedError,
@@ -22,10 +25,15 @@ from .errors import (
     ReapError,
     SchemaDialectError,
     SessionResumeError,
+    SessionStateError,
+    TurnCancelledError,
+    TurnFailedError,
+    TurnTimeoutError,
 )
 from .events import (
     AgentEvent,
     AgentEventHandler,
+    ApprovalDenied,
     AssistantText,
     CompositeEventHandler,
     ConsoleEventHandler,
@@ -43,6 +51,7 @@ from .events import (
     Stderr,
     ToolCall,
     ToolResult,
+    TurnInterrupted,
     UsageReport,
     compose_event_handlers,
 )
@@ -66,6 +75,7 @@ from .profile import (
     McpScope,
     OutputSchemaStyle,
     ProviderProfile,
+    RenewalBudget,
     SchemaDialect,
     SkillScope,
     SkillSignal,
@@ -80,6 +90,7 @@ from .provider import (
     StreamParser,
 )
 from .schema import compact_json, dialect_problems, materialize, normalize
+from .session_policy import Continuity, PolicyConfig, RetryPolicy, SessionPolicy, SessionState
 from .skills import SkillSummary, SkillTracker
 from .stream import ToolTracker, parse_json_object
 from .turn import OutputSchema, TurnRequest, TurnResult
@@ -89,9 +100,12 @@ __all__ = [
     "AgentEvent",
     "AgentEventHandler",
     "AgentShimError",
+    "ApprovalDenied",
     "ApprovalPolicy",
     "ArgvContext",
     "AssistantText",
+    "Checkpoint",
+    "CheckpointStore",
     "CliCheckError",
     "CliExitError",
     "CliNotFoundError",
@@ -102,11 +116,16 @@ __all__ = [
     "ConfigScope",
     "ConsoleEventHandler",
     "ContextualStreamParser",
+    "Continuity",
+    "ContinuityError",
+    "Conversation",
+    "ConversationSpec",
     "EventHandlerBase",
     "FailureKind",
     "FlagsInstallation",
     "HttpMcpServer",
     "IdAllocator",
+    "InMemoryCheckpointStore",
     "Lifecycle",
     "McpConfigError",
     "McpInstallation",
@@ -123,6 +142,7 @@ __all__ = [
     "OutputSchemaStyle",
     "ParsedTurn",
     "ParserContext",
+    "PolicyConfig",
     "PricingTable",
     "ProcessClosedError",
     "Provider",
@@ -134,12 +154,17 @@ __all__ = [
     "RawOutput",
     "ReapError",
     "Reasoning",
+    "RenewalBudget",
+    "RetryPolicy",
     "RunFinished",
     "RunStarted",
     "SchemaDialect",
     "SchemaDialectError",
+    "SessionPolicy",
     "SessionResumeError",
     "SessionStarted",
+    "SessionState",
+    "SessionStateError",
     "SkillInvoked",
     "SkillScope",
     "SkillSignal",
@@ -156,8 +181,13 @@ __all__ = [
     "ToolCall",
     "ToolResult",
     "ToolTracker",
+    "Transport",
+    "TurnCancelledError",
+    "TurnFailedError",
+    "TurnInterrupted",
     "TurnRequest",
     "TurnResult",
+    "TurnTimeoutError",
     "UsageReport",
     "compact_json",
     "compose_event_handlers",

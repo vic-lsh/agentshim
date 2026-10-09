@@ -126,6 +126,22 @@ def _no_container_env() -> Mapping[str, str]:
 
 
 @dataclass(frozen=True)
+class RenewalBudget:
+    """When a long conversation should be retired and restarted cold.
+
+    A conversation that grows without bound gets slower and more expensive, so
+    a provider can declare limits. They are checked after a successful turn:
+    reaching ``max_turns`` successful turns in the conversation, or any one turn
+    reaching ``max_turn_input_tokens`` input tokens or ``max_turn_duration_ms``
+    milliseconds (a "heavy turn"), retires it. ``None`` leaves a limit off.
+    """
+
+    max_turns: int | None = None
+    max_turn_input_tokens: int | None = None
+    max_turn_duration_ms: int | None = None
+
+
+@dataclass(frozen=True)
 class ProviderProfile:
     """Everything a caller needs to know about a provider without running it.
 
@@ -179,3 +195,6 @@ class ProviderProfile:
     #: a transport that maps the other modes declares them here, and asking for
     #: one that is missing is a ``ProviderCapabilityError``.
     native_permission_modes: frozenset[NativeMode] = frozenset({NativeMode.BYPASS})
+    #: When a session should retire a conversation of this provider; ``None``
+    #: means never.
+    renewal: RenewalBudget | None = None

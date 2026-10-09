@@ -13,17 +13,25 @@ This module must not import pytest, so it is safe to import anywhere.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from agentshim.core.checkpoints import Checkpoint
 from agentshim.core.clock import StopSignal
-from agentshim.core.errors import ProcessClosedError
+from agentshim.core.conversation import ConversationSpec
+from agentshim.core.errors import AgentShimError, ProcessClosedError, ProviderCapabilityError
+from agentshim.core.permissions import ApprovalPolicy, NativeMode, NativePermissions
+from agentshim.core.turn import TurnRequest
 from agentshim.execution.process import ProcessExited, StderrLine, StdoutLine
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from agentshim.core.checkpoints import CheckpointStore
     from agentshim.core.clock import Clock
+    from agentshim.core.conversation import Conversation, Transport
+    from agentshim.core.events import AgentEvent
     from agentshim.execution.confinement import Confinement
     from agentshim.execution.process import Process, ProcessOutput
 
@@ -32,6 +40,10 @@ if TYPE_CHECKING:
 READ_TIMEOUT_S = 30.0
 #: Short wait for a process that is known to be silent.
 SILENCE_PROBE_S = 0.05
+
+
+def _ignore(event: AgentEvent) -> None:
+    """Event callback that drops everything."""
 
 
 class ProcessContract:
@@ -241,3 +253,176 @@ class ClockContract:
         stop = StopSignal()
         clock.wait(0.0, stop)
         assert not stop.is_set()
+
+
+class ConversationContract:
+    """Behavior every ``Conversation`` has.
+
+    ``make_conversation`` returns a fresh, open conversation whose every turn
+    succeeds. Conversations made here are closed in ``teardown_method``.
+    """
+
+    def make_conversation(self) -> Conversation:
+        """Return a fresh conversation that answers every turn successfully."""
+        raise NotImplementedError
+
+    def _made(self) -> list[Conversation]:
+        if not hasattr(self, "_conversations"):
+            self._conversations: list[Conversation] = []
+        return self._conversations
+
+    def _conversation(self) -> Conversation:
+        conversation = self.make_conversation()
+        self._made().append(conversation)
+        return conversation
+
+    def teardown_method(self) -> None:
+        """Close every conversation the test opened."""
+        for conversation in self._made():
+            conversation.close()
+        self._made().clear()
+
+    def test_a_turn_returns_a_result_and_names_the_conversation(self) -> None:
+        conversation = self._conversation()
+        result = conversation.turn(TurnRequest(prompt="hello"), _ignore)
+        assert isinstance(result.text, str)
+        assert result.interrupted is False
+        if result.session_id is not None:
+            assert conversation.conversation_id == result.session_id
+
+    def test_events_are_emitted_on_the_calling_thread(self) -> None:
+        import threading  # noqa: PLC0415 - only this check needs it
+
+        conversation = self._conversation()
+        seen: list[tuple[int, AgentEvent]] = []
+        conversation.turn(
+            TurnRequest(prompt="hello"),
+            lambda event: seen.append((threading.get_ident(), event)),
+        )
+        assert all(thread == threading.get_ident() for thread, _ in seen)
+
+    def test_turns_follow_one_another_in_the_same_conversation(self) -> None:
+        conversation = self._conversation()
+        first = conversation.turn(TurnRequest(prompt="one"), _ignore)
+        second = conversation.turn(TurnRequest(prompt="two"), _ignore)
+        assert second.interrupted is False
+        if first.session_id is not None:
+            assert conversation.conversation_id is not None
+
+    def test_interrupting_an_idle_conversation_does_nothing(self) -> None:
+        conversation = self._conversation()
+        conversation.interrupt()
+        result = conversation.turn(TurnRequest(prompt="hello"), _ignore)
+        assert result.interrupted is False
+
+    def test_close_is_idempotent_and_interrupt_after_close_is_harmless(self) -> None:
+        conversation = self._conversation()
+        conversation.close()
+        conversation.close()
+        conversation.interrupt()
+
+    def test_a_turn_after_close_raises_an_agentshim_error(self) -> None:
+        conversation = self._conversation()
+        conversation.close()
+        try:
+            conversation.turn(TurnRequest(prompt="late"), _ignore)
+        except AgentShimError:
+            return
+        msg = "a turn on a closed conversation did not raise AgentShimError"
+        raise AssertionError(msg)
+
+
+class TransportContract:
+    """Behavior every ``Transport`` has.
+
+    ``make_transport`` returns a transport whose conversations answer every
+    turn successfully; ``make_spec`` a spec it accepts (BYPASS permissions).
+    """
+
+    def make_transport(self) -> Transport:
+        """Return a fresh transport."""
+        raise NotImplementedError
+
+    def make_spec(self) -> ConversationSpec:
+        """Return a spec the transport accepts."""
+        return ConversationSpec(
+            cwd="/work",
+            model=None,
+            permissions=NativePermissions.bypass(),
+            approvals=ApprovalPolicy.DENY,
+        )
+
+    def test_open_returns_a_conversation_that_runs_turns(self) -> None:
+        transport = self.make_transport()
+        conversation = transport.open(self.make_spec())
+        try:
+            result = conversation.turn(TurnRequest(prompt="hello"), _ignore)
+            assert isinstance(result.text, str)
+        finally:
+            conversation.close()
+
+    def test_every_open_makes_an_independent_conversation(self) -> None:
+        transport = self.make_transport()
+        first = transport.open(self.make_spec())
+        second = transport.open(self.make_spec())
+        try:
+            assert first is not second
+            first.close()
+            result = second.turn(TurnRequest(prompt="hello"), _ignore)
+            assert isinstance(result.text, str)
+        finally:
+            first.close()
+            second.close()
+
+    def test_the_profile_declares_bypass(self) -> None:
+        profile = self.make_transport().profile
+        assert NativeMode.BYPASS in profile.native_permission_modes
+
+    def test_a_mode_outside_the_profile_is_rejected(self) -> None:
+        transport = self.make_transport()
+        modes = transport.profile.native_permission_modes
+        spec = self.make_spec()
+        for permissions in (NativePermissions.read_only(), NativePermissions.workspace_write()):
+            if permissions.mode in modes:
+                continue
+            try:
+                transport.open(replace(spec, permissions=permissions))
+            except ProviderCapabilityError:
+                continue
+            msg = f"open accepted unsupported mode {permissions.mode.value}"
+            raise AssertionError(msg)
+
+
+class CheckpointStoreContract:
+    """Behavior every ``CheckpointStore`` has."""
+
+    def make_store(self) -> CheckpointStore:
+        """Return a fresh, empty store."""
+        raise NotImplementedError
+
+    def test_a_missing_key_loads_none(self) -> None:
+        assert self.make_store().load("absent") is None
+
+    def test_a_saved_checkpoint_loads_back(self) -> None:
+        store = self.make_store()
+        store.save("k", Checkpoint("conv-1"))
+        assert store.load("k") == Checkpoint("conv-1")
+
+    def test_a_save_replaces_the_previous_one(self) -> None:
+        store = self.make_store()
+        store.save("k", Checkpoint("conv-1"))
+        store.save("k", Checkpoint("conv-2"))
+        assert store.load("k") == Checkpoint("conv-2")
+
+    def test_keys_are_independent(self) -> None:
+        store = self.make_store()
+        store.save("a", Checkpoint("conv-a"))
+        store.save("b", Checkpoint("conv-b"))
+        store.clear("a")
+        assert store.load("a") is None
+        assert store.load("b") == Checkpoint("conv-b")
+
+    def test_clearing_an_empty_key_is_not_an_error(self) -> None:
+        store = self.make_store()
+        store.clear("never-saved")
+        store.clear("never-saved")

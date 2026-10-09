@@ -65,7 +65,25 @@ class CliCheckError(AgentShimError):
         super().__init__(message)
 
 
-class CliExitError(AgentShimError):
+class TurnFailedError(AgentShimError):
+    """A turn failed, and the provider (or transport) could say why.
+
+    ``kind`` is the classification a retry policy keys on, and ``detail`` the
+    provider's own error text. Every transport raises this type or a subclass,
+    so code above the transport catches it without knowing how the provider
+    is reached.
+    """
+
+    def __init__(
+        self, message: str, *, kind: FailureKind = FailureKind.OTHER, detail: str = ""
+    ) -> None:
+        """Record the classification and the provider's error text."""
+        self.kind = kind
+        self.detail = detail
+        super().__init__(message)
+
+
+class CliExitError(TurnFailedError):
     """The provider CLI exited nonzero."""
 
     def __init__(  # noqa: PLR0913  # one field per part of the outcome; a bundle would hide them
@@ -93,11 +111,11 @@ class CliExitError(AgentShimError):
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
-        self.kind = kind
-        self.detail = detail
         binary = self.argv[0] if self.argv else "cli"
         super().__init__(
-            message or f"{binary} exited with code {returncode}: {_describe(detail, stderr)}"
+            message or f"{binary} exited with code {returncode}: {_describe(detail, stderr)}",
+            kind=kind,
+            detail=detail,
         )
 
 
@@ -135,7 +153,19 @@ class SessionResumeError(CliExitError):
         )
 
 
-class CliTimeoutError(AgentShimError):
+class TurnTimeoutError(AgentShimError):
+    """A turn did not finish within its time budget.
+
+    The conversation is not known to be damaged, so a session keeps it.
+    """
+
+    def __init__(self, timeout: float, message: str | None = None) -> None:
+        """Record the budget in seconds that was overrun."""
+        self.timeout = timeout
+        super().__init__(message or f"turn did not finish within {timeout}s")
+
+
+class CliTimeoutError(TurnTimeoutError):
     """The provider CLI did not finish within the turn timeout."""
 
     def __init__(self, argv: Sequence[str], timeout: float) -> None:
@@ -148,10 +178,9 @@ class CliTimeoutError(AgentShimError):
         session id of a turn that named its conversation and then timed out.
         """
         self.argv = tuple(argv)
-        self.timeout = timeout
         self.partial: ParsedTurn | None = None
         binary = self.argv[0] if self.argv else "cli"
-        super().__init__(f"{binary} did not finish within {timeout}s")
+        super().__init__(timeout, f"{binary} did not finish within {timeout}s")
 
 
 class ProviderCapabilityError(AgentShimError):
@@ -172,6 +201,34 @@ class SchemaDialectError(ProviderCapabilityError):
             "output schema is not expressible in this provider's dialect: "
             + "; ".join(self.problems)
         )
+
+
+class ContinuityError(AgentShimError):
+    """A turn that required an unbroken conversation could not have one.
+
+    Raised by ``Session.prepare_turn`` when the caller expected to continue a
+    conversation the session no longer holds.
+    """
+
+    def __init__(self, expected: str | None, actual: str | None) -> None:
+        """Record the conversation the caller expected and the one the session holds."""
+        self.expected = expected
+        self.actual = actual
+        super().__init__(
+            f"turn expects to continue conversation {expected!r} but the session holds {actual!r}"
+        )
+
+
+class SessionStateError(AgentShimError):
+    """A session or conversation was used in a state that cannot serve the call.
+
+    Covers a closed session or conversation, a second turn while one is
+    running, and a turn ticket that is stale or already used.
+    """
+
+
+class TurnCancelledError(AgentShimError):
+    """An interrupt arrived before the turn could start, so it never ran."""
 
 
 class ProcessClosedError(AgentShimError):

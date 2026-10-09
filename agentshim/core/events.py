@@ -139,6 +139,23 @@ class ProviderError:
     message: str
 
 
+@dataclass(frozen=True)
+class TurnInterrupted:
+    """The turn was interrupted before it finished; the conversation is kept."""
+
+
+@dataclass(frozen=True)
+class ApprovalDenied:
+    """The agent asked for permission or input and the approval policy refused.
+
+    ``kind`` names what was asked (a command, a file change, a question) in the
+    provider's own words, and ``detail`` carries the request.
+    """
+
+    kind: str
+    detail: str
+
+
 AgentEvent = (
     RunStarted
     | RunFinished
@@ -154,6 +171,8 @@ AgentEvent = (
     | Stderr
     | RawOutput
     | ProviderError
+    | TurnInterrupted
+    | ApprovalDenied
 )
 
 
@@ -385,5 +404,9 @@ class ConsoleEventHandler:
             self._line(self._paint(f"[Skill] {event.name}", self._BLUE))
         elif isinstance(event, ProviderError):
             self._line(f"[error] {event.message}")
+        elif isinstance(event, TurnInterrupted):
+            self._line(self._paint("[interrupted]", self._DIM))
+        elif isinstance(event, ApprovalDenied):
+            self._line(f"[approval denied] {event.kind}: {event.detail}")
         elif isinstance(event, Lifecycle) and self._show_lifecycle:
             self._line(self._paint(f"[{event.kind}] {event.detail}", self._DIM))

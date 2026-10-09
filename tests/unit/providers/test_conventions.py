@@ -77,8 +77,9 @@ _MAY_BE_EMPTY = frozenset({"darwin_state_dirs", "auth_env_vars", "config_home_fi
 
 #: Fields a profile may legitimately leave unset: not every provider's CLI
 #: documents a state-relocation variable, and only CONFIG_FILE providers
-#: write an MCP config file.
-_MAY_BE_NONE = frozenset({"schema_dialect", "state_root_env", "mcp_config_file"})
+#: write an MCP config file. ``renewal`` is set only for a provider whose
+#: conversations should be retired.
+_MAY_BE_NONE = frozenset({"schema_dialect", "state_root_env", "mcp_config_file", "renewal"})
 
 
 def _argv(name: str, *, resume_session_id: str | None = None) -> list[str]:

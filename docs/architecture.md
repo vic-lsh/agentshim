@@ -13,7 +13,13 @@ how to render events.
 agentshim/
   __init__.py          public API; everything importable from here is supported
   agent.py             CliAgent, AgentSession: composition over providers/
+  oneshot.py           OneShotTransport: CliAgent behind the Transport protocol
+  session.py           Session, TurnTicket, Turn: the thin shell around the policy
+  runtime.py           Agent: transport + permissions + clock + recovery policy
   core/                provider-agnostic
+    conversation.py    ConversationSpec, Conversation, Transport protocols
+    session_policy.py  SessionPolicy: the pure recovery state machine, RetryPolicy
+    checkpoints.py     Checkpoint, CheckpointStore, InMemoryCheckpointStore
     turn.py            TurnRequest, TurnResult, OutputSchema
     events.py          event dataclasses, AgentEvent union, handlers
     usage.py           TokenUsage, TokenWeights, ProviderUsage
@@ -279,10 +285,15 @@ have nothing in common, so the name is not part of the package contract.
 AgentShimError
   CliNotFoundError            binary not on PATH
   CliCheckError               binary found but the health check failed
-  CliExitError                nonzero exit: argv, returncode, stdout, stderr,
-                              kind (FailureKind), detail (the stream's error text)
-    SessionResumeError        a resumed turn failed because the conversation is gone: session_id
-  CliTimeoutError             argv, timeout, partial: ParsedTurn | None
+  TurnFailedError             a turn failed: kind (FailureKind), detail
+    CliExitError              nonzero exit: argv, returncode, stdout, stderr
+      SessionResumeError      a resumed turn failed because the conversation is gone: session_id
+  TurnTimeoutError            a turn overran its budget: timeout
+    CliTimeoutError           argv, partial: ParsedTurn | None
+  ContinuityError             a turn required a conversation the session does not hold
+  SessionStateError           closed session or conversation, a second concurrent turn,
+                              a stale or reused ticket
+  TurnCancelledError          an interrupt arrived before the turn could start
   ProviderCapabilityError     the provider cannot do what the request asked
     SchemaDialectError        problems: list[str]
   McpConfigError              config file unreadable, unwritable, or not an object
@@ -399,7 +410,11 @@ without this method continue working unchanged. Codex uses the previous raw
 report as a fixed baseline; without one on resume, it marks the increment
 unknown and retains the raw total for the next invocation.
 
-### Agent and session
+### CliAgent and AgentSession (the one-shot path)
+
+`Agent` and `Session` (see [sessions](sessions.md)) are the primary API;
+`CliAgent` and `AgentSession` remain for code that drives one CLI process per
+turn directly, and are what `OneShotTransport` wraps.
 
 ```python
 class CliAgent:
@@ -413,6 +428,7 @@ class CliAgent:
     profile: ProviderProfile
     binary_path: str
     env: dict[str, str]
+    def derive(self, *, model, event_handler) -> CliAgent    # same checked install, other model and handler
     def start_session(self, *, cwd: str | None = None, timeout: float | None = None,
                       session_id: str | None = None,
                       previous_usage: ProviderUsage | None = None) -> AgentSession

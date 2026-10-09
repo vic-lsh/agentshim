@@ -26,7 +26,7 @@ def test_testing_module_exports() -> None:
 
 
 def test_version_is_reported() -> None:
-    assert agentshim.__version__ == "0.14.1"
+    assert agentshim.__version__ == "0.15.0"
 
 
 def test_core_and_execution_do_not_import_providers_at_module_level() -> None:
@@ -122,5 +122,50 @@ def test_the_new_test_doubles_are_exported() -> None:
         "ReplayGates",
         "SequentialIds",
         "SilentPeer",
+    ):
+        assert name in agentshim.testing.__all__, name
+
+
+def test_the_session_tier_names_are_exported() -> None:
+    for name in (
+        "Agent",
+        "ApprovalDenied",
+        "Checkpoint",
+        "CheckpointStore",
+        "Continuity",
+        "ContinuityError",
+        "Conversation",
+        "ConversationSpec",
+        "InMemoryCheckpointStore",
+        "OneShotTransport",
+        "PolicyConfig",
+        "RenewalBudget",
+        "RetryPolicy",
+        "Session",
+        "SessionPolicy",
+        "SessionState",
+        "SessionStateError",
+        "Transport",
+        "Turn",
+        "TurnCancelledError",
+        "TurnFailedError",
+        "TurnInterrupted",
+        "TurnTicket",
+        "TurnTimeoutError",
+    ):
+        assert name in agentshim.__all__, name
+
+
+def test_the_session_test_doubles_are_exported() -> None:
+    for name in (
+        "FakeCheckpointStore",
+        "FakeConversation",
+        "FakeOutcome",
+        "FakeTransport",
+        "FakeTurn",
+        "fake_profile",
+        "resume_refused",
+        "turn_failed",
+        "turn_timeout",
     ):
         assert name in agentshim.testing.__all__, name

@@ -93,9 +93,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from agentshim.core.clock import Clock
-    from agentshim.core.ids import IdAllocator
     from agentshim.core.conversation import Conversation, ConversationSpec
     from agentshim.core.events import AgentEvent
+    from agentshim.core.ids import IdAllocator
     from agentshim.core.mcp import McpServer
     from agentshim.core.pricing import ModelPricing, PricingTable
     from agentshim.core.profile import ProviderProfile
@@ -564,9 +564,10 @@ class _Conversation:
         try:
             while (message := self._channel.poll()) is not None:
                 self._handle(message, None)
-            return
         except Gone:
             pass
+        else:
+            return
         self._channel.drain()
         old = self._channel.process
         process = self._spawn()

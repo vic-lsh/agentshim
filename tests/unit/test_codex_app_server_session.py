@@ -11,9 +11,9 @@ from agentshim import (
     NativePermissions,
     OneShotTransport,
     SessionResumeError,
+    TransportKind,
     TurnFailedError,
     TurnInterrupted,
-    TransportKind,
     TurnRequest,
 )
 from agentshim.core.checkpoints import Checkpoint

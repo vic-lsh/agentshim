@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from .profile import ConfigScope, McpScope, SkillScope
 
@@ -93,6 +93,27 @@ class Conversation(Protocol):
 
     def close(self) -> None:
         """Release the connection. Idempotent."""
+        ...
+
+
+@runtime_checkable
+class SteerableConversation(Conversation, Protocol):
+    """A conversation that accepts a message while a turn runs.
+
+    A transport whose profile has ``supports_steer`` opens conversations of
+    this kind. ``steer`` neither queues nor retries: the message goes to the
+    running turn now or the call raises.
+    """
+
+    def steer(self, text: str) -> None:
+        """Send *text* into the running turn. Thread-safe.
+
+        Raises ``NoRunningTurnError`` when no turn is running or the running
+        one cannot take a message yet (or any longer). Returns once the message
+        is on its way; the outcome is reported as ``SteerDelivered``,
+        ``SteerConsumed`` and ``SteerRejected`` events, on the thread running
+        the turn.
+        """
         ...
 
 

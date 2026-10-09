@@ -27,6 +27,7 @@ from agentshim.core.env import interactive_env
 from agentshim.core.errors import (
     AgentShimError,
     FailureKind,
+    NoRunningTurnError,
     ProviderCapabilityError,
     SchemaDialectError,
     SessionResumeError,
@@ -40,6 +41,9 @@ from agentshim.core.events import (
     Lifecycle,
     ProviderError,
     SessionStarted,
+    SteerConsumed,
+    SteerDelivered,
+    SteerRejected,
     TurnInterrupted,
     UsageReport,
 )
@@ -74,6 +78,7 @@ from .protocol import (
     Response,
     ServerRequest,
     ThreadItemAgentMessage,
+    ThreadItemUserMessage,
     ThreadResumeParams,
     ThreadResumeResponse,
     ThreadStartParams,
@@ -85,6 +90,7 @@ from .protocol import (
     TurnStartParams,
     TurnStartResponse,
     TurnStatus,
+    TurnSteerParams,
     UserInputText,
     WarningNotification,
 )
@@ -292,6 +298,14 @@ def _no_items() -> list[ThreadItem]:
     return []
 
 
+@dataclass(frozen=True)
+class _Steer:
+    """A message sent with ``turn/steer`` whose outcome is still to be reported."""
+
+    client_id: str
+    text: str
+
+
 @dataclass
 class _Turn:
     """Everything one running turn has learned so far. Only the turn's thread touches it."""
@@ -338,6 +352,11 @@ class _Conversation:
         self._turn_id: str | None = None
         self._interrupt_asked = False
         self._interrupt_sent = False
+        #: ``turn/steer`` requests awaiting their reply, by request id; guarded by ``_state``.
+        self._steer_requests: dict[int, _Steer] = {}
+        #: Accepted steers not yet seen as items of the turn, by client id.
+        self._steer_items: dict[str, _Steer] = {}
+        self._steer_count = 0
         self._thread_id: str | None = None
         self._model = spec.model
         self._pricing = settings.pricing
@@ -375,6 +394,37 @@ class _Conversation:
             if not self._running or self._closed:
                 return
         self._ask_for_interrupt()
+
+    def steer(self, text: str) -> None:
+        """Send ``turn/steer`` for the running turn. Thread-safe.
+
+        The server folds the message into the turn after the work in flight (a
+        running command finishes first). Its answer arrives on the turn's
+        thread: ``SteerDelivered`` when accepted, ``SteerRejected`` with the
+        server's reason otherwise, then ``SteerConsumed`` when the message
+        becomes an item of the turn. Raises ``NoRunningTurnError`` while no
+        turn is running, before the server has named the turn, and once it has
+        reported the turn over.
+        """
+        with self._state:
+            turn_id = self._turn_id
+            if self._closed or not self._running or turn_id is None:
+                msg = "no turn is running that can take a message"
+                raise NoRunningTurnError(msg)
+            self._steer_count += 1
+            steer = _Steer(f"steer-{self._steer_count}", text)
+            params = TurnSteerParams(
+                thread_id=self._thread_id or "",
+                expected_turn_id=turn_id,
+                input=(UserInputText(text=text),),
+                client_user_message_id=steer.client_id,
+            )
+            try:
+                request_id = self._channel.request(params)
+            except Gone as gone:
+                msg = "the codex app-server is gone, so the message was not delivered"
+                raise NoRunningTurnError(msg) from gone
+            self._steer_requests[request_id] = steer
 
     def close(self) -> None:
         """Close stdin, then terminate and kill the process if it lingers. Idempotent."""
@@ -516,8 +566,10 @@ class _Conversation:
             self._turn_id = None
             self._interrupt_asked = False
             self._interrupt_sent = False
+            self._steer_items.clear()
 
     def _end(self) -> None:
+        self._reject_unanswered_steers()
         self._sink = None
         self._skills = None
         with self._state:
@@ -629,11 +681,33 @@ class _Conversation:
         if message.id is None or not isinstance(message.id, int):
             return
         method = self._channel.settle(message.id)
+        with self._state:
+            steer = self._steer_requests.pop(message.id, None)
+        if steer is not None:
+            self._on_steer_reply(steer, message)
+            return
         if method is None or turn is None or message.id != turn.start_id:
             return  # an interrupt's acknowledgement, or a reply nobody is waiting for
         if isinstance(message, ErrorResponse):
             raise self._rpc_error(method, message, None)
         self._learn_turn_id(turn, TurnStartResponse.from_wire(message.result).turn.id)
+
+    def _reject_unanswered_steers(self) -> None:
+        """Report the steers whose answer never came before the turn ended."""
+        with self._state:
+            lost = list(self._steer_requests.values())
+            self._steer_requests.clear()
+            self._steer_items.clear()
+        for steer in lost:
+            self._emit(SteerRejected(steer.text, "the turn ended before codex answered"))
+
+    def _on_steer_reply(self, steer: _Steer, message: Response | ErrorResponse) -> None:
+        if isinstance(message, ErrorResponse):
+            self._emit(SteerRejected(steer.text, message.error.message))
+            return
+        with self._state:
+            self._steer_items[steer.client_id] = steer
+        self._emit(SteerDelivered(steer.text))
 
     def _on_request(self, request: ServerRequest, turn: _Turn | None) -> None:
         answer = answer_request(request, self._spec.approvals)
@@ -694,6 +768,7 @@ class _Conversation:
         if not self._is_mine(params.thread_id, params.turn_id, turn):
             return
         now = self._clock.monotonic()
+        self._note_steer_item(params.item)
         if isinstance(params, ItemStartedNotification):
             events = self._items.started(params.item, now)
         else:
@@ -701,6 +776,15 @@ class _Conversation:
             events = self._items.completed(params.item, now)
         for event in events:
             self._emit(event)
+
+    def _note_steer_item(self, item: ThreadItem) -> None:
+        """Report a steered message the first time it shows up as an item of the turn."""
+        if not isinstance(item, ThreadItemUserMessage) or item.client_id is None:
+            return
+        with self._state:
+            steer = self._steer_items.pop(item.client_id, None)
+        if steer is not None:
+            self._emit(SteerConsumed(steer.text))
 
     def _on_error(self, params: ErrorNotification, turn: _Turn) -> None:
         if not self._is_mine(params.thread_id, params.turn_id, turn):
@@ -717,6 +801,8 @@ class _Conversation:
             self._learn_turn_id(turn, params.turn.id)
         if params.turn.id == turn.turn_id:
             turn.completed = params.turn
+            with self._state:
+                self._turn_id = None  # a steer for a finished turn would only be refused
 
     def _on_mcp_status(
         self, params: McpServerStatusUpdatedNotification, turn: _Turn | None

@@ -70,7 +70,12 @@ class ClaudePeerTurn:
     does not finish until every one is answered. ``permission_denials`` are
     listed in the result, as the CLI does for what it refused on its own.
     ``stall`` makes the turn run until it is interrupted (``ignores_interrupt``
-    makes it ignore even that). ``fail_subtype`` ends the turn with an error
+    makes it ignore even that). A user message that arrives while the turn runs
+    is, like the real CLI's, either *folded in* (``injects_steer``: the model
+    is at a tool boundary, so the message is echoed and the next scripted turn
+    continues this one, ending in a single ``result``) or *queued* (the default:
+    it runs as a turn of its own, with its own ``init`` and ``result``, once
+    this one has ended, however it ended). ``fail_subtype`` ends the turn with an error
     ``result`` of that subtype (``error_max_structured_output_retries``,
     ``error_during_execution``, ...) whose ``errors`` hold ``text``.
     """
@@ -92,6 +97,7 @@ class ClaudePeerTurn:
     #: The ``rate_limit_info`` of a ``rate_limit_event`` frame written just
     #: before the turn's result, as the real CLI does; ``None`` writes none.
     rate_limit: Mapping[str, Any] | None = None
+    injects_steer: bool = False
 
 
 class ClaudeStreamPeers:
@@ -110,8 +116,14 @@ class ClaudeStreamPeers:
         *,
         known_sessions: Collection[str] = (),
         skills: Sequence[str] | None = None,
+        drops_queued_messages: bool = False,
     ) -> None:
-        """Bind the script and the conversations that already exist."""
+        """Bind the script and the conversations that already exist.
+
+        With *drops_queued_messages* the CLI forgets a message that arrived
+        mid-turn and was not folded in, instead of running it afterwards.
+        """
+        self.drops_queued_messages = drops_queued_messages
         self._script = list(script)
         self.known_sessions: set[str] = set(known_sessions)
         self.skills = None if skills is None else tuple(skills)
@@ -153,6 +165,9 @@ class ClaudeStreamPeer:
         self._cumulative_cost = 0.0
         self._turn: ClaudePeerTurn | None = None
         self._pending: list[str] = []
+        #: Messages that arrived mid-turn and wait for it to end.
+        self._queued: list[Mapping[str, Any]] = []
+        self.replays = "--replay-user-messages" in self.argv
         self._request_count = 0
         self._result_index = 0
         self._dead = False
@@ -220,7 +235,19 @@ class ClaudeStreamPeer:
         return [_stdout(_error(request_id, error))]
 
     def _abort(self) -> list[PeerOutput]:
-        """End the running turn the way an interrupt does."""
+        """End the running turn the way an interrupt does, then start what was queued."""
+        out = self._abort_turn()
+        return [*out, *self._drain()] if out else out
+
+    def _drain(self) -> list[PeerOutput]:
+        """Run the next message that waited for the turn that just ended."""
+        if self._world.drops_queued_messages:
+            self._queued.clear()
+        if self._dead or self._turn is not None or not self._queued:
+            return []
+        return self._begin(self._queued.pop(0))
+
+    def _abort_turn(self) -> list[PeerOutput]:
         if self._turn is None:
             return []
         reason = "aborted_tools" if self._pending else "aborted_streaming"
@@ -257,12 +284,42 @@ class ClaudeStreamPeer:
     def _on_user(self, message: Mapping[str, Any]) -> list[PeerOutput]:
         content = _obj(message.get("message")).get("content", "")
         self.prompts.append(content if isinstance(content, str) else json.dumps(content))
-        turn = self._world.next_turn()
-        self._turn = turn
+        running = self._turn
+        if running is None:
+            return self._begin(message)
+        if not running.injects_steer:
+            self._queued.append(message)
+            return []
+        # At a tool boundary: the message joins the running turn, which goes on.
+        self._pending = []
+        out = self._echo(message)
+        return self._run(self._world.next_turn(), out)
+
+    def _echo(self, message: Mapping[str, Any]) -> list[PeerOutput]:
+        """What the CLI says when it takes a user message into a turn (``--replay-user-messages``)."""
+        if not self.replays:
+            return []
+        frame = {
+            "type": "user",
+            "message": message.get("message"),
+            "session_id": self.session_id,
+            "parent_tool_use_id": None,
+            "uuid": message.get("uuid"),
+            "isReplay": True,
+        }
+        return [_stdout(frame)]
+
+    def _begin(self, message: Mapping[str, Any]) -> list[PeerOutput]:
+        """Start a turn for a message that found the CLI idle."""
         if self.session_id is None:
             self.session_id = self._world.new_session_id()
         self._world.known_sessions.add(self.session_id)
-        out: list[PeerOutput] = [_stdout(self._init_frame())]
+        out: list[PeerOutput] = [_stdout(self._init_frame()), *self._echo(message)]
+        return self._run(self._world.next_turn(), out)
+
+    def _run(self, turn: ClaudePeerTurn, out: list[PeerOutput]) -> list[PeerOutput]:
+        """Play *turn* after the frames in *out*: its body, then its result unless it waits."""
+        self._turn = turn
         out.extend(_stdout(frame) for frame in self._body_frames(turn))
         if turn.crash is not None:
             self._dead = True
@@ -286,6 +343,9 @@ class ClaudeStreamPeer:
         return [_stdout(frame), *out]
 
     def _conclude(self, turn: ClaudePeerTurn) -> list[PeerOutput]:
+        return [*self._finish_turn(turn), *self._drain()]
+
+    def _finish_turn(self, turn: ClaudePeerTurn) -> list[PeerOutput]:
         self._turn = None
         self._cumulative_cost += turn.cost_usd
         if turn.fail_subtype is not None:

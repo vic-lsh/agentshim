@@ -227,6 +227,15 @@ class SessionStateError(AgentShimError):
     """
 
 
+class NoRunningTurnError(SessionStateError):
+    """``steer`` was called when no turn could take a message.
+
+    Either no turn is running, or the running one has not started yet or is
+    already finishing. agentshim never holds a steer back for a later turn: a
+    caller that wants one delivered later sends it with the next prompt.
+    """
+
+
 class TurnCancelledError(AgentShimError):
     """An interrupt arrived before the turn could start, so it never ran."""
 

@@ -21,4 +21,5 @@ APP_SERVER_PROFILE = replace(
     config_scopes=frozenset({ConfigScope.ALL}),
     config_home_files=(),
     native_permission_modes=frozenset(NativeMode),
+    supports_steer=True,
 )

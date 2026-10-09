@@ -18,6 +18,19 @@
   uses `claude auth status`, Codex `codex login status`; Gemini, Copilot and
   opencode have no status command and report `AuthState.UNKNOWN`. A missing
   binary is a result, not an error. Test double `agentshim.testing.probe_executor`.
+- Mid-turn steering. `Session.steer(text)` (thread-safe) sends a message into the
+  running turn; `SteerableConversation` is the transport-tier protocol and
+  `ProviderProfile.supports_steer` the capability (true for the Claude and Codex
+  stream transports). It never queues: `ProviderCapabilityError` when
+  unsupported, new `NoRunningTurnError` (a `SessionStateError`) when no turn can
+  take it. Events `SteerDelivered`, `SteerConsumed`, `SteerRejected`.
+- Codex maps to `turn/steer`. Claude Code writes a user envelope and runs with
+  `--replay-user-messages`; `turn()` still returns one `TurnResult` when the CLI
+  queues the message as a follow-on turn (new `steer_grace_s` option).
+- Test doubles: `AwaitSteer` and `CodexScript(steer_refusal=)`,
+  `ClaudePeerTurn(injects_steer=)` and `ClaudeStreamPeers(drops_queued_messages=)`,
+  `fake_profile(supports_steer=)`, `FakeConversation.steer`, and
+  `SteerableConversationContract`.
 
 ## 0.15.1 (2026-10-09)
 

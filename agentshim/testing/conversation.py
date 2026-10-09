@@ -16,13 +16,14 @@ from agentshim.core.checkpoints import Checkpoint, InMemoryCheckpointStore
 from agentshim.core.errors import (
     AgentShimError,
     FailureKind,
+    NoRunningTurnError,
     ProviderCapabilityError,
     SessionResumeError,
     SessionStateError,
     TurnFailedError,
     TurnTimeoutError,
 )
-from agentshim.core.events import TurnInterrupted
+from agentshim.core.events import SteerConsumed, SteerDelivered, TurnInterrupted
 from agentshim.core.turn import TurnResult
 from agentshim.core.usage import ProviderUsage, TokenUsage
 from agentshim.providers import get_provider
@@ -73,11 +74,16 @@ def turn_timeout(timeout: float = 1.0) -> TurnTimeoutError:
     return TurnTimeoutError(timeout)
 
 
-def fake_profile(*, supports_resume: bool = True) -> ProviderProfile:
-    """A profile for the fake provider: bypass-only, no renewal, resumable by default."""
+def fake_profile(*, supports_resume: bool = True, supports_steer: bool = False) -> ProviderProfile:
+    """A profile for the fake provider: bypass-only, no renewal, resumable, not steerable."""
     base = get_provider("claude").profile
     return replace(
-        base, name="fake", display_name="Fake", binary="fake", supports_resume=supports_resume
+        base,
+        name="fake",
+        display_name="Fake",
+        binary="fake",
+        supports_resume=supports_resume,
+        supports_steer=supports_steer,
     )
 
 
@@ -93,6 +99,9 @@ class FakeConversation:
         self._lock = threading.Lock()
         self._running = False
         self._interrupted = False
+        self._outbox: list[AgentEvent] = []
+        #: Every message accepted by ``steer``, in order.
+        self.steers: list[str] = []
         self.turns: list[TurnRequest] = []
         self.interrupts = 0
         self.close_calls = 0
@@ -125,8 +134,10 @@ class FakeConversation:
         try:
             if outcome.during is not None:
                 outcome.during()
+            self._flush(emit)
             for event in outcome.events:
                 emit(event)
+            self._flush(emit)
             with self._lock:
                 interrupted = self._interrupted
             if interrupted:
@@ -146,6 +157,25 @@ class FakeConversation:
             exit_code=0,
             interrupted=interrupted,
         )
+
+    def steer(self, text: str) -> None:
+        """Accept *text* into the running turn; report it as delivered and consumed.
+
+        Raises ``NoRunningTurnError`` with no turn running. The events are
+        emitted on the turn's thread at its next step, like a real transport's.
+        """
+        with self._lock:
+            if not self._running:
+                msg = "no turn is running in this conversation"
+                raise NoRunningTurnError(msg)
+            self.steers.append(text)
+            self._outbox += [SteerDelivered(text), SteerConsumed(text)]
+
+    def _flush(self, emit: Callable[[AgentEvent], None]) -> None:
+        with self._lock:
+            events, self._outbox = self._outbox, []
+        for event in events:
+            emit(event)
 
     def interrupt(self) -> None:
         """Mark the running turn interrupted; with none running, do nothing."""

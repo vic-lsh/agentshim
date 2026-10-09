@@ -11,6 +11,7 @@ from agentshim import (
     Checkpoint,
     ConversationSpec,
     FailureKind,
+    Lifecycle,
     NativePermissions,
     SessionResumeError,
     SessionStateError,
@@ -22,12 +23,14 @@ from agentshim.testing import (
     FakeCheckpointStore,
     FakeTransport,
     FakeTurn,
+    fake_profile,
     resume_refused,
     turn_failed,
 )
 from agentshim.testing.contracts import (
     CheckpointStoreContract,
     ConversationContract,
+    SteerableConversationContract,
     TransportContract,
 )
 
@@ -57,6 +60,15 @@ class TestFakeTransportContract(TransportContract):
 class TestFakeConversationContract(ConversationContract):
     def make_conversation(self) -> Conversation:
         return FakeTransport().open(_spec())
+
+
+class TestFakeSteerableConversationContract(SteerableConversationContract):
+    def make_conversation(self) -> Conversation:
+        transport = FakeTransport(
+            [FakeTurn(events=(Lifecycle("working", "a long tool call"),))],
+            profile=fake_profile(supports_steer=True),
+        )
+        return transport.open(_spec())
 
 
 class TestFakeCheckpointStoreContract(CheckpointStoreContract):

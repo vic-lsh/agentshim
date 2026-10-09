@@ -44,6 +44,7 @@ from agentshim.providers.codex.app_server.protocol import (
     ThreadStartParams,
     TurnInterruptParams,
     TurnStartParams,
+    TurnSteerParams,
     UserInputText,
 )
 
@@ -183,6 +184,19 @@ class Hang:
 
 
 @dataclass(frozen=True)
+class AwaitSteer:
+    """The turn is busy (a long command, say) until the client steers it.
+
+    Real Codex lets the work in flight finish, then shows the model the steered
+    message and the same turn goes on. Here the message becomes an item of the
+    turn and the turn carries on with *then* in place of the steps that remain.
+    A turn nobody steers waits like ``Hang`` until it is interrupted.
+    """
+
+    then: tuple[CodexStep, ...] = ()
+
+
+@dataclass(frozen=True)
 class Crash:
     """The process dies, with a line on stderr."""
 
@@ -209,6 +223,7 @@ CodexStep = (
     | Retrying
     | Fail
     | Hang
+    | AwaitSteer
     | Crash
     | Complain
 )
@@ -261,10 +276,13 @@ class CodexScript:
     ``ignore_requested_permissions`` the server applies them even to a request
     that does name something, to test a client that checks what was applied.
     With ``exits_at_end_of_input=False`` a server ignores the closing of its
-    stdin and has to be terminated.
+    stdin and has to be terminated. With ``steer_refusal`` the server refuses
+    every ``turn/steer`` with that message, as it does for a turn that cannot
+    be steered.
     """
 
-    def __init__(
+    # Each argument is an independent documented option.
+    def __init__(  # noqa: PLR0913
         self,
         *,
         model: str = "fake-model",
@@ -272,6 +290,7 @@ class CodexScript:
         inherited_approval: str = "never",
         ignore_requested_permissions: bool = False,
         exits_at_end_of_input: bool = True,
+        steer_refusal: str | None = None,
     ) -> None:
         """Start with no queued turns, no threads and nothing received."""
         self.model = model
@@ -279,6 +298,7 @@ class CodexScript:
         self.inherited_approval = inherited_approval
         self.ignore_requested_permissions = ignore_requested_permissions
         self.exits_at_end_of_input = exits_at_end_of_input
+        self.steer_refusal = steer_refusal
         self._queued: deque[tuple[CodexStep, ...]] = deque()
         self._threads: dict[str, _Thread] = {}
         self._failing_mcp: dict[str, str] = {}
@@ -374,6 +394,8 @@ class _Run:
     items: list[Mapping[str, object]] = field(default_factory=_no_items)
     waiting: _Waiting | None = None
     hanging: bool = False
+    #: Set by ``AwaitSteer``: the steps a steer releases the turn into.
+    on_steer: tuple[CodexStep, ...] | None = None
     deaf: bool = False
     spent: bool = False
 
@@ -468,6 +490,8 @@ class CodexAppServerPeer:
             self._start_turn(request.id, params, out)
         elif isinstance(params, TurnInterruptParams):
             self._interrupt(request.id, params, out)
+        elif isinstance(params, TurnSteerParams):
+            self._steer(request.id, params, out)
         else:
             self._error(out, request.id, _METHOD_NOT_FOUND, f"unsupported {params.METHOD}")
 
@@ -674,6 +698,7 @@ class CodexAppServerPeer:
             Retrying: self._retrying,
             Fail: self._fail,
             Hang: self._hang,
+            AwaitSteer: self._await_steer,
             Crash: self._crash,
             Complain: self._complain,
         }
@@ -696,6 +721,46 @@ class CodexAppServerPeer:
         del out
         run.hanging = True
         run.deaf = step.ignores_interrupt
+
+    def _await_steer(self, run: _Run, step: AwaitSteer, out: list[PeerOutput]) -> None:
+        del out
+        run.hanging = True
+        run.on_steer = step.then
+
+    def _steer(self, request_id: object, params: TurnSteerParams, out: list[PeerOutput]) -> None:
+        run = self._run
+        refusal = self._script.steer_refusal
+        if run is None:
+            self._error(out, request_id, _INVALID_REQUEST, "no active turn to steer")
+        elif run.turn_id != params.expected_turn_id:
+            message = (
+                f"expected active turn id `{params.expected_turn_id}` but found `{run.turn_id}`"
+            )
+            self._error(out, request_id, _INVALID_REQUEST, message)
+        elif refusal is not None:
+            self._error(out, request_id, _INVALID_REQUEST, refusal)
+        else:
+            self._result(out, request_id, {"turnId": run.turn_id})
+            first = params.input[0] if params.input else None
+            message_item: dict[str, object] = {
+                "type": "userMessage",
+                "id": self._script.counter("item"),
+                "clientId": params.client_user_message_id,
+                "content": [
+                    {
+                        "type": "text",
+                        "text": first.text if isinstance(first, UserInputText) else "",
+                        "text_elements": [],
+                    }
+                ],
+            }
+            self._item(out, run, "item/started", message_item)
+            self._item(out, run, "item/completed", message_item)
+            if run.on_steer is not None:
+                run.steps = deque(run.on_steer)
+                run.on_steer = None
+                run.hanging = False
+                self._advance(run, out)
 
     def _complain(self, run: _Run, step: Complain, out: list[PeerOutput]) -> None:
         del run

@@ -38,6 +38,47 @@ Waiting and time go through the injected `Clock` (`clock.wait(seconds, stop)`),
 never `time.sleep`, so tests with `FakeClock` and `SequentialIds` run with no
 real waiting.
 
+## Steering a running turn
+
+`session.steer(text)` sends a message into the turn that is running, from any
+thread, on providers whose profile has `supports_steer` (the Claude and Codex
+stream transports; every one-shot provider is `False`).
+
+```python
+threading.Thread(target=session.steer, args=("Stop; use the cache instead.",)).start()
+```
+
+agentshim owns the mechanism and the capability; the caller owns policy (who
+may steer, when, what to do instead). So `steer` never queues or retries: it
+raises `ProviderCapabilityError` when the provider cannot take a message mid-turn
+and `NoRunningTurnError` (a `SessionStateError`) when no turn is running, the
+turn has not started yet, it is finishing, or the session is between attempts.
+A message meant for the next turn belongs in that turn's prompt.
+
+The outcome is reported as events on the turn's thread: `SteerDelivered(text)`
+(the provider accepted it), `SteerConsumed(text)` (it entered the turn's
+context, where the provider reports that) and `SteerRejected(text, reason)`
+(the provider refused it; the turn is unaffected).
+
+Verified live: a steer does not interrupt work in flight. A running shell
+command finishes first, then the model sees the message.
+
+* **Codex** maps it to `turn/steer` with the active turn id; the message becomes
+  an item of the same turn (`SteerConsumed`) and the turn ends in one
+  `turn/completed`.
+* **Claude Code** gets a user message on stdin (with `--replay-user-messages`,
+  which echoes it when taken). At a tool boundary it is folded into the running
+  turn and the turn ends in one `result`. Otherwise (the model is writing its
+  answer) the CLI queues it and runs it as a turn of its own after the current
+  `result`. `turn()` then keeps reading until that follow-on `result`, so it still
+  returns exactly one `TurnResult` (last text, summed usage) and nothing leaks
+  into the next turn. An interrupt does not cancel a queued message, so a steer
+  that starts after an interrupt is interrupted again. A queued message the CLI
+  does not start within `steer_grace_s` is reported `SteerRejected`.
+
+Transports implement the `SteerableConversation` protocol (a `Conversation`
+with `steer`); `SteerableConversationContract` checks it.
+
 ## Continuity
 
 `Turn.continuity` is judged against the conversation the session held when

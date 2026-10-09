@@ -218,3 +218,21 @@ def test_the_probe_surface_is_exported() -> None:
 def test_the_rate_limit_event_is_exported() -> None:
     assert "RateLimitStatus" in agentshim.__all__
     assert "ReportRateLimits" in agentshim.testing.__all__
+
+
+def test_steering_names_are_public() -> None:
+    for name in (
+        "NoRunningTurnError",
+        "SteerableConversation",
+        "SteerConsumed",
+        "SteerDelivered",
+        "SteerRejected",
+    ):
+        assert name in agentshim.__all__, name
+    assert issubclass(agentshim.NoRunningTurnError, agentshim.SessionStateError)
+    assert agentshim.ProviderProfile.__dataclass_fields__["supports_steer"].default is False
+
+
+def test_one_shot_providers_do_not_declare_steering() -> None:
+    for name in agentshim.provider_names():
+        assert agentshim.get_provider(name).profile.supports_steer is False, name

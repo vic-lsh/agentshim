@@ -47,7 +47,11 @@ from agentshim.testing import (
     RecordingEventHandler,
     SequentialIds,
 )
-from agentshim.testing.contracts import ConversationContract, TransportContract
+from agentshim.testing.contracts import (
+    ConversationContract,
+    SteerableConversationContract,
+    TransportContract,
+)
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -139,6 +143,11 @@ class TestTransportContract(TransportContract):
 
 
 class TestConversationContract(ConversationContract):
+    def make_conversation(self) -> Conversation:
+        return rig().transport.open(spec())
+
+
+class TestSteerableConversationContract(SteerableConversationContract):
     def make_conversation(self) -> Conversation:
         return rig().transport.open(spec())
 

@@ -196,6 +196,43 @@ class RateLimitStatus:
         return max(0.0, 1.0 - self.used_fraction)
 
 
+@dataclass(frozen=True)
+class SteerDelivered:
+    """A message sent with ``steer`` reached the provider, which accepted it.
+
+    This says the provider holds the message, not that the model has seen it
+    (see ``SteerConsumed``). Emitted on the thread running the turn.
+    """
+
+    text: str
+
+
+@dataclass(frozen=True)
+class SteerConsumed:
+    """The provider took a steered message into the running turn's context.
+
+    Emitted where the provider reports it: Codex when the message becomes an
+    item of the turn, Claude Code when it echoes the message back. A message
+    that the provider only queued for the next turn of its own (Claude Code,
+    when the model is not at a tool boundary) is consumed when that turn starts;
+    the steering turn then continues until that follow-on finishes.
+    """
+
+    text: str
+
+
+@dataclass(frozen=True)
+class SteerRejected:
+    """The provider refused a steered message; the turn is unaffected.
+
+    ``reason`` is the provider's own explanation. Codex refuses a steer for a
+    turn that cannot take one (a compaction, say) or that has just ended.
+    """
+
+    text: str
+    reason: str
+
+
 AgentEvent = (
     RunStarted
     | RunFinished
@@ -214,6 +251,9 @@ AgentEvent = (
     | TurnInterrupted
     | ApprovalDenied
     | RateLimitStatus
+    | SteerDelivered
+    | SteerConsumed
+    | SteerRejected
 )
 
 
@@ -446,6 +486,14 @@ class ConsoleEventHandler:
         else:
             self._line(self._paint(f"{event.tool} ran successfully", colour))
 
+    def _render_steer(self, event: SteerDelivered | SteerConsumed | SteerRejected) -> None:
+        if isinstance(event, SteerRejected):
+            self._line(f"[steer rejected] {event.text}: {event.reason}")
+        elif isinstance(event, SteerConsumed):
+            self._line(self._paint(f"[steer consumed] {event.text}", self._DIM))
+        else:
+            self._line(self._paint(f"[steer delivered] {event.text}", self._DIM))
+
     def _render_diagnostic(self, event: AgentEvent) -> None:
         """Write the tagged non-output events, and drop the rest.
 
@@ -464,5 +512,7 @@ class ConsoleEventHandler:
             self._line(f"[approval denied] {event.kind}: {event.detail}")
         elif isinstance(event, RateLimitStatus):
             self._line(self._paint(_describe_rate_limit(event), self._DIM))
+        elif isinstance(event, (SteerDelivered, SteerConsumed, SteerRejected)):
+            self._render_steer(event)
         elif isinstance(event, Lifecycle) and self._show_lifecycle:
             self._line(self._paint(f"[{event.kind}] {event.detail}", self._DIM))

@@ -122,6 +122,12 @@ newest per `(limit, window)`.
 | Claude (stream transport and one-shot) | `rate_limit_event` | once per `unifiedWindows` entry; `exhausted` follows `status` for the window named by `rateLimitType` |
 | Codex (app-server transport) | `account/rateLimits/updated` | once per reported `primary` / `secondary` window, also between turns; `exhausted` is true when `rateLimitReachedType` or `spendControlReached` is set |
 | Others | none | never |
+## Steering
+
+`Session.steer` reports through three events, emitted on the thread running the
+turn: `SteerDelivered(text)` when the provider accepted the message,
+`SteerConsumed(text)` when it entered the turn, and `SteerRejected(text, reason)`
+when the provider refused it. See [Sessions](sessions.md).
 
 ## Usage
 

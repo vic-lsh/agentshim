@@ -9,7 +9,13 @@ from __future__ import annotations
 
 from .checkpoints import Checkpoint, CheckpointStore, InMemoryCheckpointStore
 from .clock import Clock, StopSignal, SystemClock
-from .conversation import Conversation, ConversationSpec, Transport, TransportKind
+from .conversation import (
+    Conversation,
+    ConversationSpec,
+    SteerableConversation,
+    Transport,
+    TransportKind,
+)
 from .env import interactive_env
 from .errors import (
     AgentShimError,
@@ -20,6 +26,7 @@ from .errors import (
     ContinuityError,
     FailureKind,
     McpConfigError,
+    NoRunningTurnError,
     ProcessClosedError,
     ProviderCapabilityError,
     ReapError,
@@ -50,6 +57,9 @@ from .events import (
     SkillInvoked,
     SkillsDiscovered,
     Stderr,
+    SteerConsumed,
+    SteerDelivered,
+    SteerRejected,
     ToolCall,
     ToolResult,
     TurnInterrupted,
@@ -139,6 +149,7 @@ __all__ = [
     "ModelPricing",
     "NativeMode",
     "NativePermissions",
+    "NoRunningTurnError",
     "NoopInstallation",
     "NullEventHandler",
     "OutputSchema",
@@ -178,6 +189,10 @@ __all__ = [
     "SkillsDiscovered",
     "Stderr",
     "StdioMcpServer",
+    "SteerConsumed",
+    "SteerDelivered",
+    "SteerRejected",
+    "SteerableConversation",
     "StopSignal",
     "StreamParser",
     "SystemClock",

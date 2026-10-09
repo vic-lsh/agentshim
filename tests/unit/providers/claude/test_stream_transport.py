@@ -562,6 +562,23 @@ class TestFailures:
         assert result.text == "ok"
         assert len(rigged.executor.spawns) == 2
 
+    def test_a_process_whose_input_closed_but_lives_on_is_not_leaked(self) -> None:
+        class Lingering(ClaudeStreamPeer):
+            def on_stdin_closed(self) -> list[Any]:  # type: ignore[override]
+                return []
+
+        peers = ClaudeStreamPeers()
+        executor = FakeExecutor([], peers=lambda request: Lingering(peers, request.argv))
+        transport = ClaudeStreamTransport(
+            executor=executor, env={}, clock=FakeClock(), ids=SequentialIds()
+        )
+        conversation = transport.open(spec())
+        process = executor.processes[0]
+        process.close_stdin()  # its stdin is gone, but it does not exit
+        with pytest.raises(CliExitError):
+            run(conversation)
+        assert process.wait(0) is not None  # it was ended, not abandoned
+
 
 class TestInterrupt:
     def test_an_interrupted_turn_returns_interrupted_and_keeps_the_conversation(self) -> None:

@@ -407,14 +407,16 @@ class _StreamConversation:
             process.kill()
             raise
         with self._lock:
-            if self._closed:
-                self._stop(process)
-                msg = "conversation closed while its process started"
-                raise TurnCancelledError(msg)
-            self._process = process
-            self._argv = tuple(argv)
-            self._config = config
-            self._cost_baseline = 0.0
+            closed = self._closed
+            if not closed:
+                self._process = process
+                self._argv = tuple(argv)
+                self._config = config
+                self._cost_baseline = 0.0
+        if closed:
+            self._stop(process)  # outside the lock: a stop waits, and interrupts need the lock
+            msg = "conversation closed while its process started"
+            raise TurnCancelledError(msg)
 
     def _handshake(self, process: Process, argv: Sequence[str]) -> None:
         """Send ``initialize`` and wait for its answer, or explain why none came."""
@@ -521,6 +523,7 @@ class _StreamConversation:
             self._write(process, envelope)
         except ProcessClosedError as error:
             self._forget(process)
+            process.kill()  # a closed pipe does not mean the process exited
             raise self._died_error(None, process_gone=str(error)) from error
         with self._lock:
             self._prompt_sent = True

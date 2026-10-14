@@ -28,6 +28,8 @@ EMPTY_BY_DESIGN = {
     "config_home_files",
     "resume_state_paths",
     "renewal",
+    # Copilot cannot be pointed at another API endpoint.
+    "endpoint",
 }
 
 

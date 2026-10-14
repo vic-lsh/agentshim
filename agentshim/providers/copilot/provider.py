@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from agentshim.core.auth import CredentialKind, EnvCredential, FileCredential
 from agentshim.core.errors import ProviderCapabilityError
 from agentshim.core.mcp import FlagsInstallation, HttpMcpServer, NoopInstallation
 from agentshim.core.profile import McpMechanism, OutputSchemaStyle, ProviderProfile
@@ -61,6 +62,13 @@ PROFILE = ProviderProfile(
     # config.json carries the logged-in users and, without a keychain, the
     # tokens; the CLI rewrites it in place on login and refresh.
     credential_files=(".copilot/config.json",),
+    # Every Copilot credential is a GitHub login tied to a Copilot plan.
+    credential_sources=(
+        EnvCredential("COPILOT_GITHUB_TOKEN", CredentialKind.SUBSCRIPTION),
+        EnvCredential("GH_TOKEN", CredentialKind.SUBSCRIPTION),
+        EnvCredential("GITHUB_TOKEN", CredentialKind.SUBSCRIPTION),
+        FileCredential(".copilot/config.json", kind=CredentialKind.SUBSCRIPTION),
+    ),
     # CLI_FLAGS: Copilot takes MCP servers as one --additional-mcp-config
     # flag, never a file.
     mcp_config_file=None,

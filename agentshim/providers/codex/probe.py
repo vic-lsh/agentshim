@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from agentshim.core.auth import CredentialKind
 from agentshim.core.status import AuthCheck, AuthProbe, AuthState, ProbeOutput, ProbeSpec
 
 if TYPE_CHECKING:
@@ -22,12 +23,20 @@ LOGIN_HINT = "run `codex login`"
 _API_KEY_ENV = ("CODEX_API_KEY", "OPENAI_API_KEY")
 
 
+def _credential(line: str) -> CredentialKind | None:
+    if line.startswith("Logged in using ChatGPT"):
+        return CredentialKind.SUBSCRIPTION
+    if line.startswith("Logged in using an API key"):
+        return CredentialKind.API_KEY
+    return None
+
+
 def read_auth(output: ProbeOutput, env: Mapping[str, str]) -> AuthCheck:
     """Read ``codex login status``'s text."""
     lines = [line.strip() for line in output.text.splitlines() if line.strip()]
     for line in lines:
         if line.startswith("Logged in"):
-            return AuthCheck(AuthState.KNOWN_OK, line)
+            return AuthCheck(AuthState.KNOWN_OK, line, _credential(line))
     if any(line.startswith("Not logged in") for line in lines):
         if any(env.get(key) for key in _API_KEY_ENV):
             return AuthCheck(

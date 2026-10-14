@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.16.0 (2026-10-14)
+
+### Added
+
+- `plan_auth(profile, AuthPolicy, env=, home=)` chooses the one credential a CLI logs in
+  with and returns an `AuthPlan`: the exact variables and files to hand it, and the names
+  of the credentials it withheld. `AuthPolicy` names the allowed `CredentialKind`s
+  (`API_KEY`, `SUBSCRIPTION`) and an optional endpoint; with no endpoint, a base URL in
+  the environment is withheld. `AuthUnavailableError` names what is missing.
+- `ProviderProfile.credential_sources` (`EnvCredential`, `FileCredential`, in the CLI's
+  precedence order) and `ProviderProfile.endpoint` (`EndpointSpec`) declare each CLI's
+  credentials as data. opencode declares none, so no policy can be enforced for it.
+- `ProviderStatus.credential`: the kind of credential the CLI reports it is using (Claude
+  from `claude auth status`'s `authMethod`, Codex from `codex login status`), or `None`.
+
+### Changed
+
+- `auth_env_vars` lists `CLAUDE_CODE_OAUTH_TOKEN` (claude) and `CODEX_API_KEY` (codex),
+  which the CLIs and their readiness probes already honoured.
+
 ## 0.15.7 (2026-10-09)
 
 ### Added

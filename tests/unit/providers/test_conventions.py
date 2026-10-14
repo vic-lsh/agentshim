@@ -73,15 +73,26 @@ RAISES_SESSION_RESUME_ERROR = frozenset({"claude", "codex", "gemini", "opencode"
 #: Fields a profile may legitimately leave empty.
 #: ``config_home_files`` is empty for a provider that isolates user
 #: configuration by flags, or cannot isolate it at all.
+#: ``credential_sources`` is empty for a CLI whose credentials agentshim cannot
+#: classify (opencode keeps keys for many vendors in one file).
 _MAY_BE_EMPTY = frozenset(
-    {"darwin_state_dirs", "auth_env_vars", "config_home_files", "resume_state_paths"}
+    {
+        "darwin_state_dirs",
+        "auth_env_vars",
+        "config_home_files",
+        "resume_state_paths",
+        "credential_sources",
+    }
 )
 
 #: Fields a profile may legitimately leave unset: not every provider's CLI
 #: documents a state-relocation variable, and only CONFIG_FILE providers
 #: write an MCP config file. ``renewal`` is set only for a provider whose
-#: conversations should be retired.
-_MAY_BE_NONE = frozenset({"schema_dialect", "state_root_env", "mcp_config_file", "renewal"})
+#: conversations should be retired. ``endpoint`` is unset for a CLI that
+#: cannot be pointed at another API endpoint.
+_MAY_BE_NONE = frozenset(
+    {"schema_dialect", "state_root_env", "mcp_config_file", "renewal", "endpoint"}
+)
 
 
 def _argv(name: str, *, resume_session_id: str | None = None) -> list[str]:

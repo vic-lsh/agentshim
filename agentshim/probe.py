@@ -101,6 +101,7 @@ def probe_on(
         version=version,
         auth=check.state,
         auth_detail=check.detail,
+        credential=check.credential,
     )
 
 

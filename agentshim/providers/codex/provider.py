@@ -6,6 +6,13 @@ import os
 import re
 from typing import TYPE_CHECKING, Any
 
+from agentshim.core.auth import (
+    CredentialKind,
+    EndpointSpec,
+    EnvCredential,
+    FileCredential,
+    classify_json_field,
+)
 from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
 from agentshim.core.home import state_root
 from agentshim.core.mcp import FlagsInstallation, HttpMcpServer, NoopInstallation
@@ -81,7 +88,7 @@ PROFILE = ProviderProfile(
         "Library/Application Support/com.openai.codex",
         "Library/Caches/codex",
     ),
-    auth_env_vars=("OPENAI_API_KEY", "OPENAI_BASE_URL"),
+    auth_env_vars=("CODEX_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL"),
     skill_dirs=(".agents/skills",),
     # ``exec --json`` lists no skills; a load is inferred from a shell read
     # of a ``SKILL.md`` (``skills.py``).
@@ -102,6 +109,20 @@ PROFILE = ProviderProfile(
     # not needlessly expose it to an agent process.
     auth_files=(".codex/auth.json",),
     credential_files=(".codex/auth.json",),
+    # ``codex exec`` takes either key in place of a stored login. auth.json
+    # records which login it holds (``codex login`` vs ``--with-api-key``).
+    credential_sources=(
+        EnvCredential("CODEX_API_KEY", CredentialKind.API_KEY),
+        EnvCredential("OPENAI_API_KEY", CredentialKind.API_KEY),
+        FileCredential(
+            ".codex/auth.json",
+            classify=classify_json_field(
+                "auth_mode",
+                {"chatgpt": CredentialKind.SUBSCRIPTION, "apikey": CredentialKind.API_KEY},
+            ),
+        ),
+    ),
+    endpoint=EndpointSpec("OPENAI_BASE_URL"),
     # Every turn writes a rollout under sessions/, and `resume` reads it back.
     # The rest of the state directory (worktrees, caches, logs) is not needed
     # to log in or resume.

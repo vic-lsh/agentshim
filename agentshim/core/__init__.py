@@ -7,6 +7,18 @@ this package may not do.
 
 from __future__ import annotations
 
+from .auth import (
+    AuthPlan,
+    AuthPolicy,
+    AuthUnavailableError,
+    CredentialKind,
+    CredentialSource,
+    EndpointSpec,
+    EnvCredential,
+    FileCredential,
+    StagedCredentialFile,
+    plan_auth,
+)
 from .checkpoints import Checkpoint, CheckpointStore, InMemoryCheckpointStore
 from .clock import Clock, StopSignal, SystemClock
 from .conversation import (
@@ -116,7 +128,10 @@ __all__ = [
     "ApprovalPolicy",
     "ArgvContext",
     "AssistantText",
+    "AuthPlan",
+    "AuthPolicy",
     "AuthState",
+    "AuthUnavailableError",
     "Checkpoint",
     "CheckpointStore",
     "CliCheckError",
@@ -133,8 +148,13 @@ __all__ = [
     "ContinuityError",
     "Conversation",
     "ConversationSpec",
+    "CredentialKind",
+    "CredentialSource",
+    "EndpointSpec",
+    "EnvCredential",
     "EventHandlerBase",
     "FailureKind",
+    "FileCredential",
     "FlagsInstallation",
     "HttpMcpServer",
     "IdAllocator",
@@ -187,6 +207,7 @@ __all__ = [
     "SkillSummary",
     "SkillTracker",
     "SkillsDiscovered",
+    "StagedCredentialFile",
     "Stderr",
     "StdioMcpServer",
     "SteerConsumed",
@@ -221,6 +242,7 @@ __all__ = [
     "normalize",
     "normalized_usage",
     "parse_json_object",
+    "plan_auth",
     "prepare_config_home",
     "price_for",
 ]

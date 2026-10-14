@@ -5,6 +5,12 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from agentshim.core.auth import (
+    CredentialKind,
+    EndpointSpec,
+    EnvCredential,
+    FileCredential,
+)
 from agentshim.core.errors import FailureKind, ProviderCapabilityError, SessionResumeError
 from agentshim.core.mcp import HttpMcpServer, NoopInstallation, StdioMcpServer, install_config_file
 from agentshim.core.profile import (
@@ -75,6 +81,7 @@ PROFILE = ProviderProfile(
     auth_env_vars=(
         "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_CUSTOM_HEADERS",
     ),
@@ -103,6 +110,16 @@ PROFILE = ProviderProfile(
         ".claude.json",
     ),
     credential_files=(".claude/.credentials.json",),
+    # Precedence as ``claude auth status`` reports it: a bearer token beats an
+    # API key, which beats a subscription token (``claude setup-token``),
+    # which beats the stored Claude.ai login.
+    credential_sources=(
+        EnvCredential("ANTHROPIC_AUTH_TOKEN", CredentialKind.API_KEY),
+        EnvCredential("ANTHROPIC_API_KEY", CredentialKind.API_KEY),
+        EnvCredential("CLAUDE_CODE_OAUTH_TOKEN", CredentialKind.SUBSCRIPTION),
+        FileCredential(".claude/.credentials.json", kind=CredentialKind.SUBSCRIPTION),
+    ),
+    endpoint=EndpointSpec("ANTHROPIC_BASE_URL", companion_env=("ANTHROPIC_CUSTOM_HEADERS",)),
     mcp_config_file=MCP_CONFIG_FILENAME,
 )
 

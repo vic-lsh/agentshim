@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
+    from .auth import CredentialKind
+
 
 class AuthState(str, Enum):
     """Whether the provider CLI is authenticated, as far as its own tooling can say.
@@ -45,6 +47,9 @@ class ProviderStatus:
     version: str | None
     auth: AuthState
     auth_detail: str
+    #: The kind of credential the CLI says it is logged in with (0.16.0+), or
+    #: ``None`` when it did not say or could not be read unambiguously.
+    credential: CredentialKind | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,7 @@ class AuthCheck:
 
     state: AuthState
     detail: str
+    credential: CredentialKind | None = None
 
 
 @dataclass(frozen=True)

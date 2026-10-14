@@ -73,7 +73,7 @@ class TestProfile:
         assert all(not path.startswith("/") for path in profile.state_dirs)
         assert "Library/Application Support/com.openai.codex" in profile.darwin_state_dirs
         assert all(path.startswith("Library/") for path in profile.darwin_state_dirs)
-        assert profile.auth_env_vars == ("OPENAI_API_KEY", "OPENAI_BASE_URL")
+        assert profile.auth_env_vars == ("CODEX_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")
         assert profile.skill_dirs == (".agents/skills",)
         assert profile.state_root_env == "CODEX_HOME"
         assert profile.auth_files == (".codex/auth.json",)

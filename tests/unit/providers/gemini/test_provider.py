@@ -47,6 +47,7 @@ class TestProfile:
             "config_home_files",
             "resume_state_paths",
             "renewal",
+            "endpoint",
         }
         for field in fields(ProviderProfile):
             value = getattr(profile, field.name)

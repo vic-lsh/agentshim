@@ -312,8 +312,8 @@ forwarding credentials does not hardcode provider names:
 
 | provider | variables |
 |---|---|
-| claude | `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS` |
-| codex | `OPENAI_API_KEY`, `OPENAI_BASE_URL` |
+| claude | `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS` |
+| codex | `CODEX_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL` |
 | copilot | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` |
 | gemini | `GEMINI_API_KEY`, `GOOGLE_API_KEY` |
 | opencode | none: it authenticates through `opencode auth` |
@@ -328,6 +328,46 @@ from agentshim import CliAgent, interactive_env
 
 agent = CliAgent("claude", env={**interactive_env(), "ANTHROPIC_API_KEY": "..."})
 ```
+
+### Choosing the credential
+
+A CLI that finds several credentials picks one by its own precedence rules, so
+setting one variable does not decide what it bills: a subscription login in its
+state root, or a token left in the shell, may win. `plan_auth` decides instead.
+It walks `profile.credential_sources` in the CLI's precedence order and returns
+an `AuthPlan` holding exactly one credential the `AuthPolicy` allows: the
+variables (`plan.env`) and files (`plan.files`) to hand the CLI. Deliver those
+and nothing else of `auth_env_vars` or `auth_files`; settings files are left
+out too, because they can carry credentials of their own.
+
+```python
+import os
+from pathlib import Path
+
+from agentshim import AuthPolicy, CredentialKind, get_provider, plan_auth
+
+policy = AuthPolicy(frozenset({CredentialKind.API_KEY}), endpoint="https://gateway.example/anthropic")
+plan = plan_auth(get_provider("claude").profile, policy, env=os.environ, home=Path.home())
+plan.env       # {"ANTHROPIC_AUTH_TOKEN": "...", "ANTHROPIC_BASE_URL": "https://gateway.example/anthropic"}
+plan.withheld  # (".claude/.credentials.json", ...): names left out, never values
+```
+
+`endpoint=None` means the vendor's endpoint: a base URL in the environment is
+withheld, not forwarded. A policy no present credential satisfies, an endpoint
+the CLI cannot take, or a CLI whose credentials cannot be classified (opencode)
+raises `AuthUnavailableError`, naming what is missing.
+
+| provider | credentials, in precedence order | endpoint |
+|---|---|---|
+| claude | `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY` (API key); `CLAUDE_CODE_OAUTH_TOKEN`, `.claude/.credentials.json` (subscription) | `ANTHROPIC_BASE_URL` |
+| codex | `CODEX_API_KEY`, `OPENAI_API_KEY` (API key); `.codex/auth.json`, classified by its `auth_mode` | `OPENAI_BASE_URL` |
+| gemini | `GEMINI_API_KEY`, `GOOGLE_API_KEY` (API key); `.gemini/oauth_creds.json` (subscription) | none |
+| copilot | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, `.copilot/config.json` (subscription) | none |
+| opencode | none classified | none |
+
+The readiness probe confirms the plan from inside the environment the CLI runs
+in: `ProviderStatus.credential` is the kind the CLI says it is using, or `None`
+when it does not say.
 
 ## Readiness probe
 
@@ -345,6 +385,13 @@ if not status.binary_found:
 if status.auth is AuthState.FAILED:
     raise SystemExit(status.auth_detail)  # "codex is not logged in; run `codex login`"
 ```
+
+`status.credential` is the `CredentialKind` the CLI reports it is logged in
+with. Claude reads it from `authMethod` (`claude.ai` is a subscription,
+`api_key` an API key; `oauth_token` covers both `ANTHROPIC_AUTH_TOKEN` and
+`CLAUDE_CODE_OAUTH_TOKEN`, so only the environment the command ran with tells
+them apart, and with both set it is `None`). Codex reads it from `Logged in
+using ChatGPT` or `... an API key`. The other CLIs report `None`.
 
 `UNKNOWN` is not `FAILED`: it means the CLI has no cheap way to tell, or the
 check could not run, and a caller must not stop on it. A missing binary is a

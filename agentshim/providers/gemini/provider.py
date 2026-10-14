@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from agentshim.core.auth import CredentialKind, EnvCredential, FileCredential
 from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
 from agentshim.core.mcp import (
     HttpMcpServer,
@@ -81,6 +82,11 @@ PROFILE = ProviderProfile(
         ".gemini/.env",
     ),
     credential_files=(".gemini/oauth_creds.json",),
+    credential_sources=(
+        EnvCredential("GEMINI_API_KEY", CredentialKind.API_KEY),
+        EnvCredential("GOOGLE_API_KEY", CredentialKind.API_KEY),
+        FileCredential(".gemini/oauth_creds.json", kind=CredentialKind.SUBSCRIPTION),
+    ),
     mcp_config_file=MCP_CONFIG_FILENAME,
 )
 

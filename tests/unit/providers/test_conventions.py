@@ -89,9 +89,10 @@ _MAY_BE_EMPTY = frozenset(
 #: documents a state-relocation variable, and only CONFIG_FILE providers
 #: write an MCP config file. ``renewal`` is set only for a provider whose
 #: conversations should be retired. ``endpoint`` is unset for a CLI that
-#: cannot be pointed at another API endpoint.
+#: cannot be pointed at another API endpoint, and ``settings`` for one whose
+#: settings files cannot change how it logs in.
 _MAY_BE_NONE = frozenset(
-    {"schema_dialect", "state_root_env", "mcp_config_file", "renewal", "endpoint"}
+    {"schema_dialect", "state_root_env", "mcp_config_file", "renewal", "endpoint", "settings"}
 )
 
 

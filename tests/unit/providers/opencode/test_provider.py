@@ -48,6 +48,7 @@ class TestProfile:
             "renewal",
             "endpoint",
             "credential_sources",
+            "settings",
         }
         for field in fields(ProviderProfile):
             value = getattr(profile, field.name)

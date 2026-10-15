@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.17.0 (2026-10-15)
+
+### Added
+
+- `host_auth_plan(profile, env=, home=)` returns the `AuthPlan` that reproduces how the
+  CLI logs in by itself on a host: the first present credential source of any kind, plus
+  the host's endpoint variables exactly as set, so a confined copy given only the plan
+  sends the same credential to the same place. A host base URL is reproduced, not
+  validated, and a credential goes to the host's endpoint whatever its kind (Claude Code
+  sends `CLAUDE_CODE_OAUTH_TOKEN` to a custom `ANTHROPIC_BASE_URL`). It raises
+  `HostAuthUnplannableError`, whose `reason` (`HostAuthGap`) is `UNCLASSIFIED`,
+  `NO_CREDENTIAL`, `EXTERNAL_CREDENTIAL` or `SETTINGS_ENV`, when no plan can reproduce
+  the host's login.
+- `ExternalCredential`, a `CredentialSource` for a way the CLI logs in that no plan can
+  hand over, detected by variables, paths or settings keys. Claude declares a cloud
+  provider (`CLAUDE_CODE_USE_BEDROCK`, `_VERTEX`, `_FOUNDRY`), `apiKeyHelper`, and
+  Anthropic profiles at their documented places in its precedence; Gemini declares an
+  auth type selected in settings or by variable, and `.gemini/.env`.
+- `ProviderProfile.settings` (`SettingsSpec`): the settings files a CLI reads at start
+  that can change how it logs in, and the key of the block it applies over its
+  environment (Claude's `env`).
+
+### Changed
+
+- `CredentialSource` is now `EnvCredential | FileCredential | ExternalCredential`;
+  code that matched on two variants must handle the third. `plan_auth` never chooses an
+  `ExternalCredential` and names a present one in `AuthPlan.withheld`.
+
 ## 0.16.0 (2026-10-14)
 
 ### Added

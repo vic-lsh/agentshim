@@ -9,7 +9,9 @@ from agentshim.core.auth import (
     CredentialKind,
     EndpointSpec,
     EnvCredential,
+    ExternalCredential,
     FileCredential,
+    SettingsSpec,
 )
 from agentshim.core.errors import FailureKind, ProviderCapabilityError, SessionResumeError
 from agentshim.core.mcp import HttpMcpServer, NoopInstallation, StdioMcpServer, install_config_file
@@ -110,16 +112,33 @@ PROFILE = ProviderProfile(
         ".claude.json",
     ),
     credential_files=(".claude/.credentials.json",),
-    # Precedence as ``claude auth status`` reports it: a bearer token beats an
-    # API key, which beats a subscription token (``claude setup-token``),
-    # which beats the stored Claude.ai login.
+    # Precedence as Claude Code documents it ("Authentication precedence",
+    # code.claude.com/docs/en/iam): a cloud provider selected by variable,
+    # then a bearer token, an API key, the ``apiKeyHelper`` setting, a
+    # subscription token (``claude setup-token``), an Anthropic profile or
+    # federation credential, and last the stored Claude.ai login. Checked
+    # against 2.1.300: ``apiKeyHelper`` beats CLAUDE_CODE_OAUTH_TOKEN.
     credential_sources=(
+        ExternalCredential(
+            "a cloud provider",
+            env=("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"),
+        ),
         EnvCredential("ANTHROPIC_AUTH_TOKEN", CredentialKind.API_KEY),
         EnvCredential("ANTHROPIC_API_KEY", CredentialKind.API_KEY),
+        ExternalCredential("an apiKeyHelper command", settings_keys=("apiKeyHelper",)),
         EnvCredential("CLAUDE_CODE_OAUTH_TOKEN", CredentialKind.SUBSCRIPTION),
+        ExternalCredential(
+            "an Anthropic profile or federation credential",
+            env=("ANTHROPIC_PROFILE", "ANTHROPIC_FEDERATION_RULE_ID"),
+            paths=(".config/anthropic/configs", ".config/anthropic/active_config"),
+        ),
         FileCredential(".claude/.credentials.json", kind=CredentialKind.SUBSCRIPTION),
     ),
     endpoint=EndpointSpec("ANTHROPIC_BASE_URL", companion_env=("ANTHROPIC_CUSTOM_HEADERS",)),
+    # User settings; the ``env`` block overrides the process environment
+    # (checked against 2.1.300: a settings ANTHROPIC_BASE_URL beats an
+    # exported one).
+    settings=SettingsSpec((".claude/settings.json", ".claude/settings.local.json"), env_key="env"),
     mcp_config_file=MCP_CONFIG_FILENAME,
 )
 

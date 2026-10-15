@@ -1,11 +1,14 @@
-"""A real Claude Code binary logs in with exactly the credential ``plan_auth`` chose.
+"""A real Claude Code binary logs in with exactly the credential a plan chose.
 
 The home holds a planted subscription login and the host environment a
 stale base URL, so a CLI that saw anything besides the plan would use the
 wrong credential or endpoint. The endpoint is a local server that records the
 headers of a request and answers 401; the test stops the CLI once the first
 request arrives, so no model is called, no credential is real, and the CLI's
-own retries never run. Skipped unless ``claude`` is on PATH.
+own retries never run. A host plan is checked the other way round: the host
+CLI's first request, from the host's whole home and environment, carries the
+same credential as a copy's that got only the plan. Skipped unless ``claude``
+is on PATH.
 """
 
 from __future__ import annotations
@@ -18,7 +21,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TYPE_CHECKING
 
 import pytest
-from agentshim import AuthPolicy, CredentialKind, get_provider, plan_auth, probe_provider
+from agentshim import (
+    AuthPolicy,
+    CredentialKind,
+    HostAuthGap,
+    HostAuthUnplannableError,
+    get_provider,
+    host_auth_plan,
+    plan_auth,
+    probe_provider,
+)
 
 from tests.e2e.conftest import requires_binary
 
@@ -160,3 +172,64 @@ def test_a_subscription_plan_hands_over_the_login_file(tmp_path: Path) -> None:
         target.write_bytes(staged.host_path.read_bytes())
     status = probe_provider("claude", env={"PATH": os.environ["PATH"], "HOME": str(agent_home)})
     assert status.credential is CredentialKind.SUBSCRIPTION
+
+
+def _credential_headers(headers: dict[str, str]) -> dict[str, str]:
+    return {key: headers[key] for key in ("authorization", "x-api-key") if key in headers}
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [
+        # A subscription token at a custom endpoint: the CLI sends it there.
+        ("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-host-subscription"),
+        ("ANTHROPIC_API_KEY", "sk-ant-api-host-key"),
+    ],
+)
+def test_a_copy_given_the_host_plan_sends_what_the_host_cli_sends(
+    tmp_path: Path,
+    endpoint: tuple[str, list[dict[str, str]], threading.Event],
+    variable: str,
+    value: str,
+) -> None:
+    url, seen, arrived = endpoint
+    home = _home(tmp_path)
+    (home / ".claude" / "settings.json").write_text(json.dumps({"theme": "dark"}))
+    host_env = {"PATH": os.environ["PATH"], "HOME": str(home), variable: value}
+    host_env["ANTHROPIC_BASE_URL"] = url
+    _first_request(host_env, arrived)
+    host_sent = _credential_headers(seen[0])
+    assert value in json.dumps(host_sent)
+
+    seen.clear()
+    arrived.clear()
+    plan = host_auth_plan(get_provider("claude").profile, env=host_env, home=home)
+    assert plan.files == ()
+    agent_home = tmp_path / "agent-home"
+    agent_home.mkdir()
+    _first_request({"PATH": os.environ["PATH"], "HOME": str(agent_home), **plan.env}, arrived)
+    assert _credential_headers(seen[0]) == host_sent
+
+
+def test_an_api_key_helper_outranks_a_subscription_token(
+    tmp_path: Path, endpoint: tuple[str, list[dict[str, str]], threading.Event]
+) -> None:
+    # Pins the declared precedence to the real CLI: the helper wins, so no plan
+    # of the token alone would reproduce this host.
+    url, seen, arrived = endpoint
+    home = _home(tmp_path)
+    helper = {"apiKeyHelper": "echo sk-ant-api-from-helper"}
+    (home / ".claude" / "settings.json").write_text(json.dumps(helper))
+    host_env = {
+        "PATH": os.environ["PATH"],
+        "HOME": str(home),
+        "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-host-subscription",
+        "ANTHROPIC_BASE_URL": url,
+    }
+    _first_request(host_env, arrived)
+    sent = json.dumps(_credential_headers(seen[0]))
+    assert "sk-ant-api-from-helper" in sent
+    assert "host-subscription" not in sent
+    with pytest.raises(HostAuthUnplannableError) as raised:
+        host_auth_plan(get_provider("claude").profile, env=host_env, home=home)
+    assert raised.value.reason is HostAuthGap.EXTERNAL_CREDENTIAL

@@ -16,7 +16,7 @@ from .permissions import NativeMode
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from .auth import CredentialSource, EndpointSpec
+    from .auth import CredentialSource, EndpointSpec, SettingsSpec
 
 
 class McpMechanism(Enum):
@@ -224,10 +224,16 @@ class ProviderProfile:
     supports_steer: bool = False
     #: The credentials the CLI can log in with, in the CLI's own precedence
     #: order (0.16.0+). ``plan_auth`` walks them to choose the one credential
-    #: a caller hands the CLI. Every variable is in ``auth_env_vars`` and every
-    #: file in ``credential_files``. Empty means the CLI's credentials cannot
-    #: be classified, so no credential policy can be enforced for it.
+    #: a caller hands the CLI, and ``host_auth_plan`` (0.17.0+) to find the
+    #: one the CLI would pick by itself. Every ``EnvCredential`` variable is in
+    #: ``auth_env_vars`` and every ``FileCredential`` file in
+    #: ``credential_files``; an ``ExternalCredential`` (0.17.0+) is a way to
+    #: log in that no plan can hand over. Empty means the CLI's credentials
+    #: cannot be classified, so no credential policy can be enforced for it.
     credential_sources: tuple[CredentialSource, ...] = ()
     #: How the CLI is pointed at another API endpoint, or ``None`` if it
     #: cannot be (0.16.0+).
     endpoint: EndpointSpec | None = None
+    #: The settings files the CLI reads at start that can change how it logs
+    #: in, or ``None`` if it has none (0.17.0+).
+    settings: SettingsSpec | None = None

@@ -359,11 +359,56 @@ raises `AuthUnavailableError`, naming what is missing.
 
 | provider | credentials, in precedence order | endpoint |
 |---|---|---|
-| claude | `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY` (API key); `CLAUDE_CODE_OAUTH_TOKEN`, `.claude/.credentials.json` (subscription) | `ANTHROPIC_BASE_URL` |
+| claude | *a cloud provider* (`CLAUDE_CODE_USE_BEDROCK`, `_VERTEX`, `_FOUNDRY`); `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY` (API key); *`apiKeyHelper`* in settings; `CLAUDE_CODE_OAUTH_TOKEN` (subscription); *an Anthropic profile* (`ANTHROPIC_PROFILE`, `ANTHROPIC_FEDERATION_RULE_ID`, `~/.config/anthropic`); `.claude/.credentials.json` (subscription) | `ANTHROPIC_BASE_URL` |
 | codex | `CODEX_API_KEY`, `OPENAI_API_KEY` (API key); `.codex/auth.json`, classified by its `auth_mode` | `OPENAI_BASE_URL` |
-| gemini | `GEMINI_API_KEY`, `GOOGLE_API_KEY` (API key); `.gemini/oauth_creds.json` (subscription) | none |
+| gemini | *an auth type selected in settings, by `GOOGLE_GENAI_USE_VERTEXAI` or `GOOGLE_GENAI_USE_GCA`, or a `.gemini/.env`*; `GEMINI_API_KEY`, `GOOGLE_API_KEY` (API key); `.gemini/oauth_creds.json` (subscription) | none |
 | copilot | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, `.copilot/config.json` (subscription) | none |
 | opencode | none classified | none |
+
+Entries in italics are `ExternalCredential`s: ways the CLI logs in that no
+plan can hand to another copy of it. `plan_auth` never chooses them (and the
+copy it plans for does not see them); `host_auth_plan` refuses a host where
+the CLI would use one.
+
+### Reproducing the host's own login
+
+A caller with no policy, that wants a confined copy of the CLI to log in the
+way the CLI does on the host, asks `host_auth_plan(profile, env=, home=)`. It
+returns an `AuthPlan` for the CLI's own choice: the first present source of
+any kind, plus the host's endpoint variables (`base_url_env` and
+`companion_env`) exactly as they are set. Deliver it the same way as a
+`plan_auth` plan, and nothing else.
+
+```python
+from agentshim import HostAuthUnplannableError, get_provider, host_auth_plan
+
+try:
+    plan = host_auth_plan(get_provider("claude").profile, env=os.environ, home=Path.home())
+except HostAuthUnplannableError as error:
+    error.reason  # HostAuthGap: why the host's login cannot be reproduced
+```
+
+Two choices follow the CLI's real behaviour (checked against Claude Code
+2.1.300). A host base URL is reproduced, not validated: the CLI fails every
+request on a value that is not a URL ("Invalid URL") and never falls back to
+its vendor, so the copy fails the same way. A credential goes to the host's
+endpoint whatever its kind: the CLI sends `CLAUDE_CODE_OAUTH_TOKEN` to a
+custom `ANTHROPIC_BASE_URL` as a bearer token, so the plan delivers both.
+(`EndpointSpec.credentials`, which `plan_auth` applies to a policy's
+endpoint, does not limit a host plan.)
+
+`HostAuthUnplannableError.reason` is a `HostAuthGap`:
+
+| reason | the host |
+|---|---|
+| `UNCLASSIFIED` | runs a CLI that declares no credential sources (opencode) |
+| `NO_CREDENTIAL` | has none of the declared sources |
+| `EXTERNAL_CREDENTIAL` | would log in with an `ExternalCredential` |
+| `SETTINGS_ENV` | has a settings file (`ProviderProfile.settings`) whose env block sets a credential or endpoint variable, which overrides the exported one |
+
+The message names variables and files, never values. A caller that still
+wants the CLI logged in elsewhere has only the host's whole auth state
+(`auth_env_vars` and `auth_files`) to hand over.
 
 The readiness probe confirms the plan from inside the environment the CLI runs
 in: `ProviderStatus.credential` is the kind the CLI says it is using, or `None`

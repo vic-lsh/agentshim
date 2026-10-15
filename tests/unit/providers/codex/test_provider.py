@@ -41,8 +41,10 @@ class TestProfile:
 
     def test_every_profile_field_is_populated(self) -> None:
         profile = CodexProvider().profile
-        # Codex has no config-file MCP mechanism, so it declares no path.
-        optional = {"schema_dialect", "mcp_config_file"}
+        # Codex has no config-file MCP mechanism, so it declares no path, and
+        # no settings file that changes how it logs in (config.toml selects
+        # models and providers, not the login).
+        optional = {"schema_dialect", "mcp_config_file", "settings"}
         for field in fields(ProviderProfile):
             value = getattr(profile, field.name)
             if field.name in optional:

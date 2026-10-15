@@ -12,6 +12,7 @@ from agentshim import (
     AuthUnavailableError,
     CredentialKind,
     EnvCredential,
+    ExternalCredential,
     FileCredential,
     ProviderProfile,
     plan_auth,
@@ -83,7 +84,7 @@ def _present(
         if isinstance(source, EnvCredential):
             if env.get(source.name, "").strip():
                 out.append((source.name, source.kind))
-        elif source.path in files:
+        elif isinstance(source, FileCredential) and source.path in files:
             kind = source.kind_of(files[source.path].encode())
             if kind is not None:
                 out.append((source.path, kind))
@@ -173,9 +174,15 @@ def test_every_declared_credential_is_one_the_profile_already_lists(
     for source in profile.credential_sources:
         if isinstance(source, EnvCredential):
             assert source.name in profile.auth_env_vars
-        else:
-            assert isinstance(source, FileCredential)
+        elif isinstance(source, FileCredential):
             assert source.path in profile.credential_files
+        else:
+            assert isinstance(source, ExternalCredential)
+            assert not set(source.env) & set(profile.auth_env_vars)
+            if source.settings_keys:
+                assert profile.settings is not None
+    if profile.settings is not None:
+        assert set(profile.settings.files) <= set(profile.auth_files)
     if profile.endpoint is not None:
         for name in (profile.endpoint.base_url_env, *profile.endpoint.companion_env):
             assert name in profile.auth_env_vars

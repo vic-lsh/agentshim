@@ -40,9 +40,12 @@ from .core import (
     EndpointSpec,
     EnvCredential,
     EventHandlerBase,
+    ExternalCredential,
     FailureKind,
     FileCredential,
     FlagsInstallation,
+    HostAuthGap,
+    HostAuthUnplannableError,
     HttpMcpServer,
     IdAllocator,
     InMemoryCheckpointStore,
@@ -88,6 +91,7 @@ from .core import (
     SessionStarted,
     SessionState,
     SessionStateError,
+    SettingsSpec,
     SkillInvoked,
     SkillScope,
     SkillsDiscovered,
@@ -123,6 +127,7 @@ from .core import (
     cost_usd,
     default_pricing,
     dialect_problems,
+    host_auth_plan,
     install_config_file,
     interactive_env,
     materialize,
@@ -166,7 +171,7 @@ from .providers.opencode import OpencodeProvider
 from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 __all__ = [
     "Agent",
@@ -219,10 +224,13 @@ __all__ = [
     "EndpointSpec",
     "EnvCredential",
     "EventHandlerBase",
+    "ExternalCredential",
     "FailureKind",
     "FileCredential",
     "FlagsInstallation",
     "GeminiProvider",
+    "HostAuthGap",
+    "HostAuthUnplannableError",
     "HostCommandExecutor",
     "HostProcess",
     "HttpMcpServer",
@@ -278,6 +286,7 @@ __all__ = [
     "SessionStarted",
     "SessionState",
     "SessionStateError",
+    "SettingsSpec",
     "SkillInvoked",
     "SkillScope",
     "SkillSignal",
@@ -322,6 +331,7 @@ __all__ = [
     "default_pricing",
     "dialect_problems",
     "get_provider",
+    "host_auth_plan",
     "install_config_file",
     "interactive_env",
     "map_mcp_servers",

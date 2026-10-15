@@ -18,7 +18,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from agentshim.core.auth import CredentialKind, EnvCredential, FileCredential
+from agentshim.core.auth import (
+    CredentialKind,
+    EnvCredential,
+    ExternalCredential,
+    FileCredential,
+    SettingsSpec,
+)
 from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
 from agentshim.core.mcp import (
     HttpMcpServer,
@@ -82,11 +88,22 @@ PROFILE = ProviderProfile(
         ".gemini/.env",
     ),
     credential_files=(".gemini/oauth_creds.json",),
+    # Gemini CLI uses the auth type selected in settings (or by a
+    # GOOGLE_GENAI_USE_* variable) before any key in the environment, and
+    # loads a ``.gemini/.env`` into its environment; none of that is
+    # modelled, so any of it makes the host login unplannable.
     credential_sources=(
+        ExternalCredential(
+            "an auth type selected in settings, by variable, or in a .env file",
+            env=("GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_GENAI_USE_GCA"),
+            paths=(".gemini/.env",),
+            settings_keys=("security", "selectedAuthType"),
+        ),
         EnvCredential("GEMINI_API_KEY", CredentialKind.API_KEY),
         EnvCredential("GOOGLE_API_KEY", CredentialKind.API_KEY),
         FileCredential(".gemini/oauth_creds.json", kind=CredentialKind.SUBSCRIPTION),
     ),
+    settings=SettingsSpec((".gemini/settings.json",)),
     mcp_config_file=MCP_CONFIG_FILENAME,
 )
 

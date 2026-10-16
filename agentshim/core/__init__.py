@@ -95,6 +95,7 @@ from .mcp import (
     StdioMcpServer,
     install_config_file,
 )
+from .models import ModelSpec, ModelTable, context_window, default_models, model_spec
 from .permissions import ApprovalPolicy, NativeMode, NativePermissions
 from .pricing import ModelPricing, PricingTable, cost_usd, default_pricing, price_for
 from .profile import (
@@ -175,6 +176,8 @@ __all__ = [
     "McpServer",
     "McpTransport",
     "ModelPricing",
+    "ModelSpec",
+    "ModelTable",
     "NativeMode",
     "NativePermissions",
     "NoRunningTurnError",
@@ -242,13 +245,16 @@ __all__ = [
     "UsageReport",
     "compact_json",
     "compose_event_handlers",
+    "context_window",
     "cost_usd",
+    "default_models",
     "default_pricing",
     "dialect_problems",
     "host_auth_plan",
     "install_config_file",
     "interactive_env",
     "materialize",
+    "model_spec",
     "normalize",
     "normalized_usage",
     "parse_json_object",

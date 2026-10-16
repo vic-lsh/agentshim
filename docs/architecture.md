@@ -24,6 +24,7 @@ agentshim/
     events.py          event dataclasses, AgentEvent union, handlers
     usage.py           TokenUsage, TokenWeights, ProviderUsage
     pricing.py         ModelPricing, PricingTable, price_for, cost_usd
+    models.py          ModelSpec, ModelTable, model_spec, context_window
     errors.py          exception hierarchy
     permissions.py     NativeMode, NativePermissions, ApprovalPolicy
     clock.py           StopSignal, Clock, SystemClock

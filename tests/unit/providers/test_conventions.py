@@ -75,8 +75,10 @@ RAISES_SESSION_RESUME_ERROR = frozenset({"claude", "codex", "gemini", "opencode"
 #: configuration by flags, or cannot isolate it at all.
 #: ``credential_sources`` is empty for a CLI whose credentials agentshim cannot
 #: classify (opencode keeps keys for many vendors in one file).
+#: ``models`` is empty for a CLI agentshim has run with no model it vouches for.
 _MAY_BE_EMPTY = frozenset(
     {
+        "models",
         "darwin_state_dirs",
         "auth_env_vars",
         "config_home_files",

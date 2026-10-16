@@ -47,6 +47,9 @@ _NO_WORKSPACE = "opencode installs MCP servers into <cwd>/opencode.json; the tur
 
 PROFILE = ProviderProfile(
     name="opencode",
+    # ``provider/model`` ids opencode's ``--model`` takes and agentshim has
+    # run, the default first.
+    models=("google-vertex/gemini-3-pro-preview",),
     display_name="opencode",
     binary="opencode",
     supports_resume=True,

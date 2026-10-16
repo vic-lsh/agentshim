@@ -32,6 +32,8 @@ EMPTY_BY_DESIGN = {
     # settings file that changes how it logs in.
     "endpoint",
     "settings",
+    # agentshim vouches for no Copilot model.
+    "models",
 }
 
 

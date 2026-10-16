@@ -69,6 +69,18 @@ STRICT_MCP_FLAG = "--strict-mcp-config"
 
 PROFILE = ProviderProfile(
     name="claude",
+    # Model ids Claude Code's ``--model`` takes and agentshim has run, the
+    # default first. Context windows are in ``agentshim.core.models``.
+    models=(
+        "claude-opus-5",
+        "claude-opus-5-5",
+        "claude-fable-5-1",
+        "claude-fable-5",
+        "claude-sonnet-5-5",
+        "claude-sonnet-5",
+        "claude-haiku-5-5",
+        "claude-haiku-4-5",
+    ),
     display_name="Claude Code",
     binary="claude",
     supports_resume=True,

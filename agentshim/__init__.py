@@ -57,6 +57,8 @@ from .core import (
     McpServer,
     McpTransport,
     ModelPricing,
+    ModelSpec,
+    ModelTable,
     NativeMode,
     NativePermissions,
     NoopInstallation,
@@ -124,13 +126,16 @@ from .core import (
     UsageReport,
     compact_json,
     compose_event_handlers,
+    context_window,
     cost_usd,
+    default_models,
     default_pricing,
     dialect_problems,
     host_auth_plan,
     install_config_file,
     interactive_env,
     materialize,
+    model_spec,
     normalize,
     normalized_usage,
     parse_json_object,
@@ -171,7 +176,7 @@ from .providers.opencode import OpencodeProvider
 from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 
-__version__ = "0.17.0"
+__version__ = "0.18.0"
 
 __all__ = [
     "Agent",
@@ -244,6 +249,8 @@ __all__ = [
     "McpServer",
     "McpTransport",
     "ModelPricing",
+    "ModelSpec",
+    "ModelTable",
     "NativeMode",
     "NativePermissions",
     "NoRunningTurnError",
@@ -327,7 +334,9 @@ __all__ = [
     "compact_json",
     "compose_event_handlers",
     "confine",
+    "context_window",
     "cost_usd",
+    "default_models",
     "default_pricing",
     "dialect_problems",
     "get_provider",
@@ -336,6 +345,7 @@ __all__ = [
     "interactive_env",
     "map_mcp_servers",
     "materialize",
+    "model_spec",
     "normalize",
     "normalized_usage",
     "parse_json_object",

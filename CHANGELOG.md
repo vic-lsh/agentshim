@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.18.0 (2026-10-16)
+
+### Added
+
+- `context_window(provider, model)` and `model_spec(provider, model)`: a model's context
+  window in tokens from a static, versioned table (`ModelSpec`, `ModelTable`,
+  `default_models()`), each entry citing the vendor page it was read from. Covers the
+  Claude 5 family (`claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`,
+  `claude-haiku-5-5`, all 1M) and current OpenAI models. An unknown model, or a
+  bracketed variant, returns `None`; the lookup never matches by prefix.
+- `ProviderProfile.models`: the model ids a provider's CLI is known to run, the default
+  first, and `ProviderProfile.default_model`. Claude, Codex and opencode declare theirs.
+
 ## 0.17.0 (2026-10-15)
 
 ### Added

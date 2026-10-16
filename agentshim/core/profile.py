@@ -237,3 +237,13 @@ class ProviderProfile:
     #: The settings files the CLI reads at start that can change how it logs
     #: in, or ``None`` if it has none (0.17.0+).
     settings: SettingsSpec | None = None
+    #: The model ids agentshim knows this CLI runs, as its ``--model`` flag
+    #: takes them, the provider's default first (0.18.0+). Empty means
+    #: agentshim knows of none: a caller may still pass any model, at its own
+    #: risk. A model's facts (its context window) are in ``model_spec``.
+    models: tuple[str, ...] = ()
+
+    @property
+    def default_model(self) -> str | None:
+        """The model to run when a caller must name one and has none: ``models[0]``, or ``None``."""
+        return self.models[0] if self.models else None

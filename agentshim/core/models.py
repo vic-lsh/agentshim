@@ -32,7 +32,18 @@ if TYPE_CHECKING:
 
 _DATE_SUFFIX = re.compile(r"-\d{8}$")
 
+#: Vendor whose models each provider name, or ``vendor/`` prefix, runs: every
+#: one pricing knows, plus the prefixes opencode names Google's models with
+#: (``google/``, ``google-vertex/``). Google is not priced, so pricing's map
+#: lacks them.
+MODEL_VENDORS: dict[str, str] = {
+    **PROVIDER_VENDORS,
+    "google": "google",
+    "google-vertex": "google",
+}
+
 OPENAI_MODELS_URL = "https://developers.openai.com/api/docs/models"
+GOOGLE_MODELS_URL = "https://ai.google.dev/gemini-api/docs/models"
 ANTHROPIC_CONTEXT_WINDOWS_URL = (
     "https://platform.claude.com/docs/en/build-with-claude/context-windows"
 )
@@ -165,10 +176,10 @@ def model_spec(
     name = model.strip().lower()
     if "[" in name:
         return None
-    vendor = PROVIDER_VENDORS.get(provider.strip().lower())
+    vendor = MODEL_VENDORS.get(provider.strip().lower())
     if "/" in name:
         prefix, _, rest = name.partition("/")
-        vendor = PROVIDER_VENDORS.get(prefix)
+        vendor = MODEL_VENDORS.get(prefix)
         name = rest
     if vendor is None or not name:
         return None
@@ -212,13 +223,26 @@ def _anthropic(model: str, context_window: int) -> ModelSpec:
     )
 
 
+def _google(model: str, context_window: int) -> ModelSpec:
+    # Each model's page under GOOGLE_MODELS_URL ("Input token limit"), which
+    # is the window Google publishes for the model.
+    return ModelSpec(
+        vendor="google",
+        model=model,
+        context_window=context_window,
+        source=f"{GOOGLE_MODELS_URL}/{model}",
+        checked=_CHECKED,
+    )
+
+
 _ONE_MILLION = 1_000_000
+_GOOGLE_1M = 1_048_576
 _OPENAI_1_05M = 1_050_000
 
 #: The table agentshim ships. Update it as described in ``docs/models.md``.
 #: A model whose window could not be read from its vendor's page is left out.
 DEFAULT_MODELS = ModelTable(
-    version="2026-10-16",
+    version="2026-10-16.1",
     last_updated=_CHECKED,
     entries=(
         # OpenAI (Codex): each model page reads "1,050,000 context window".
@@ -243,5 +267,7 @@ DEFAULT_MODELS = ModelTable(
         _anthropic("claude-sonnet-4-6", _ONE_MILLION),
         _anthropic("claude-haiku-5-5", _ONE_MILLION),
         _anthropic("claude-haiku-4-5", 200_000),
+        # Google (opencode): the page reads "Input token limit 1,048,576".
+        _google("gemini-3-pro-preview", _GOOGLE_1M),
     ),
 )

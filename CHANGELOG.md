@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.18.1 (2026-10-16)
+
+### Fixed
+
+- `context_window` knows Google's models named `google/` or `google-vertex/`:
+  `gemini-3-pro-preview` is 1,048,576 tokens (opencode's default model).
+  Before, it returned `None` for every model opencode lists. A new test holds that every
+  model in any provider's `ProviderProfile.models` has a known window.
+
 ## 0.18.0 (2026-10-16)
 
 ### Added

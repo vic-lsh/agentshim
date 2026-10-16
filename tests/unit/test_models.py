@@ -61,6 +61,8 @@ class TestShippedTable:
             ("claude", "claude-haiku-4-5", 200_000),
             ("codex", "gpt-6-luna", 1_050_000),
             ("codex", "gpt-5.6-sol", 1_050_000),
+            ("opencode", "google-vertex/gemini-3-pro-preview", 1_048_576),
+            ("opencode", "google/gemini-3-pro-preview", 1_048_576),
         ],
     )
     def test_current_models_have_their_published_window(
@@ -81,8 +83,8 @@ class TestLookup:
     def test_a_missing_model_or_a_provider_with_no_vendor_is_unknown(self) -> None:
         assert context_window("claude", None) is None
         assert context_window("claude", "") is None
-        assert context_window("gemini", "gemini-3-pro-preview") is None
-        assert context_window("opencode", "google-vertex/gemini-3-pro-preview") is None
+        assert context_window("copilot", "gemini-3-pro-preview") is None
+        assert context_window("opencode", "gemini-3-pro-preview") is None
 
     def test_a_model_run_through_another_vendors_provider_is_unknown(self) -> None:
         assert context_window("codex", "claude-opus-5-5") is None
@@ -149,12 +151,10 @@ class TestProfileModels:
         assert profile.default_model == (profile.models[0] if profile.models else None)
 
     @pytest.mark.parametrize("provider", provider_names())
-    def test_every_listed_model_of_a_known_vendor_has_a_window(self, provider: str) -> None:
-        """A model a provider offers is never left without its facts by accident."""
+    def test_every_listed_model_has_a_window(self, provider: str) -> None:
+        """A model a provider offers is never left without its facts."""
         profile = get_provider(provider).profile
         for model in profile.models:
-            if "/" in model and not model.startswith(("anthropic/", "openai/")):
-                continue
             assert context_window(provider, model) is not None, (provider, model)
 
     def test_the_current_claude_models_are_offered(self) -> None:

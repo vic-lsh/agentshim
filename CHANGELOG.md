@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.18.2 (2026-10-16)
+
+### Added
+
+- Codex's `ProviderProfile.models` lists `gpt-6.1-sol`, which codex-cli 0.160.0's own
+  model list (`codex debug models`) offers beside `gpt-6-astra`, `gpt-6-sol` and
+  `gpt-6-luna`. Its context window was already in the table. The default (the first
+  entry, `gpt-5.6-sol`) is unchanged.
+
 ## 0.18.1 (2026-10-16)
 
 ### Fixed

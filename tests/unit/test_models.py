@@ -157,6 +157,13 @@ class TestProfileModels:
         for model in profile.models:
             assert context_window(provider, model) is not None, (provider, model)
 
+    def test_the_current_codex_models_are_offered_and_the_default_is_unchanged(self) -> None:
+        """The ids codex-cli 0.160.0 lists (``codex debug models``), the default still first."""
+        profile = get_provider("codex").profile
+        for model in ("gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"):
+            assert model in profile.models
+        assert profile.default_model == "gpt-5.6-sol"
+
     def test_the_current_claude_models_are_offered(self) -> None:
         models = get_provider("claude").profile.models
         for model in (

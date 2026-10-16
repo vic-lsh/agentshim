@@ -34,7 +34,7 @@ context_window("claude", "claude-opus-9")     # None: not known
 
 - The provider resolves to a vendor as pricing does (`codex` runs OpenAI
   models, `claude` Anthropic ones); a `vendor/model` name (opencode) names the
-  vendor itself, and a trailing date snapshot (`-20251001`) is dropped.
+  vendor itself (`google/` and `google-vertex/` are Google), and a trailing date snapshot (`-20251001`) is dropped.
 - An unknown model returns `None`. The lookup never matches by prefix or
   family and never falls back to another model's window. A bracketed variant
   (`claude-opus-5-5[1m]`) returns `None`, because a variant may change the
@@ -49,9 +49,11 @@ context_window("claude", "claude-opus-9")     # None: not known
    - OpenAI: `https://developers.openai.com/api/docs/models/<model>`
      ("context window");
    - Anthropic: <https://platform.claude.com/docs/en/build-with-claude/context-windows>
-     ("Context window sizes by model").
+     ("Context window sizes by model");
+   - Google: `https://ai.google.dev/gemini-api/docs/models/<model>`
+     ("Input token limit").
 2. Edit `DEFAULT_MODELS` in `agentshim/core/models.py` and set `_CHECKED`, the
    table's `version` and `last_updated` to today's date.
 3. Where a window is not published, leave the model out rather than guess.
-4. A model added to a provider's `ProviderProfile.models` needs a window when
-   its vendor is known; `tests/unit/test_models.py` fails otherwise.
+4. A model added to a provider's `ProviderProfile.models` needs a window;
+   `tests/unit/test_models.py` fails otherwise.

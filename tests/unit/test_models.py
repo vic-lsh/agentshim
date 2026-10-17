@@ -71,6 +71,96 @@ class TestShippedTable:
         assert context_window(provider, model) == window
 
 
+class TestPresentation:
+    @pytest.mark.parametrize(
+        "entry", TABLE.entries, ids=lambda entry: f"{entry.vendor}/{entry.model}"
+    )
+    def test_every_shipped_model_has_a_name_and_family(self, entry: ModelSpec) -> None:
+        assert entry.display_name
+        assert entry.family
+        assert (entry.tier is None) == (entry.tier_name is None)
+
+    @pytest.mark.parametrize("provider", provider_names())
+    def test_every_listed_model_is_named(self, provider: str) -> None:
+        for model in get_provider(provider).profile.models:
+            spec = model_spec(provider, model)
+            assert spec is not None
+            assert spec.display_name
+            assert spec.family
+
+    @pytest.mark.parametrize(
+        ("provider", "model", "expected"),
+        [
+            ("claude", "claude-opus-5-5", ("Opus 5.5", "Claude", 3, "Opus")),
+            ("claude", "claude-sonnet-5", ("Sonnet 5", "Claude", 2, "Sonnet")),
+            ("claude", "claude-haiku-4-5-20251001", ("Haiku 4.5", "Claude", 1, "Haiku")),
+            ("claude", "claude-fable-5-1", ("Fable 5.1", "Claude", 4, "Fable")),
+            ("codex", "gpt-6.1-sol", ("GPT-6.1 Sol", "GPT", 3, "Sol")),
+            ("codex", "gpt-6-luna", ("GPT-6 Luna", "GPT", 1, "Luna")),
+            (
+                "opencode",
+                "google-vertex/gemini-3-pro-preview",
+                ("Gemini 3 Pro Preview", "Gemini", 1, "Pro"),
+            ),
+        ],
+    )
+    def test_known_models_read_back(
+        self, provider: str, model: str, expected: tuple[str, str, int, str]
+    ) -> None:
+        spec = model_spec(provider, model)
+        assert spec is not None
+        assert (spec.display_name, spec.family, spec.tier, spec.tier_name) == expected
+
+    def test_a_model_on_no_ladder_has_no_tier(self) -> None:
+        spec = model_spec("codex", "gpt-5.5")
+        assert spec is not None
+        assert (spec.display_name, spec.tier, spec.tier_name) == ("GPT-5.5", None, None)
+
+    def test_a_tier_name_is_one_rank_and_a_rank_one_name_within_a_family(self) -> None:
+        ranks: dict[tuple[str, str], int] = {}
+        names: dict[tuple[str, int], str] = {}
+        for entry in TABLE.entries:
+            if entry.tier is None or entry.tier_name is None or entry.family is None:
+                continue
+            assert ranks.setdefault((entry.family, entry.tier_name), entry.tier) == entry.tier
+            assert names.setdefault((entry.family, entry.tier), entry.tier_name) == entry.tier_name
+
+    def test_the_claude_ladder_is_ordered(self) -> None:
+        def rank(model: str) -> int:
+            spec = model_spec("claude", model)
+            assert spec is not None
+            assert spec.tier is not None
+            return spec.tier
+
+        assert (
+            rank("claude-haiku-5-5")
+            < rank("claude-sonnet-5-5")
+            < rank("claude-opus-5-5")
+            < rank("claude-fable-5-1")
+        )
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"display_name": "X"},
+            {"family": "X"},
+            {"display_name": " ", "family": "X"},
+            {"display_name": "X", "family": "Y", "tier": 1},
+            {"display_name": "X", "family": "Y", "tier_name": "Z"},
+            {"display_name": "X", "family": "Y", "tier": 0, "tier_name": "Z"},
+            {"display_name": "X", "family": "Y", "tier": True, "tier_name": "Z"},
+            {"tier": 1, "tier_name": "Z"},
+        ],
+    )
+    def test_a_bad_presentation_is_rejected(self, overrides: dict[str, object]) -> None:
+        with pytest.raises(ValueError, match=r"\S"):
+            _spec(**overrides)
+
+    def test_a_caller_entry_may_omit_every_presentation_field(self) -> None:
+        spec = _spec()
+        assert (spec.display_name, spec.family, spec.tier, spec.tier_name) == (None,) * 4
+
+
 class TestLookup:
     def test_a_vendor_prefix_and_a_date_snapshot_resolve_to_the_model(self) -> None:
         assert context_window("opencode", "anthropic/claude-opus-5-5") == 1_000_000

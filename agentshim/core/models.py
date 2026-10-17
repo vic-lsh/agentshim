@@ -60,6 +60,15 @@ class ModelSpec:
             output together), at the vendor's default for that id.
         source: URL of the official page the number was read from.
         checked: Date the number was last checked against ``source``.
+        display_name: A readable name for the model (``"Opus 5.5"``), or
+            ``None`` for a caller-built entry that has none.
+        family: The model line the model belongs to (``"Claude"``, ``"GPT"``,
+            ``"Gemini"``); set together with ``display_name``.
+        tier: The model's rank within its family, ``1`` the smallest and
+            cheapest; versions of one tier share a rank. ``None`` for a model
+            that sits on no tier ladder.
+        tier_name: The tier's readable name (``"Opus"``); set together with
+            ``tier``.
     """
 
     vendor: str
@@ -67,6 +76,10 @@ class ModelSpec:
     context_window: int
     source: str
     checked: dt.date
+    display_name: str | None = None
+    family: str | None = None
+    tier: int | None = None
+    tier_name: str | None = None
 
     def __post_init__(self) -> None:
         """Reject a missing name, source or date, and a window that is not a positive int."""
@@ -86,6 +99,26 @@ class ModelSpec:
         window = cast("object", self.context_window)
         if isinstance(window, bool) or not isinstance(window, int) or window <= 0:
             msg = f"{self.vendor}/{self.model}: context_window must be a positive int"
+            raise ValueError(msg)
+        self._check_presentation()
+
+    def _check_presentation(self) -> None:
+        """Reject a half-set name pair or tier pair, and a tier that is not a positive int."""
+        for first, second in (("display_name", "family"), ("tier", "tier_name")):
+            if (getattr(self, first) is None) != (getattr(self, second) is None):
+                msg = f"{self.vendor}/{self.model}: {first} and {second} are set together"
+                raise ValueError(msg)
+        for name in ("display_name", "family", "tier_name"):
+            value: object = getattr(self, name)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                msg = f"{self.vendor}/{self.model}: {name} must be a non-empty string"
+                raise ValueError(msg)
+        tier = cast("object", self.tier)
+        if tier is not None and (isinstance(tier, bool) or not isinstance(tier, int) or tier < 1):
+            msg = f"{self.vendor}/{self.model}: tier must be a positive int"
+            raise ValueError(msg)
+        if self.tier is not None and self.family is None:
+            msg = f"{self.vendor}/{self.model}: tier needs a family"
             raise ValueError(msg)
 
     @property
@@ -197,10 +230,15 @@ def default_models() -> ModelTable:
     return DEFAULT_MODELS
 
 
-_CHECKED = dt.date(2026, 10, 16)
+_CHECKED = dt.date(2026, 10, 17)
 
 
-def _openai(model: str, context_window: int) -> ModelSpec:
+def _openai(
+    model: str,
+    context_window: int,
+    display_name: str,
+    tier: tuple[int, str] | None = None,
+) -> ModelSpec:
     # Each model's page under OPENAI_MODELS_URL ("<n> context window").
     return ModelSpec(
         vendor="openai",
@@ -208,10 +246,14 @@ def _openai(model: str, context_window: int) -> ModelSpec:
         context_window=context_window,
         source=f"{OPENAI_MODELS_URL}/{model}",
         checked=_CHECKED,
+        display_name=display_name,
+        family="GPT",
+        tier=None if tier is None else tier[0],
+        tier_name=None if tier is None else tier[1],
     )
 
 
-def _anthropic(model: str, context_window: int) -> ModelSpec:
+def _anthropic(model: str, context_window: int, tier: tuple[int, str], version: str) -> ModelSpec:
     # "Context window sizes by model": the 1M models list 1M as the default
     # with no beta header; "other Claude models ... have a 200k-token" window.
     return ModelSpec(
@@ -220,10 +262,14 @@ def _anthropic(model: str, context_window: int) -> ModelSpec:
         context_window=context_window,
         source=ANTHROPIC_CONTEXT_WINDOWS_URL,
         checked=_CHECKED,
+        display_name=f"{tier[1]} {version}",
+        family="Claude",
+        tier=tier[0],
+        tier_name=tier[1],
     )
 
 
-def _google(model: str, context_window: int) -> ModelSpec:
+def _google(model: str, context_window: int, display_name: str, tier: tuple[int, str]) -> ModelSpec:
     # Each model's page under GOOGLE_MODELS_URL ("Input token limit"), which
     # is the window Google publishes for the model.
     return ModelSpec(
@@ -232,8 +278,24 @@ def _google(model: str, context_window: int) -> ModelSpec:
         context_window=context_window,
         source=f"{GOOGLE_MODELS_URL}/{model}",
         checked=_CHECKED,
+        display_name=display_name,
+        family="Gemini",
+        tier=tier[0],
+        tier_name=tier[1],
     )
 
+
+# Tier ladders, smallest and cheapest first. Anthropic ranks its lines
+# Haiku < Sonnet < Opus < Fable; Codex's GPT lines Luna < Terra < Sol < Astra.
+_HAIKU = (1, "Haiku")
+_SONNET = (2, "Sonnet")
+_OPUS = (3, "Opus")
+_FABLE = (4, "Fable")
+_LUNA = (1, "Luna")
+_TERRA = (2, "Terra")
+_SOL = (3, "Sol")
+_ASTRA = (4, "Astra")
+_PRO = (1, "Pro")
 
 _ONE_MILLION = 1_000_000
 _GOOGLE_1M = 1_048_576
@@ -242,32 +304,32 @@ _OPENAI_1_05M = 1_050_000
 #: The table agentshim ships. Update it as described in ``docs/models.md``.
 #: A model whose window could not be read from its vendor's page is left out.
 DEFAULT_MODELS = ModelTable(
-    version="2026-10-16.1",
+    version="2026-10-17.1",
     last_updated=_CHECKED,
     entries=(
         # OpenAI (Codex): each model page reads "1,050,000 context window".
-        _openai("gpt-6-astra", _OPENAI_1_05M),
-        _openai("gpt-6.1-sol", _OPENAI_1_05M),
-        _openai("gpt-6-sol", _OPENAI_1_05M),
-        _openai("gpt-6-luna", _OPENAI_1_05M),
-        _openai("gpt-5.6-sol", _OPENAI_1_05M),
-        _openai("gpt-5.6-terra", _OPENAI_1_05M),
-        _openai("gpt-5.6-luna", _OPENAI_1_05M),
-        _openai("gpt-5.5", _OPENAI_1_05M),
+        _openai("gpt-6-astra", _OPENAI_1_05M, "GPT-6 Astra", _ASTRA),
+        _openai("gpt-6.1-sol", _OPENAI_1_05M, "GPT-6.1 Sol", _SOL),
+        _openai("gpt-6-sol", _OPENAI_1_05M, "GPT-6 Sol", _SOL),
+        _openai("gpt-6-luna", _OPENAI_1_05M, "GPT-6 Luna", _LUNA),
+        _openai("gpt-5.6-sol", _OPENAI_1_05M, "GPT-5.6 Sol", _SOL),
+        _openai("gpt-5.6-terra", _OPENAI_1_05M, "GPT-5.6 Terra", _TERRA),
+        _openai("gpt-5.6-luna", _OPENAI_1_05M, "GPT-5.6 Luna", _LUNA),
+        _openai("gpt-5.5", _OPENAI_1_05M, "GPT-5.5"),
         # Anthropic (Claude).
-        _anthropic("claude-fable-5-1", _ONE_MILLION),
-        _anthropic("claude-fable-5", _ONE_MILLION),
-        _anthropic("claude-opus-5-5", _ONE_MILLION),
-        _anthropic("claude-opus-5", _ONE_MILLION),
-        _anthropic("claude-opus-4-8", _ONE_MILLION),
-        _anthropic("claude-opus-4-7", _ONE_MILLION),
-        _anthropic("claude-opus-4-6", _ONE_MILLION),
-        _anthropic("claude-sonnet-5-5", _ONE_MILLION),
-        _anthropic("claude-sonnet-5", _ONE_MILLION),
-        _anthropic("claude-sonnet-4-6", _ONE_MILLION),
-        _anthropic("claude-haiku-5-5", _ONE_MILLION),
-        _anthropic("claude-haiku-4-5", 200_000),
+        _anthropic("claude-fable-5-1", _ONE_MILLION, _FABLE, "5.1"),
+        _anthropic("claude-fable-5", _ONE_MILLION, _FABLE, "5"),
+        _anthropic("claude-opus-5-5", _ONE_MILLION, _OPUS, "5.5"),
+        _anthropic("claude-opus-5", _ONE_MILLION, _OPUS, "5"),
+        _anthropic("claude-opus-4-8", _ONE_MILLION, _OPUS, "4.8"),
+        _anthropic("claude-opus-4-7", _ONE_MILLION, _OPUS, "4.7"),
+        _anthropic("claude-opus-4-6", _ONE_MILLION, _OPUS, "4.6"),
+        _anthropic("claude-sonnet-5-5", _ONE_MILLION, _SONNET, "5.5"),
+        _anthropic("claude-sonnet-5", _ONE_MILLION, _SONNET, "5"),
+        _anthropic("claude-sonnet-4-6", _ONE_MILLION, _SONNET, "4.6"),
+        _anthropic("claude-haiku-5-5", _ONE_MILLION, _HAIKU, "5.5"),
+        _anthropic("claude-haiku-4-5", 200_000, _HAIKU, "4.5"),
         # Google (opencode): the page reads "Input token limit 1,048,576".
-        _google("gemini-3-pro-preview", _GOOGLE_1M),
+        _google("gemini-3-pro-preview", _GOOGLE_1M, "Gemini 3 Pro Preview", _PRO),
     ),
 )

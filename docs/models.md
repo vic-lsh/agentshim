@@ -43,6 +43,24 @@ context_window("claude", "claude-opus-9")     # None: not known
   `default_models().with_entries([...], version="mine")` and passes it as the
   `table` argument.
 
+## Names, families and tiers
+
+Each shipped `ModelSpec` also names the model for a picker: `display_name`
+(`"Opus 5.5"`), `family` (`"Claude"`, `"GPT"`, `"Gemini"`), `tier` and
+`tier_name`. A tier is a rank within a family, `1` the smallest and cheapest
+(Haiku < Sonnet < Opus < Fable; Luna < Terra < Sol < Astra), shared by every
+version of that tier. A model that sits on no ladder (`gpt-5.5`) has no tier.
+A harness's readable name is `ProviderProfile.display_name`.
+
+```python
+spec = model_spec("claude", "claude-opus-5-5")
+spec.display_name, spec.family, spec.tier, spec.tier_name
+# ("Opus 5.5", "Claude", 3, "Opus")
+```
+
+A caller-built entry may leave all four `None`; `display_name` and `family`
+are set together, as are `tier` and `tier_name`, and a tier needs a family.
+
 ### Updating the table
 
 1. Read each model's window from its vendor's page:
@@ -54,6 +72,7 @@ context_window("claude", "claude-opus-9")     # None: not known
      ("Input token limit").
 2. Edit `DEFAULT_MODELS` in `agentshim/core/models.py` and set `_CHECKED`, the
    table's `version` and `last_updated` to today's date.
-3. Where a window is not published, leave the model out rather than guess.
-4. A model added to a provider's `ProviderProfile.models` needs a window;
+3. Give each new model its `display_name`, `family` and tier (see above).
+4. Where a window is not published, leave the model out rather than guess.
+5. A model added to a provider's `ProviderProfile.models` needs a window;
    `tests/unit/test_models.py` fails otherwise.

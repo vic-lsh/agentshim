@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.19.0 (2026-10-17)
+
+### Added
+
+- `ModelSpec` carries what a model picker needs: `display_name` (`"Opus 5.5"`), `family`
+  (`"Claude"`, `"GPT"`, `"Gemini"`), and a within-family ladder, `tier` (a rank, `1` the
+  smallest) with `tier_name` (`"Opus"`). Haiku < Sonnet < Opus < Fable; Luna < Terra < Sol <
+  Astra. All four fields default to `None`, so a caller-built `ModelSpec` keeps working;
+  every shipped entry has a name and family, and every one but `gpt-5.5` a tier.
+  Read them with `model_spec(provider, model)`. A provider's readable name was already
+  `ProviderProfile.display_name`.
+
 ## 0.18.3 (2026-10-16)
 
 ### Fixed

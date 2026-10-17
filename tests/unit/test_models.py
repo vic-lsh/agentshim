@@ -81,6 +81,13 @@ class TestPresentation:
         assert (entry.tier is None) == (entry.tier_name is None)
 
     @pytest.mark.parametrize("provider", provider_names())
+    def test_every_harness_has_a_readable_name(self, provider: str) -> None:
+        name = get_provider(provider).profile.display_name
+        assert name == name.strip()
+        assert name
+        assert name != provider or provider == "opencode"
+
+    @pytest.mark.parametrize("provider", provider_names())
     def test_every_listed_model_is_named(self, provider: str) -> None:
         for model in get_provider(provider).profile.models:
             spec = model_spec(provider, model)

@@ -392,6 +392,16 @@ def test_the_turn_asks_codex_for_the_reasoning_effort_of_the_request_or_the_spec
     conversation.close()
 
 
+def test_every_turn_asks_codex_for_detailed_reasoning_summaries() -> None:
+    r = rig()
+    conversation = r.open()
+    r.turn(conversation)
+    r.turn(conversation, reasoning_effort="high")
+    summaries = [req.params.to_wire().get("summary") for req in r.script.requests("turn/start")]
+    assert summaries == ["detailed", "detailed"]
+    conversation.close()
+
+
 def test_a_request_cwd_overrides_the_conversations_for_that_turn() -> None:
     r = rig()
     conversation = r.open()

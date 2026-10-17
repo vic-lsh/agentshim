@@ -50,7 +50,8 @@ def _served(
     skip: frozenset[str] = frozenset(),
     tolerated: frozenset[str] = frozenset(),
 ) -> tuple[CodexAppServerTransport, ReplayPeer]:
-    peer = ReplayPeer(entries, skip=skip, tolerated=tolerated)
+    # The recordings predate the reasoning summary mode that every turn now asks for.
+    peer = ReplayPeer(entries, skip=skip, extras=frozenset({"summary"}), tolerated=tolerated)
     executor = FakeExecutor([], peers=lambda _request: peer)
     transport = CodexAppServerTransport(executor=executor, env=dict(ENV), clock=FakeClock())
     return transport, peer

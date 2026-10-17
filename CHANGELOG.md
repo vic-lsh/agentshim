@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.18.3 (2026-10-16)
+
+### Fixed
+
+- Codex turns ask for detailed reasoning summaries: `turn/start` carries `summary: "detailed"`
+  on the app-server transport, and `codex exec` gets `--config model_reasoning_summary="detailed"`.
+  Before, Codex sent no reasoning items, so a Codex transcript had no `Reasoning` events.
+
 ## 0.18.2 (2026-10-16)
 
 ### Added

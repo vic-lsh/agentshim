@@ -200,6 +200,7 @@ class CodexProvider:
         argv += _scope_overrides(ctx)
         if ctx.reasoning_effort:
             argv += ["--config", f"model_reasoning_effort={toml_str(ctx.reasoning_effort)}"]
+        argv += ["--config", 'model_reasoning_summary="detailed"']
         argv += list(ctx.mcp_argv)
         if ctx.schema_path:
             argv += ["--output-schema", ctx.schema_path]

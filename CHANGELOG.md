@@ -7,7 +7,7 @@
 - `model_display_name(provider, model)` and `ModelSpec.display_name`: how a person reads a
   model's name (`claude-opus-5-5` is "Opus 5.5", `gpt-6.1-sol` is "GPT-6.1 Sol"), from the same
   table and with the same exact lookup as `context_window`. Every shipped entry has one; an
-  unknown model returns `None`. A new test holds that every model in any provider's
+  unknown model returns `None`. The OpenCode profile's `display_name` is capitalised (`OpenCode`, was `opencode`). A new test holds that every model in any provider's
   `ProviderProfile.models` has a display name.
 
 ## 0.18.3 (2026-10-16)

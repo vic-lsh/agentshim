@@ -61,7 +61,7 @@ class TestProfile:
     def test_declared_capabilities(self) -> None:
         profile = OpencodeProvider().profile
         assert profile.name == "opencode"
-        assert profile.display_name == "opencode"
+        assert profile.display_name == "OpenCode"
         assert profile.binary == "opencode"
         assert profile.supports_resume is True
         assert profile.supports_reasoning_effort is False

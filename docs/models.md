@@ -43,6 +43,13 @@ context_window("claude", "claude-opus-9")     # None: not known
   `default_models().with_entries([...], version="mine")` and passes it as the
   `table` argument.
 
+## Display names
+
+`model_display_name(provider, model)` returns how a person reads the model
+(`"Opus 5.5"`, `"GPT-6.1 Sol"`), from the same entry and with the same exact
+lookup as `context_window`; an unknown model returns `None`, and the caller
+decides what to show. Every shipped entry has a `display_name`.
+
 ### Updating the table
 
 1. Read each model's window from its vendor's page:
@@ -52,7 +59,7 @@ context_window("claude", "claude-opus-9")     # None: not known
      ("Context window sizes by model");
    - Google: `https://ai.google.dev/gemini-api/docs/models/<model>`
      ("Input token limit").
-2. Edit `DEFAULT_MODELS` in `agentshim/core/models.py` and set `_CHECKED`, the
+2. Give each entry its vendor's name for the model as `display_name`. Edit `DEFAULT_MODELS` in `agentshim/core/models.py` and set `_CHECKED`, the
    table's `version` and `last_updated` to today's date.
 3. Where a window is not published, leave the model out rather than guess.
 4. A model added to a provider's `ProviderProfile.models` needs a window;

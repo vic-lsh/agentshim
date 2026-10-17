@@ -95,7 +95,14 @@ from .mcp import (
     StdioMcpServer,
     install_config_file,
 )
-from .models import ModelSpec, ModelTable, context_window, default_models, model_spec
+from .models import (
+    ModelSpec,
+    ModelTable,
+    context_window,
+    default_models,
+    model_display_name,
+    model_spec,
+)
 from .permissions import ApprovalPolicy, NativeMode, NativePermissions
 from .pricing import ModelPricing, PricingTable, cost_usd, default_pricing, price_for
 from .profile import (
@@ -254,6 +261,7 @@ __all__ = [
     "install_config_file",
     "interactive_env",
     "materialize",
+    "model_display_name",
     "model_spec",
     "normalize",
     "normalized_usage",

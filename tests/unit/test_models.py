@@ -13,6 +13,7 @@ from agentshim import (
     context_window,
     default_models,
     get_provider,
+    model_display_name,
     model_spec,
     provider_names,
 )
@@ -173,3 +174,37 @@ class TestProfileModels:
             "claude-haiku-5-5",
         ):
             assert model in models
+
+
+class TestDisplayNames:
+    @pytest.mark.parametrize("entry", TABLE.entries, ids=lambda entry: entry.model)
+    def test_every_shipped_entry_reads_as_a_name_not_an_id(self, entry: ModelSpec) -> None:
+        name = entry.display_name
+        assert name is not None
+        assert name[0].isupper()
+        assert entry.model not in name
+        assert "_" not in name
+
+    @pytest.mark.parametrize("provider", provider_names())
+    def test_every_listed_model_has_a_display_name(self, provider: str) -> None:
+        for model in get_provider(provider).profile.models:
+            assert model_display_name(provider, model), (provider, model)
+
+    def test_names_resolve_as_context_windows_do(self) -> None:
+        assert model_display_name("claude", "claude-opus-5-5") == "Opus 5.5"
+        assert model_display_name("codex", "gpt-6.1-sol") == "GPT-6.1 Sol"
+        assert model_display_name("claude", "claude-haiku-4-5-20251001") == "Haiku 4.5"
+        assert model_display_name("opencode", "google-vertex/gemini-3-pro-preview") == (
+            "Gemini 3 Pro Preview"
+        )
+
+    def test_an_unknown_model_or_a_bracketed_variant_has_none(self) -> None:
+        assert model_display_name("claude", "claude-opus-9") is None
+        assert model_display_name("claude", "claude-opus-5-5[1m]") is None
+        assert model_display_name("claude", None) is None
+
+    def test_a_caller_entry_without_a_name_has_none_and_a_blank_name_is_rejected(self) -> None:
+        table = TABLE.with_entries([_spec()], version="mine")
+        assert model_display_name("openai", "test-model", table) is None
+        with pytest.raises(ValueError, match="display_name"):
+            _spec(display_name=" ")

@@ -60,6 +60,9 @@ class ModelSpec:
             output together), at the vendor's default for that id.
         source: URL of the official page the number was read from.
         checked: Date the number was last checked against ``source``.
+        display_name: How a person reads the model's name (``"Opus 5.5"``,
+            ``"GPT-6.1 Sol"``): the vendor's own marketing name, capitalised,
+            never the id. ``None`` for an entry a caller adds without one.
     """
 
     vendor: str
@@ -67,6 +70,7 @@ class ModelSpec:
     context_window: int
     source: str
     checked: dt.date
+    display_name: str | None = None
 
     def __post_init__(self) -> None:
         """Reject a missing name, source or date, and a window that is not a positive int."""
@@ -83,6 +87,10 @@ class ModelSpec:
         if not isinstance(checked, dt.date) or isinstance(checked, dt.datetime):
             msg = f"{self.vendor}/{self.model}: checked must be a datetime.date"
             raise TypeError(msg)
+        name = cast("object", self.display_name)
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            msg = f"{self.vendor}/{self.model}: display_name must be None or a non-empty string"
+            raise ValueError(msg)
         window = cast("object", self.context_window)
         if isinstance(window, bool) or not isinstance(window, int) or window <= 0:
             msg = f"{self.vendor}/{self.model}: context_window must be a positive int"
@@ -192,6 +200,19 @@ def context_window(provider: str, model: str | None, table: ModelTable | None = 
     return None if spec is None else spec.context_window
 
 
+def model_display_name(
+    provider: str, model: str | None, table: ModelTable | None = None
+) -> str | None:
+    """How a person reads *model*'s name when run through *provider*, or ``None`` when not known.
+
+    Resolves the model as :func:`model_spec` does, so it is exact: an unknown
+    model, a bracketed variant and a prefix of a known id return ``None``, and
+    the caller decides what to show (never a guess from the id).
+    """
+    spec = model_spec(provider, model, table)
+    return None if spec is None else spec.display_name
+
+
 def default_models() -> ModelTable:
     """The table agentshim ships (:data:`DEFAULT_MODELS`)."""
     return DEFAULT_MODELS
@@ -200,36 +221,39 @@ def default_models() -> ModelTable:
 _CHECKED = dt.date(2026, 10, 16)
 
 
-def _openai(model: str, context_window: int) -> ModelSpec:
+def _openai(model: str, display_name: str, context_window: int) -> ModelSpec:
     # Each model's page under OPENAI_MODELS_URL ("<n> context window").
     return ModelSpec(
         vendor="openai",
         model=model,
         context_window=context_window,
+        display_name=display_name,
         source=f"{OPENAI_MODELS_URL}/{model}",
         checked=_CHECKED,
     )
 
 
-def _anthropic(model: str, context_window: int) -> ModelSpec:
+def _anthropic(model: str, display_name: str, context_window: int) -> ModelSpec:
     # "Context window sizes by model": the 1M models list 1M as the default
     # with no beta header; "other Claude models ... have a 200k-token" window.
     return ModelSpec(
         vendor="anthropic",
         model=model,
         context_window=context_window,
+        display_name=display_name,
         source=ANTHROPIC_CONTEXT_WINDOWS_URL,
         checked=_CHECKED,
     )
 
 
-def _google(model: str, context_window: int) -> ModelSpec:
+def _google(model: str, display_name: str, context_window: int) -> ModelSpec:
     # Each model's page under GOOGLE_MODELS_URL ("Input token limit"), which
     # is the window Google publishes for the model.
     return ModelSpec(
         vendor="google",
         model=model,
         context_window=context_window,
+        display_name=display_name,
         source=f"{GOOGLE_MODELS_URL}/{model}",
         checked=_CHECKED,
     )
@@ -246,28 +270,28 @@ DEFAULT_MODELS = ModelTable(
     last_updated=_CHECKED,
     entries=(
         # OpenAI (Codex): each model page reads "1,050,000 context window".
-        _openai("gpt-6-astra", _OPENAI_1_05M),
-        _openai("gpt-6.1-sol", _OPENAI_1_05M),
-        _openai("gpt-6-sol", _OPENAI_1_05M),
-        _openai("gpt-6-luna", _OPENAI_1_05M),
-        _openai("gpt-5.6-sol", _OPENAI_1_05M),
-        _openai("gpt-5.6-terra", _OPENAI_1_05M),
-        _openai("gpt-5.6-luna", _OPENAI_1_05M),
-        _openai("gpt-5.5", _OPENAI_1_05M),
+        _openai("gpt-6-astra", "GPT-6 Astra", _OPENAI_1_05M),
+        _openai("gpt-6.1-sol", "GPT-6.1 Sol", _OPENAI_1_05M),
+        _openai("gpt-6-sol", "GPT-6 Sol", _OPENAI_1_05M),
+        _openai("gpt-6-luna", "GPT-6 Luna", _OPENAI_1_05M),
+        _openai("gpt-5.6-sol", "GPT-5.6 Sol", _OPENAI_1_05M),
+        _openai("gpt-5.6-terra", "GPT-5.6 Terra", _OPENAI_1_05M),
+        _openai("gpt-5.6-luna", "GPT-5.6 Luna", _OPENAI_1_05M),
+        _openai("gpt-5.5", "GPT-5.5", _OPENAI_1_05M),
         # Anthropic (Claude).
-        _anthropic("claude-fable-5-1", _ONE_MILLION),
-        _anthropic("claude-fable-5", _ONE_MILLION),
-        _anthropic("claude-opus-5-5", _ONE_MILLION),
-        _anthropic("claude-opus-5", _ONE_MILLION),
-        _anthropic("claude-opus-4-8", _ONE_MILLION),
-        _anthropic("claude-opus-4-7", _ONE_MILLION),
-        _anthropic("claude-opus-4-6", _ONE_MILLION),
-        _anthropic("claude-sonnet-5-5", _ONE_MILLION),
-        _anthropic("claude-sonnet-5", _ONE_MILLION),
-        _anthropic("claude-sonnet-4-6", _ONE_MILLION),
-        _anthropic("claude-haiku-5-5", _ONE_MILLION),
-        _anthropic("claude-haiku-4-5", 200_000),
+        _anthropic("claude-fable-5-1", "Fable 5.1", _ONE_MILLION),
+        _anthropic("claude-fable-5", "Fable 5", _ONE_MILLION),
+        _anthropic("claude-opus-5-5", "Opus 5.5", _ONE_MILLION),
+        _anthropic("claude-opus-5", "Opus 5", _ONE_MILLION),
+        _anthropic("claude-opus-4-8", "Opus 4.8", _ONE_MILLION),
+        _anthropic("claude-opus-4-7", "Opus 4.7", _ONE_MILLION),
+        _anthropic("claude-opus-4-6", "Opus 4.6", _ONE_MILLION),
+        _anthropic("claude-sonnet-5-5", "Sonnet 5.5", _ONE_MILLION),
+        _anthropic("claude-sonnet-5", "Sonnet 5", _ONE_MILLION),
+        _anthropic("claude-sonnet-4-6", "Sonnet 4.6", _ONE_MILLION),
+        _anthropic("claude-haiku-5-5", "Haiku 5.5", _ONE_MILLION),
+        _anthropic("claude-haiku-4-5", "Haiku 4.5", 200_000),
         # Google (opencode): the page reads "Input token limit 1,048,576".
-        _google("gemini-3-pro-preview", _GOOGLE_1M),
+        _google("gemini-3-pro-preview", "Gemini 3 Pro Preview", _GOOGLE_1M),
     ),
 )

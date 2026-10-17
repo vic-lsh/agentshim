@@ -83,6 +83,14 @@ class TestShellPathPolicy:
         assert not any("shell_environment_policy" in arg for arg in argv)
 
 
+class TestReasoningSummary:
+    def test_summary_is_always_detailed(self) -> None:
+        for effort in (None, "low"):
+            argv = CodexProvider().build_argv(_ctx(reasoning_effort=effort))
+            assert 'model_reasoning_summary="detailed"' in argv
+            assert argv[argv.index('model_reasoning_summary="detailed"') - 1] == "--config"
+
+
 class TestReasoningEffort:
     def test_effort_is_a_toml_config_override(self) -> None:
         argv = CodexProvider().build_argv(_ctx(reasoning_effort="xhigh"))

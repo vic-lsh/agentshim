@@ -75,6 +75,7 @@ from .protocol import (
     McpServerStartupState,
     McpServerStatusUpdatedNotification,
     Notification,
+    ReasoningSummary,
     Response,
     ServerRequest,
     ThreadItemAgentMessage,
@@ -664,6 +665,8 @@ class _Conversation:
             cwd=request.cwd or spec.cwd,
             model=spec.model,
             effort=request.reasoning_effort or spec.reasoning_effort,
+            # Without a summary mode Codex sends no reasoning items at all.
+            summary=ReasoningSummary.DETAILED,
             approval_policy=perms.approval,
             sandbox_policy=perms.policy,
             output_schema=schema,

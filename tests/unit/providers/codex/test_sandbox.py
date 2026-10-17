@@ -393,7 +393,15 @@ class TestBypassIsUnchanged:
         argv = CodexProvider().build_argv(
             ArgvContext("/bin/codex", None, {}, None, None, None, None)
         )
-        assert argv == ["/bin/codex", "exec", BYPASS_FLAG, "--skip-git-repo-check", "--json"]
+        assert argv == [
+            "/bin/codex",
+            "exec",
+            BYPASS_FLAG,
+            "--skip-git-repo-check",
+            "--json",
+            "--config",
+            'model_reasoning_summary="detailed"',
+        ]
 
 
 class TestParseSandbox:

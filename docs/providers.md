@@ -11,6 +11,12 @@ print(provider_names())
 agent = CliAgent("claude")
 ```
 
+The default catalog contains the five shipped providers. To use an external
+provider by name, extend it with that package's `ProviderPlugin` and pass the
+result as `catalog=` to `CliAgent`, `Agent`, or `probe_provider`. The same
+catalog works with the consumer test helpers. See [Adding a Provider](extending.md)
+for the plugin declaration and an out-of-package example.
+
 `model` is an opaque provider-specific string. agentshim passes it to the CLI
 unchanged and never validates it, so `"sonnet"` for Claude Code and
 `"anthropic/claude-sonnet-4-5"` for opencode are both just strings. `None`

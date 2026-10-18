@@ -70,7 +70,7 @@ STRICT_MCP_FLAG = "--strict-mcp-config"
 PROFILE = ProviderProfile(
     name="claude",
     # Model ids Claude Code's ``--model`` takes and agentshim has run, the
-    # default first. Context windows are in ``agentshim.core.models``.
+    # default first. Context windows are in ``agentshim.models``.
     models=(
         "claude-opus-5",
         "claude-opus-5-5",

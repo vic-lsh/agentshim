@@ -20,10 +20,7 @@ _EXEMPT_DIRS = ("providers", "testing")
 #: with why it exists. Keyed by literal rather than line so an unrelated edit
 #: above the site does not break the test. Remove an entry when the site stops branching on the name;
 #: never add one without a justification.
-ALLOWLIST: dict[tuple[str, str], str] = {
-    ("core/pricing.py", "codex"): "PROVIDER_VENDORS maps provider name to billing vendor",
-    ("core/pricing.py", "claude"): "PROVIDER_VENDORS maps provider name to billing vendor",
-}
+ALLOWLIST: dict[tuple[str, str], str] = {}
 
 
 def _violations() -> set[tuple[str, str]]:

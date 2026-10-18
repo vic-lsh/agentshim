@@ -13,6 +13,8 @@ how to render events.
 agentshim/
   __init__.py          public API; everything importable from here is supported
   agent.py             CliAgent, AgentSession: composition over providers/
+  models.py            public model lookup, composes catalog-supplied facts
+  pricing.py           public price lookup, composes catalog-supplied facts
   oneshot.py           OneShotTransport: CliAgent behind the Transport protocol
   session.py           Session, TurnTicket, Turn: the thin shell around the policy
   runtime.py           Agent: transport + permissions + clock + recovery policy
@@ -23,8 +25,9 @@ agentshim/
     turn.py            TurnRequest, TurnResult, OutputSchema
     events.py          event dataclasses, AgentEvent union, handlers
     usage.py           TokenUsage, TokenWeights, ProviderUsage
-    pricing.py         ModelPricing, PricingTable, price_for, cost_usd
-    models.py          ModelSpec, ModelTable, model_spec, context_window
+    models.py          ModelSpec, ModelTable (provider-independent values)
+    pricing.py         ModelPricing, PricingTable, cost_usd
+    plugin.py          required ProviderPlugin protocol, connection/pricing contexts
     errors.py          exception hierarchy
     permissions.py     NativeMode, NativePermissions, ApprovalPolicy
     clock.py           StopSignal, Clock, SystemClock
@@ -39,22 +42,24 @@ agentshim/
     _files.py          private: atomic_write, shared by schema.py and mcp.py
   execution/           process transport
     executor.py        CommandRequest, CommandResult, CommandHandle, sinks, CommandExecutor
+    readiness.py       run a static ProbeSpec on a CommandExecutor
     host.py            HostCommandExecutor
     transform.py       TransformingExecutor
     process.py         SpawnRequest, ProcessOutput, Process (long-lived processes)
     confinement.py     Confinement protocol, confine(), PathMap
     docker.py          DockerExecConfinement
   providers/           one folder per CLI, all with the same layout
-    __init__.py        get_provider(name), provider_names(), get_scripted_lines(name),
-                       get_stream_transport(name, ...)
-    claude/            provider.py, parser.py, events.py, scripted.py,
+    catalog.py          immutable ProviderCatalog
+    static_plugin.py    adapter for built-ins with static facts and constructors
+    __init__.py         built-in catalog and compatibility lookup functions
+    claude/            plugin.py, model_data.py, provider.py, parser.py, events.py, scripted.py, testing.py,
                        sandbox.py, hooks/, stream_transport.py (ClaudeStreamTransport),
                        stream_argv.py
-    codex/             provider.py, parser.py, events.py, scripted.py,
+    codex/             plugin.py, model_data.py, provider.py, parser.py, events.py, scripted.py, testing.py,
                        app_server/ (generated protocol types, see below)
-    copilot/           provider.py, parser.py, events.py, scripted.py
-    gemini/            provider.py, parser.py, events.py, scripted.py
-    opencode/          provider.py, parser.py, events.py, scripted.py
+    copilot/           plugin.py, provider.py, parser.py, events.py, scripted.py, testing.py
+    gemini/            plugin.py, provider.py, parser.py, events.py, scripted.py, testing.py
+    opencode/          plugin.py, model_data.py, provider.py, parser.py, events.py, scripted.py, testing.py
   testing/             test doubles shipped for consumers
     __init__.py        FakeExecutor, FakeRun, RecordingEventHandler, scripted_turn,
                        scripted_resume_failure, installed_mcp_servers
@@ -77,13 +82,15 @@ Rules:
   `providers/`, which `core/` may not do.
 - The layering is a build gate, not a convention. `[tool.importlinter]` in
   `pyproject.toml` declares it and `scripts/check_imports.sh` runs it.
-- A provider folder holds only argv construction, stream parsing, and
-  provider-specific options. Shared behaviour (tool pairing, JSON line
-  handling, MCP file merge, schema materialization) lives in `core/`.
+- A provider folder owns argv construction, stream parsing, provider-specific
+  options, its catalog declaration, and its test adapters. Shared behaviour
+  (tool pairing, JSON line handling, MCP file merge, schema materialization)
+  lives in `core/`.
 - Every provider package has the same shape: `provider.py`, `parser.py`,
   `events.py`, `scripted.py`, and an `__init__.py` exporting
   `<Name>Provider`, `PROFILE`, `<Name>StreamParser`, `scripted_lines`,
-  `resume_failure_lines`, and `mcp_entry` where the provider has one.
+  `resume_failure_lines`, and `mcp_entry` where the provider has one. Its
+  `plugin.py` exports the complete `PLUGIN` implementation.
   `fold_usage` is deliberately not on that list: every package has one and no
   two take the same arguments, so a caller could never write code against the
   name. It stays private to its own `parser.py`. Anything beyond that is
@@ -97,8 +104,13 @@ Rules:
   classes. `tests/unit/providers/test_conventions.py` is parametrized over
   `provider_names()` and pins the rules a per-provider suite cannot see one
   package dropping.
-- No module-level mutable registries. `providers/__init__.py` maps names to
-  provider factories with a plain dict.
+- No module-level mutable registries. Each provider exports a single plugin
+  declaration; `providers/__init__.py` assembles the immutable default catalog.
+  Callers can extend it without changing the built-in catalog.
+- Core owns model/pricing value types and the method-based plugin contract, not
+  vendor facts. Each provider answers model and pricing queries and can
+  enumerate facts for a versioned table snapshot. Callers can supply override
+  tables and a pricing context; an external plugin can calculate answers.
 - No required runtime dependencies. Logging goes through a
   `Callable[[str], None]` supplied by the caller.
 - Python 3.10 compatible, `from __future__ import annotations` everywhere,

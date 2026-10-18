@@ -19,7 +19,7 @@ from agentshim.execution.confinement import confine
 from agentshim.execution.host import HostCommandExecutor
 from agentshim.oneshot import OneShotTransport
 from agentshim.probe import probe_on
-from agentshim.providers import get_stream_transport
+from agentshim.providers import DEFAULT_CATALOG, ProviderCatalog, get_stream_transport
 from agentshim.session import Session, map_mcp_servers
 
 if TYPE_CHECKING:
@@ -66,6 +66,7 @@ class Agent:
         log: Callable[[str], None] | None = None,
         check_timeout: float = 15.0,
         transport: TransportKind = TransportKind.ONE_SHOT,
+        catalog: ProviderCatalog = DEFAULT_CATALOG,
     ) -> None:
         """Build the transport and bind the policy inputs.
 
@@ -88,6 +89,7 @@ class Agent:
         self._retry = retry if retry is not None else RetryPolicy()
         self._event_handlers = tuple(event_handlers)
         self._log = log
+        self._catalog = catalog
         self._probe_target: tuple[str, CommandExecutor, Mapping[str, str] | None] | None = None
         if isinstance(provider, str):
             self._transport: Transport = self._by_name(
@@ -136,9 +138,15 @@ class Agent:
                 ids=self._ids,
                 check_timeout=check_timeout,
                 log=self._log,
+                catalog=self._catalog,
             )
         return OneShotTransport(
-            provider, executor=base, env=env, check_timeout=check_timeout, log=self._log
+            provider,
+            executor=base,
+            env=env,
+            check_timeout=check_timeout,
+            log=self._log,
+            catalog=self._catalog,
         )
 
     def probe(self, *, timeout: float = 15.0) -> ProviderStatus:
@@ -156,7 +164,13 @@ class Agent:
             msg = "probe needs an Agent built from a provider name, not from a Transport"
             raise ValueError(msg)
         provider, executor, env = self._probe_target
-        return probe_on(provider, executor, env if env is not None else interactive_env(), timeout)
+        return probe_on(
+            provider,
+            executor,
+            env if env is not None else interactive_env(),
+            timeout,
+            catalog=self._catalog,
+        )
 
     @property
     def transport(self) -> Transport:

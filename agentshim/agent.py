@@ -38,7 +38,7 @@ from agentshim.core.skills import SkillTracker
 from agentshim.core.turn import TurnRequest, TurnResult, coerce_request
 from agentshim.execution.executor import CommandRequest
 from agentshim.execution.host import HostCommandExecutor
-from agentshim.providers import get_provider
+from agentshim.providers import DEFAULT_CATALOG, ProviderCatalog, get_provider
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -51,14 +51,14 @@ if TYPE_CHECKING:
     from agentshim.execution.executor import CommandExecutor, CommandHandle, CommandResult
 
 
-def _resolve_provider(provider: str | Provider) -> Provider:
+def _resolve_provider(provider: str | Provider, catalog: ProviderCatalog) -> Provider:
     """Resolve a provider name to a provider instance.
 
     This module sits above ``providers`` precisely so the documented
     ``CliAgent("claude")`` spelling can be a plain module-level import.
     """
     if isinstance(provider, str):
-        return get_provider(provider)
+        return get_provider(provider, catalog=catalog)
     return provider
 
 
@@ -82,6 +82,7 @@ class CliAgent:
         event_handlers: Sequence[AgentEventHandler] = (),
         check_timeout: float = 15.0,
         log: Callable[[str], None] | None = None,
+        catalog: ProviderCatalog = DEFAULT_CATALOG,
     ) -> None:
         """Configure a provider CLI and prove it is usable before any turn runs.
 
@@ -104,8 +105,9 @@ class CliAgent:
             check_timeout: Seconds allowed for the one-off health check. It is
                 not a budget for a turn.
             log: Sink for agentshim's own progress lines; dropped by default.
+            catalog: Provider names and implementations to use; defaults to the built-ins.
         """
-        self.provider: Provider = _resolve_provider(provider)
+        self.provider: Provider = _resolve_provider(provider, catalog)
         self.profile: ProviderProfile = self.provider.profile
         self.model = model
         self.executor: CommandExecutor = executor if executor is not None else HostCommandExecutor()

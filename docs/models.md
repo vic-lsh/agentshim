@@ -20,7 +20,7 @@ profile.default_model  # "claude-opus-5"
 
 ## Context windows
 
-`agentshim.core.models` ships a static, versioned table of context windows in
+`agentshim.models` composes a versioned snapshot of provider-supplied context windows in
 tokens, one `ModelSpec` per `(vendor, model)`, each with the official page it
 was read from (`source`) and the date it was checked (`checked`).
 
@@ -32,7 +32,7 @@ context_window("codex", "gpt-6-luna")         # 1_050_000
 context_window("claude", "claude-opus-9")     # None: not known
 ```
 
-- The provider resolves to a vendor as pricing does (`codex` runs OpenAI
+- The provider resolves to a vendor through its catalog plugin (`codex` runs OpenAI
   models, `claude` Anthropic ones); a `vendor/model` name (opencode) names the
   vendor itself (`google/` and `google-vertex/` are Google), and a trailing date snapshot (`-20251001`) is dropped.
 - An unknown model returns `None`. The lookup never matches by prefix or
@@ -42,6 +42,9 @@ context_window("claude", "claude-opus-9")     # None: not known
 - A caller pins or extends the table with
   `default_models().with_entries([...], version="mine")` and passes it as the
   `table` argument.
+- A plugin's `model_info(model, table)` method may calculate a model's facts
+  even when that model is not in the enumerated snapshot. It must still return
+  a `ModelSpec` with a source and checked date.
 
 ## Names, families and tiers
 
@@ -70,8 +73,9 @@ are set together, as are `tier` and `tier_name`, and a tier needs a family.
      ("Context window sizes by model");
    - Google: `https://ai.google.dev/gemini-api/docs/models/<model>`
      ("Input token limit").
-2. Edit `DEFAULT_MODELS` in `agentshim/core/models.py` and set `_CHECKED`, the
-   table's `version` and `last_updated` to today's date.
+2. Edit `MODEL_ENTRIES` in the relevant provider's `model_data.py` and update
+   `_MODEL_CHECKED`. Update the composed table version in `agentshim/models.py`
+   when facts change.
 3. Give each new model its `display_name`, `family` and tier (see above).
 4. Where a window is not published, leave the model out rather than guess.
 5. A model added to a provider's `ProviderProfile.models` needs a window;

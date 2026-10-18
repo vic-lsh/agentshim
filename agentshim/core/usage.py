@@ -46,7 +46,7 @@ class TokenWeights:
     ``reasoning_output`` to ``output`` (reasoning billed as output). The
     weights carry no unit: USD per token, per million tokens, or a multiple of
     the base input rate all work. agentshim's own prices live in
-    :mod:`agentshim.core.pricing`.
+    :mod:`agentshim.pricing`.
     """
 
     uncached_input: float

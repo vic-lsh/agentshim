@@ -29,6 +29,7 @@ from .core import (
     CompositeEventHandler,
     ConfigFileInstallation,
     ConfigScope,
+    ConnectionOptions,
     ConsoleEventHandler,
     ContextualStreamParser,
     Continuity,
@@ -56,9 +57,6 @@ from .core import (
     McpScope,
     McpServer,
     McpTransport,
-    ModelPricing,
-    ModelSpec,
-    ModelTable,
     NativeMode,
     NativePermissions,
     NoopInstallation,
@@ -69,7 +67,7 @@ from .core import (
     ParsedTurn,
     ParserContext,
     PolicyConfig,
-    PricingTable,
+    PricingContext,
     ProcessClosedError,
     Provider,
     ProviderCapabilityError,
@@ -126,22 +124,16 @@ from .core import (
     UsageReport,
     compact_json,
     compose_event_handlers,
-    context_window,
-    cost_usd,
-    default_models,
-    default_pricing,
     dialect_problems,
     host_auth_plan,
     install_config_file,
     interactive_env,
     materialize,
-    model_spec,
     normalize,
     normalized_usage,
     parse_json_object,
     plan_auth,
     prepare_config_home,
-    price_for,
 )
 from .execution import (
     CallbackCommandStreamSink,
@@ -164,9 +156,19 @@ from .execution import (
     TransformingExecutor,
     confine,
 )
+from .models import ModelSpec, ModelTable, context_window, default_models, model_spec
 from .oneshot import OneShotTransport
+from .pricing import ModelPricing, PricingTable, cost_usd, default_pricing, price_for
 from .probe import probe_provider
-from .providers import get_provider, provider_names, stream_provider_names
+from .providers import (
+    DEFAULT_CATALOG,
+    ProviderCatalog,
+    ProviderPlugin,
+    ProviderTestSupport,
+    get_provider,
+    provider_names,
+    stream_provider_names,
+)
 from .providers.claude import ClaudeHook, ClaudeProvider, ClaudeStreamTransport, SandboxConfig
 from .providers.codex import CodexProvider, CodexSandboxConfig
 from .providers.codex.app_server import CodexAppServerTransport
@@ -178,7 +180,7 @@ from .session import Session, Turn, TurnTicket, map_mcp_servers
 
 __version__ = "0.19.0"
 
-__all__ = [
+__all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "Agent",
     "AgentEvent",
     "AgentEventHandler",
@@ -216,6 +218,7 @@ __all__ = [
     "ConfigFileInstallation",
     "ConfigScope",
     "Confinement",
+    "ConnectionOptions",
     "ConsoleEventHandler",
     "ContextualStreamParser",
     "Continuity",
@@ -225,6 +228,7 @@ __all__ = [
     "CopilotProvider",
     "CredentialKind",
     "CredentialSource",
+    "DEFAULT_CATALOG",
     "DockerExecConfinement",
     "EndpointSpec",
     "EnvCredential",
@@ -264,6 +268,7 @@ __all__ = [
     "ParsedTurn",
     "ParserContext",
     "PolicyConfig",
+    "PricingContext",
     "PricingTable",
     "Process",
     "ProcessClosedError",
@@ -271,9 +276,12 @@ __all__ = [
     "ProcessOutput",
     "Provider",
     "ProviderCapabilityError",
+    "ProviderCatalog",
     "ProviderError",
+    "ProviderPlugin",
     "ProviderProfile",
     "ProviderStatus",
+    "ProviderTestSupport",
     "ProviderUsage",
     "RandomIds",
     "RateLimitStatus",

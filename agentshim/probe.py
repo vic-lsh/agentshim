@@ -11,33 +11,26 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from agentshim.core.env import interactive_env
-from agentshim.core.errors import AgentShimError, CliNotFoundError
-from agentshim.core.status import (
-    AuthCheck,
-    AuthState,
-    ProbeOutput,
-    ProviderStatus,
-    parse_version,
-)
 from agentshim.execution.confinement import confine
-from agentshim.execution.executor import CommandRequest, NullSink
 from agentshim.execution.host import HostCommandExecutor
-from agentshim.providers import get_probe_spec, get_provider
+from agentshim.providers import DEFAULT_CATALOG, ProviderCatalog
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Mapping
 
+    from agentshim.core.status import ProviderStatus
     from agentshim.execution.confinement import Confinement
     from agentshim.execution.executor import CommandExecutor
 
 
-def probe_provider(
+def probe_provider(  # noqa: PLR0913
     provider: str,
     *,
     executor: CommandExecutor | None = None,
     confinement: Confinement | None = None,
     env: Mapping[str, str] | None = None,
     timeout: float = 15.0,
+    catalog: ProviderCatalog = DEFAULT_CATALOG,
 ) -> ProviderStatus:
     """Report the readiness of *provider* without running a turn.
 
@@ -59,59 +52,22 @@ def probe_provider(
             raise ValueError(msg)
         base = confine(base, confinement)
         env = dict(confinement.env)
-    return probe_on(provider, base, dict(env) if env is not None else interactive_env(), timeout)
-
-
-def probe_on(
-    provider: str, executor: CommandExecutor, env: Mapping[str, str], timeout: float
-) -> ProviderStatus:
-    """Probe *provider* on an executor that is already confined, with the final *env*."""
-    profile = get_provider(provider).profile
-    spec = get_probe_spec(provider)
-    try:
-        path = executor.find_binary(profile.binary, env)
-    except CliNotFoundError:
-        detail = f"{profile.binary} was not found on PATH"
-        return ProviderStatus(
-            provider=provider,
-            binary_found=False,
-            path=None,
-            version=None,
-            auth=AuthState.UNKNOWN,
-            auth_detail=detail,
-        )
-
-    version_out = _run(executor, [path, *spec.version_argv], env, timeout)
-    version = None if version_out is None else parse_version(version_out.text)
-    if spec.auth is None:
-        check = AuthCheck(AuthState.UNKNOWN, spec.auth_note)
-    else:
-        auth_out = _run(executor, [path, *spec.auth.argv], env, timeout)
-        if auth_out is None:
-            check = AuthCheck(
-                AuthState.UNKNOWN,
-                f"`{profile.binary} {' '.join(spec.auth.argv)}` did not run or timed out",
-            )
-        else:
-            check = spec.auth.read(auth_out, env)
-    return ProviderStatus(
-        provider=provider,
-        binary_found=True,
-        path=path,
-        version=version,
-        auth=check.state,
-        auth_detail=check.detail,
-        credential=check.credential,
+    return probe_on(
+        provider,
+        base,
+        dict(env) if env is not None else interactive_env(),
+        timeout,
+        catalog=catalog,
     )
 
 
-def _run(
-    executor: CommandExecutor, argv: Sequence[str], env: Mapping[str, str], timeout: float
-) -> ProbeOutput | None:
-    """Run one status command; ``None`` when it could not run or timed out."""
-    request = CommandRequest(argv=argv, stdin=None, cwd=None, env=env, timeout=timeout)
-    try:
-        result = executor.run(request, NullSink())
-    except (AgentShimError, OSError):
-        return None
-    return ProbeOutput(result.returncode, result.stdout, result.stderr)
+def probe_on(
+    provider: str,
+    executor: CommandExecutor,
+    env: Mapping[str, str],
+    timeout: float,
+    *,
+    catalog: ProviderCatalog = DEFAULT_CATALOG,
+) -> ProviderStatus:
+    """Probe *provider* on an executor that is already confined, with the final *env*."""
+    return catalog.plugin(provider).probe(executor, env, timeout)

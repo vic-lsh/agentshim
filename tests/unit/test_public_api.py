@@ -26,7 +26,7 @@ def test_testing_module_exports() -> None:
 
 
 def test_version_is_reported() -> None:
-    assert agentshim.__version__ == "0.19.0"
+    assert agentshim.__version__ == "0.20.0"
 
 
 def test_core_and_execution_do_not_import_providers_at_module_level() -> None:
@@ -90,6 +90,7 @@ def test_the_provider_classes_the_docs_name_are_exported() -> None:
         "GeminiProvider",
         "OpencodeProvider",
         "SandboxConfig",
+        "ClaudeToolPolicy",
     ):
         assert name in agentshim.__all__, name
         assert hasattr(agentshim, name), name

@@ -169,7 +169,13 @@ from .providers import (
     provider_names,
     stream_provider_names,
 )
-from .providers.claude import ClaudeHook, ClaudeProvider, ClaudeStreamTransport, SandboxConfig
+from .providers.claude import (
+    ClaudeHook,
+    ClaudeProvider,
+    ClaudeStreamTransport,
+    ClaudeToolPolicy,
+    SandboxConfig,
+)
 from .providers.codex import CodexProvider, CodexSandboxConfig
 from .providers.codex.app_server import CodexAppServerTransport
 from .providers.copilot import CopilotProvider
@@ -178,7 +184,7 @@ from .providers.opencode import OpencodeProvider
 from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 
-__version__ = "0.19.0"
+__version__ = "0.20.0"
 
 __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "Agent",
@@ -200,6 +206,7 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "ClaudeHook",
     "ClaudeProvider",
     "ClaudeStreamTransport",
+    "ClaudeToolPolicy",
     "CliAgent",
     "CliCheckError",
     "CliExitError",

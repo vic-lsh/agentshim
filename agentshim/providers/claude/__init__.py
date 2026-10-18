@@ -7,6 +7,7 @@ from .provider import PROFILE, ClaudeProvider, mcp_entry
 from .sandbox import SandboxConfig, build_settings, resolve_sandbox
 from .scripted import failure_lines, resume_failure_lines, scripted_lines
 from .stream_transport import STREAM_PROFILE, ClaudeStreamTransport
+from .tools import ClaudeToolPolicy
 from .user_hooks import ClaudeHook
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "ClaudeProvider",
     "ClaudeStreamParser",
     "ClaudeStreamTransport",
+    "ClaudeToolPolicy",
     "SandboxConfig",
     "build_settings",
     "failure_lines",

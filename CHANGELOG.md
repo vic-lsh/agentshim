@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.20.0 (2026-10-18)
+
+### Added
+
+- `ClaudeProvider(tools=ClaudeToolPolicy(...))`: run Claude Code with only the built-in tools
+  and allow rules the policy names, under `--permission-mode dontAsk`, instead of the
+  always-on `--dangerously-skip-permissions`. `ClaudeToolPolicy.only(["mcp__rs"])` gives a
+  turn no built-in tools and lets it call only that MCP server; `builtin=()` renders
+  `--tools ""`, and each allow rule is its own `--allowedTools` argument so a scoped rule
+  such as `Bash(git log:*)` arrives whole. A turn with an output schema also allows
+  `StructuredOutput`. Without a policy the argv is unchanged.
+
+### Changed
+
+- Provider integrations are resolved through an extensible `ProviderCatalog`; `CliAgent`,
+  `Agent`, `probe_provider` and the consumer test helpers take `catalog=` (#70).
+
 ## 0.19.0 (2026-10-17)
 
 ### Added

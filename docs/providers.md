@@ -193,6 +193,40 @@ not yours. Invalid hooks (a non-PascalCase event, an empty or bare-string
 command, a NUL byte, a non-positive timeout) raise on construction. Hooks
 apply to every turn, including resumed ones.
 
+## Claude Code tool policy
+
+By default a Claude Code turn runs with `--dangerously-skip-permissions`: every
+built-in tool is present and every call runs. That suits an agent bounded by an
+outside `Confinement`. To have the CLI itself withhold tools, for a model that
+should only answer, or only call one MCP server, pass a `ClaudeToolPolicy`:
+
+```python
+from agentshim import ClaudeProvider, ClaudeToolPolicy, CliAgent, McpScope
+
+# No built-in tools; only the tools of the session's MCP server "rs" run.
+agent = CliAgent(
+    ClaudeProvider(tools=ClaudeToolPolicy.only(["mcp__rs"])),
+    model="claude-opus-5-5",
+)
+session = agent.start_session(cwd="/tmp/scratch", mcp_scope=McpScope.SESSION)
+
+# Some built-ins, and a scoped allow rule.
+reader = ClaudeToolPolicy(builtin=["Read", "Grep", "Bash"], allowed=["Read", "Grep", "Bash(git log:*)"])
+```
+
+The turn then carries `--tools` (the built-in set; `builtin=()` renders
+`--tools ""`, `None` keeps the CLI default), `--allowedTools` with one argument
+per rule, and `--permission-mode dontAsk` in place of
+`--dangerously-skip-permissions`. A call no rule allows is denied without a
+prompt, and the model sees the refusal. A tool missing from `builtin` cannot be
+called at all, whatever `allowed` says. A turn with an `OutputSchema` also
+allows `StructuredOutput`, the tool Claude Code returns the answer through.
+Pair the policy with `McpScope.SESSION` so the only MCP servers present are the
+turn's own. Entries the CLI would misread (a bare string instead of a list, a
+comma or space in a built-in name, a leading `-`, a NUL byte) raise on
+construction. The policy applies to the print-mode provider; the stream
+transport (`ClaudeStreamTransport`) takes its permissions from `NativePermissions`.
+
 ## Capabilities
 
 Everything a caller needs to know before running a turn is declared on

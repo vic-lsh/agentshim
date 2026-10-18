@@ -28,6 +28,7 @@ from agentshim.core.profile import (
 
 from .parser import ClaudeStreamParser
 from .sandbox import SANDBOX_ENV, SandboxConfig, build_settings, resolve_sandbox
+from .tools import ClaudeToolPolicy, resolve_tools
 from .user_hooks import ClaudeHook, resolve_hooks
 
 if TYPE_CHECKING:
@@ -156,7 +157,7 @@ PROFILE = ProviderProfile(
 
 
 class ClaudeProvider:
-    """Claude Code. ``sandbox`` and ``hooks`` are provider options, not portable ones."""
+    """Claude Code. ``sandbox``, ``hooks`` and ``tools`` are provider options, not portable ones."""
 
     profile = PROFILE
 
@@ -165,15 +166,21 @@ class ClaudeProvider:
         *,
         sandbox: bool | SandboxConfig | None = None,
         hooks: Sequence[ClaudeHook] = (),
+        tools: ClaudeToolPolicy | None = None,
     ) -> None:
-        """Fix the sandbox and hooks for every turn this provider runs.
+        """Fix the sandbox, hooks and tool policy for every turn this provider runs.
 
         ``sandbox=True`` takes the default config; ``None`` and ``False`` both
         mean unsandboxed. ``hooks`` are added to the settings Claude Code
         loads for the turn, after agentshim's own read-confinement hook.
+        ``tools=None`` runs every turn with ``--dangerously-skip-permissions``
+        (all built-in tools, every call allowed); a ``ClaudeToolPolicy`` runs
+        it with only the tools and allow rules the policy names, under
+        ``--permission-mode dontAsk``.
         """
         self.sandbox: SandboxConfig | None = resolve_sandbox(sandbox)
         self.hooks: tuple[ClaudeHook, ...] = resolve_hooks(hooks)
+        self.tools: ClaudeToolPolicy | None = resolve_tools(tools)
 
     @property
     def sandbox_env(self) -> dict[str, str]:
@@ -190,13 +197,12 @@ class ClaudeProvider:
             # Before -p: claude parses the resume target as a session flag,
             # not as part of the print-mode invocation.
             argv += ["--resume", ctx.resume_session_id]
-        argv += [
-            "-p",
-            "--dangerously-skip-permissions",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-        ]
+        argv.append("-p")
+        if self.tools is None:
+            argv.append("--dangerously-skip-permissions")
+        else:
+            argv += self.tools.argv(structured_output=ctx.schema_inline is not None)
+        argv += ["--output-format", "stream-json", "--verbose"]
         isolate_config = ctx.config_scope is ConfigScope.PROJECT
         if ctx.skill_scope is SkillScope.PROJECT or isolate_config:
             argv += PROJECT_SETTING_SOURCES

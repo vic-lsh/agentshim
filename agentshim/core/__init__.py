@@ -95,9 +95,10 @@ from .mcp import (
     StdioMcpServer,
     install_config_file,
 )
-from .models import ModelSpec, ModelTable, context_window, default_models, model_spec
+from .models import ModelSpec, ModelTable
 from .permissions import ApprovalPolicy, NativeMode, NativePermissions
-from .pricing import ModelPricing, PricingTable, cost_usd, default_pricing, price_for
+from .plugin import ProviderPlugin, ProviderTestSupport
+from .pricing import ModelPricing, PricingTable, cost_usd
 from .profile import (
     ConfigScope,
     McpMechanism,
@@ -193,8 +194,10 @@ __all__ = [
     "Provider",
     "ProviderCapabilityError",
     "ProviderError",
+    "ProviderPlugin",
     "ProviderProfile",
     "ProviderStatus",
+    "ProviderTestSupport",
     "ProviderUsage",
     "RandomIds",
     "RateLimitStatus",
@@ -245,20 +248,15 @@ __all__ = [
     "UsageReport",
     "compact_json",
     "compose_event_handlers",
-    "context_window",
     "cost_usd",
-    "default_models",
-    "default_pricing",
     "dialect_problems",
     "host_auth_plan",
     "install_config_file",
     "interactive_env",
     "materialize",
-    "model_spec",
     "normalize",
     "normalized_usage",
     "parse_json_object",
     "plan_auth",
     "prepare_config_home",
-    "price_for",
 ]

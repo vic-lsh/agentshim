@@ -4,15 +4,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .catalog import (
+from agentshim.core.plugin import (
     FailureLines,
-    ProviderCatalog,
     ProviderPlugin,
     ProviderTestSupport,
     ResumeFailureLines,
     ScriptedLines,
     StreamTransportFactory,
 )
+
+from .catalog import ProviderCatalog
 from .claude import ClaudeProvider, ClaudeStreamTransport
 from .claude.plugin import PLUGIN as CLAUDE_PLUGIN
 from .codex import CodexProvider

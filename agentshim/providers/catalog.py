@@ -1,124 +1,20 @@
-"""A composable catalog of independently defined provider integrations."""
+"""An immutable catalog of independently defined provider integrations."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
-    from pathlib import Path
 
     from agentshim.core.clock import Clock
     from agentshim.core.conversation import Transport
-    from agentshim.core.errors import FailureKind
     from agentshim.core.ids import IdAllocator
-    from agentshim.core.profile import ProviderProfile
+    from agentshim.core.plugin import ProviderPlugin, ProviderTestSupport
     from agentshim.core.provider import Provider
-    from agentshim.core.status import AuthState, ProbeSpec
-    from agentshim.core.usage import TokenUsage
-    from agentshim.execution.executor import CommandExecutor, CommandRequest
-
-
-class ScriptedLines(Protocol):
-    """Build one turn of a provider's real stdout for consumer tests."""
-
-    def __call__(  # noqa: PLR0913
-        self,
-        *,
-        text: str = "",
-        session_id: str | None = None,
-        usage: TokenUsage | None = None,
-        tool_calls: Sequence[tuple[str, Mapping[str, Any], str]] = (),
-        structured_output: object | None = None,
-        skills_offered: Sequence[str] | None = None,
-        skills_invoked: Sequence[str] = (),
-    ) -> list[str]:
-        """Return stdout lines in this provider's stream format."""
-        ...
-
-
-class ResumeFailureLines(Protocol):
-    """Build the stream and exit status of a failed resume."""
-
-    def __call__(
-        self, *, session_id: str | None = None
-    ) -> tuple[Sequence[str], Sequence[str], int]:
-        """Return stdout, stderr, and exit status."""
-        ...
-
-
-class FailureLines(Protocol):
-    """Build the stream and exit status of a classified failure."""
-
-    def __call__(
-        self, kind: FailureKind, *, session_id: str | None = None
-    ) -> tuple[Sequence[str], Sequence[str], int]:
-        """Return stdout, stderr, and exit status."""
-        ...
-
-
-class StreamTransportFactory(Protocol):
-    """Build a provider's long-lived transport."""
-
-    def __call__(  # noqa: PLR0913
-        self,
-        *,
-        executor: CommandExecutor,
-        env: Mapping[str, str] | None,
-        clock: Clock,
-        ids: IdAllocator,
-        check_timeout: float,
-        log: Callable[[str], None] | None,
-    ) -> Transport:
-        """Return a checked, ready-to-use transport."""
-        ...
-
-
-class ProbeFixture(Protocol):
-    """Build fake CLI output for a readiness command."""
-
-    def __call__(
-        self, args: Sequence[str], *, version: str, auth: AuthState
-    ) -> tuple[str, str, int]:
-        """Return stdout, stderr, and exit status."""
-        ...
-
-
-@dataclass(frozen=True)
-class ProviderTestSupport:
-    """Optional provider-owned adapters for the generic test helpers."""
-
-    scripted_lines: ScriptedLines
-    resume_failure_lines: ResumeFailureLines
-    failure_lines: FailureLines | None = None
-    installed_mcp_servers: Callable[[CommandRequest, Path], dict[str, dict[str, Any]]] | None = None
-    probe_fixture: ProbeFixture | None = None
-
-
-@dataclass(frozen=True)
-class ProviderPlugin:
-    """The single declaration of a provider's runtime and optional test features."""
-
-    name: str
-    profile: ProviderProfile
-    provider_factory: Callable[[], Provider] | None = None
-    probe: ProbeSpec | None = None
-    stream_factory: StreamTransportFactory | None = None
-    testing: ProviderTestSupport | None = None
-
-    def __post_init__(self) -> None:
-        """Reject unusable names and declarations that disagree with the provider."""
-        if not self.name or self.name != self.name.strip():
-            msg = "provider plugin name must be non-empty and unpadded"
-            raise ValueError(msg)
-        if self.profile.name != self.name:
-            msg = f"plugin {self.name!r} has provider profile name {self.profile.name!r}"
-            raise ValueError(msg)
-        if self.provider_factory is None and self.stream_factory is None:
-            msg = f"plugin {self.name!r} needs a one-shot or stream transport factory"
-            raise ValueError(msg)
+    from agentshim.core.status import ProbeSpec
+    from agentshim.execution.executor import CommandExecutor
 
 
 class ProviderCatalog:
@@ -153,6 +49,22 @@ class ProviderCatalog:
             msg = f"unknown provider {name!r}; available: {self.names()}"
             raise ValueError(msg)
         return plugin
+
+    def model_vendor(self, name: str) -> str | None:
+        """Resolve a provider name or model prefix to its declared vendor."""
+        plugin = self._plugins.get(name)
+        if plugin is not None:
+            return plugin.model_vendor
+        for entry in self._plugins.values():
+            for alias, vendor in entry.model_aliases:
+                if alias == name:
+                    return vendor
+        return None
+
+    def pricing_vendor(self, name: str) -> str | None:
+        """Resolve a provider name to its declared billing vendor."""
+        plugin = self._plugins.get(name)
+        return None if plugin is None else plugin.pricing_vendor
 
     def provider(self, name: str) -> Provider:
         """Construct a one-shot provider by name."""

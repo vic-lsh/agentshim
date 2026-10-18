@@ -14,6 +14,14 @@ and optional `ProviderTestSupport`. The built-in catalog imports that one
 declaration from each shipped provider. No provider module changes a global
 registry as an import side effect.
 
+Set `model_vendor` and `pricing_vendor` when the provider uses known vendor
+models or per-token billing. Supply `model_entries` and `pricing_entries` as
+tuples of core `ModelSpec` and `ModelPricing` values. The catalog composes them
+into the default lookup tables, so `model_spec(..., catalog=catalog)` and
+`price_for(..., catalog=catalog)` work without passing separate tables. A caller
+may still pass a `ModelTable` or `PricingTable` to override or pin the facts.
+Model facts and prices are vendor data and may be shared by several providers.
+
 Import `core/` and `execution/` absolutely (`from agentshim.core.events
 import ...`) and your own siblings relatively (`from .parser import ...`).
 

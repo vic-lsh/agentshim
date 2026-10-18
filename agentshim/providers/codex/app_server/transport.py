@@ -48,12 +48,12 @@ from agentshim.core.events import (
     UsageReport,
 )
 from agentshim.core.permissions import ApprovalPolicy
-from agentshim.core.pricing import cost_usd, price_for
 from agentshim.core.schema import dialect_problems
 from agentshim.core.skills import SkillTracker
 from agentshim.core.turn import TurnResult
 from agentshim.execution.host import HostCommandExecutor
 from agentshim.execution.process import SpawnRequest
+from agentshim.pricing import cost_usd, price_for
 from agentshim.providers.codex.provider import scope_overrides, shell_path_config
 
 from .approvals import answer_request
@@ -106,12 +106,12 @@ if TYPE_CHECKING:
     from agentshim.core.events import AgentEvent
     from agentshim.core.ids import IdAllocator
     from agentshim.core.mcp import McpServer
-    from agentshim.core.pricing import ModelPricing, PricingTable
     from agentshim.core.profile import ProviderProfile
     from agentshim.core.turn import TurnRequest
     from agentshim.core.usage import ProviderUsage
     from agentshim.execution.executor import CommandExecutor
     from agentshim.execution.process import Process
+    from agentshim.pricing import ModelPricing, PricingTable
 
     from ._wire import JsonObject, JsonValue
     from .permissions import CodexPermissions

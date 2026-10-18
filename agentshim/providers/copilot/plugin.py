@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agentshim.providers.catalog import ProviderPlugin, ProviderTestSupport
+from agentshim.core.plugin import ProviderPlugin, ProviderTestSupport
 
 from .probe import PROBE
 from .provider import PROFILE, CopilotProvider

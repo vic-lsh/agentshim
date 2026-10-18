@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import TYPE_CHECKING
 
-from agentshim import ProviderPlugin, ProviderTestSupport
+from agentshim import ModelPricing, ModelSpec, ProviderPlugin, ProviderTestSupport
 from agentshim.core.events import AssistantText
 from agentshim.core.mcp import NoopInstallation
 from agentshim.core.profile import McpMechanism, OutputSchemaStyle, ProviderProfile
@@ -139,6 +140,23 @@ PLUGIN = ProviderPlugin(
     profile=PROFILE,
     provider_factory=OutsideProvider,
     probe=ProbeSpec(auth=None),
+    model_vendor="outcorp",
+    pricing_vendor="outcorp",
+    model_entries=(
+        ModelSpec("outcorp", "sample", 32000, "https://example.com/model", date(2026, 10, 18)),
+    ),
+    pricing_entries=(
+        ModelPricing(
+            "outcorp",
+            "sample",
+            1.0,
+            0.1,
+            1.0,
+            2.0,
+            "https://example.com/pricing",
+            date(2026, 10, 18),
+        ),
+    ),
     testing=ProviderTestSupport(
         scripted_lines=scripted_lines,
         resume_failure_lines=resume_failure_lines,

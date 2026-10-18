@@ -59,7 +59,7 @@ million tokens and multiples of the base input rate both work.
 
 ## Pricing table
 
-`agentshim.core.pricing` ships a static table of USD prices per million
+`agentshim.pricing` composes provider-supplied USD prices per million
 tokens, one `ModelPricing` per `(vendor, model)`, at the vendor's standard
 (non-batch, global, short-context) tier.
 
@@ -104,11 +104,11 @@ Not modelled: OpenAI's long-context rates, Anthropic's `inference_geo: "us"`
    - Anthropic: <https://platform.claude.com/docs/en/about-claude/pricing>
      (Model pricing table: base input, 5m cache writes, 1h cache writes,
      cache hits, output).
-2. Edit `DEFAULT_PRICING` in `agentshim/core/pricing.py`: change the prices
-   that moved, add new models, and set `_CHECKED` (or an entry's own
+2. Edit `PRICING_ENTRIES` in the relevant provider's `model_data.py`: change the prices
+   that moved, add new models, and set `_PRICE_CHECKED` (or an entry's own
    `checked`) to today's date for every entry you compared. Keep `source`
    pointing at the page you read.
-3. Set the table's `version` and `last_updated` to today's date. Change
+3. Set the composed table's `version` in `agentshim/pricing.py` to today's date; `last_updated` is derived from entries. Change
    `version` whenever any price changes, so reports stay reproducible.
 4. Where a published price is missing, leave the model out rather than guess.
    If a caller needs one anyway, add it with `estimated=True` and the basis in

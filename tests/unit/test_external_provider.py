@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import date
 
 import pytest
 from agentshim import (
@@ -10,12 +11,20 @@ from agentshim import (
     Agent,
     ApprovalPolicy,
     CliAgent,
+    ModelPricing,
+    ModelSpec,
+    ModelTable,
     NativePermissions,
+    PricingTable,
     ProviderCatalog,
     ProviderPlugin,
     TransportKind,
     TurnRequest,
+    context_window,
+    default_models,
+    default_pricing,
     get_provider,
+    price_for,
     probe_provider,
     provider_names,
 )
@@ -28,7 +37,7 @@ from agentshim.testing import (
     scripted_turn,
 )
 
-from tests.external_provider.plugin import PLUGIN, OutsideProvider
+from tests.external_provider.plugin import PLUGIN, PROFILE, OutsideProvider
 
 ENV = {"PATH": "/usr/bin:/bin", "HOME": "/home/tester"}
 
@@ -104,6 +113,58 @@ def test_external_stream_only_plugin_works_by_name() -> None:
     assert session.run(ticket).result.text == "stream turn"
     with pytest.raises(ValueError, match="no one-shot transport"):
         get_provider("outside-stream", catalog=catalog)
+
+
+def test_external_provider_supplies_vendor_mapping_for_model_facts() -> None:
+    catalog = DEFAULT_CATALOG.with_plugin(PLUGIN)
+    assert context_window("outside", "sample", catalog=catalog) == 32000
+    assert price_for("outside", "sample", catalog=catalog) == PLUGIN.pricing_entries[0]
+    standalone = ProviderCatalog((PLUGIN,))
+    assert context_window("outside", "sample", catalog=standalone) == 32000
+    assert price_for("outside", "sample", catalog=standalone) == PLUGIN.pricing_entries[0]
+    sibling = replace(
+        PLUGIN, name="outside-sibling", profile=replace(PROFILE, name="outside-sibling")
+    )
+    shared = ProviderCatalog((PLUGIN, sibling))
+    assert len(default_models(catalog=shared).entries) == 1
+    assert len(default_pricing(catalog=shared).entries) == 1
+    changed = replace(
+        sibling, model_entries=(replace(sibling.model_entries[0], context_window=64000),)
+    )
+    with pytest.raises(ValueError, match="conflicting model facts"):
+        default_models(catalog=ProviderCatalog((PLUGIN, changed)))
+    changed_price = replace(
+        sibling,
+        pricing_entries=(replace(sibling.pricing_entries[0], input_usd=3.0),),
+    )
+    with pytest.raises(ValueError, match="conflicting prices"):
+        default_pricing(catalog=ProviderCatalog((PLUGIN, changed_price)))
+    checked = date(2026, 10, 18)
+    models = ModelTable(
+        version="external-models",
+        last_updated=checked,
+        entries=(ModelSpec("outcorp", "sample", 32000, "https://example.com/model", checked),),
+    )
+    prices = PricingTable(
+        version="external-prices",
+        last_updated=checked,
+        entries=(
+            ModelPricing(
+                vendor="outcorp",
+                model="sample",
+                input_usd=1.0,
+                cache_read_usd=0.1,
+                cache_write_usd=1.0,
+                output_usd=2.0,
+                source="https://example.com/pricing",
+                checked=checked,
+            ),
+        ),
+    )
+    assert context_window("outside", "sample", models) is None
+    assert context_window("outside", "sample", models, catalog=catalog) == 32000
+    assert price_for("outside", "sample", prices) is None
+    assert price_for("outside", "sample", prices, catalog=catalog) == prices.entries[0]
 
 
 def test_catalog_is_immutable_and_rejects_collisions() -> None:

@@ -74,7 +74,7 @@ _HTTP_HEADERS_UNSUPPORTED = (
 PROFILE = ProviderProfile(
     name="codex",
     # Model ids Codex's ``--model`` takes and agentshim has run, the default
-    # first. Context windows are in ``agentshim.core.models``.
+    # first. Context windows are in ``agentshim.models``.
     models=(
         "gpt-5.6-sol",
         "gpt-5.6-luna",

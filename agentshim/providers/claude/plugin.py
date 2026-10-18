@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from agentshim.providers.catalog import ProviderPlugin, ProviderTestSupport
+from agentshim.core.plugin import ProviderPlugin, ProviderTestSupport
 
+from .model_data import MODEL_ENTRIES, PRICING_ENTRIES
 from .probe import PROBE
 from .provider import PROFILE, ClaudeProvider
 from .scripted import failure_lines, resume_failure_lines, scripted_lines
@@ -15,6 +16,10 @@ PLUGIN = ProviderPlugin(
     profile=PROFILE,
     provider_factory=ClaudeProvider,
     probe=PROBE,
+    model_vendor="anthropic",
+    pricing_vendor="anthropic",
+    model_entries=MODEL_ENTRIES,
+    pricing_entries=PRICING_ENTRIES,
     stream_factory=ClaudeStreamTransport,
     testing=ProviderTestSupport(
         scripted_lines=scripted_lines,

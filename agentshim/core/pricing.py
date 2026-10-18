@@ -1,46 +1,18 @@
-"""Static, versioned per-model token prices, and the cost of a :class:`TokenUsage`.
-
-The table is data: one :class:`ModelPricing` per ``(vendor, model)``, each
-with the official page it was read from and the date it was checked, and a
-table-level ``version`` and ``last_updated``. Prices are USD per million
-tokens at the vendor's standard (non-batch, global, short-context) tier.
-
-A lookup of a model the table does not know returns ``None``: an unknown
-price is never read as zero. Callers pin or extend assumptions by passing
-their own :class:`PricingTable` (see :meth:`PricingTable.with_entries` and
-:meth:`PricingTable.from_dict`).
-
-Updating the table is described in ``docs/pricing.md``.
-"""
+"""Provider-independent pricing facts, tables, and cost calculation."""
 
 from __future__ import annotations
 
 import datetime as dt
 import math
-import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
-from agentshim.core.usage import TokenUsage, TokenWeights
+from .usage import TokenUsage, TokenWeights
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
-#: Vendor each agentshim provider bills through, when it bills per token.
-#: Copilot bills premium requests and Gemini is not priced here, so both are absent.
-PROVIDER_VENDORS: Mapping[str, str] = {
-    "codex": "openai",
-    "openai": "openai",
-    "claude": "anthropic",
-    "anthropic": "anthropic",
-}
-
 _TOKENS_PER_UNIT = 1_000_000
-_DATE_SUFFIX = re.compile(r"-\d{8}$")
-_BRACKET_SUFFIX = re.compile(r"\[[^\]]*\]$")
-
-OPENAI_PRICING_URL = "https://developers.openai.com/api/docs/pricing"
-ANTHROPIC_PRICING_URL = "https://platform.claude.com/docs/en/about-claude/pricing"
 
 
 @dataclass(frozen=True)
@@ -299,48 +271,6 @@ class PricingTable:
         )
 
 
-def vendor_and_model(provider: str, model: str) -> tuple[str, str] | None:
-    """Resolve an agentshim provider and model name to a table key.
-
-    Accepts a provider name (``codex``, ``claude``) or a vendor name, and a
-    model with a ``vendor/`` prefix (opencode's ``provider/model``). Drops a
-    trailing date snapshot (``claude-haiku-4-5-20251001``) and a bracketed
-    variant (``claude-opus-5-5[1m]``). Returns ``None`` when the provider is
-    not billed per token by a known vendor.
-    """
-    name = model.strip().lower()
-    vendor = PROVIDER_VENDORS.get(provider.strip().lower())
-    if "/" in name:
-        prefix, _, rest = name.partition("/")
-        vendor = PROVIDER_VENDORS.get(prefix, vendor)
-        name = rest
-    if vendor is None or not name:
-        return None
-    name = _BRACKET_SUFFIX.sub("", name)
-    name = _DATE_SUFFIX.sub("", name)
-    return (vendor, name)
-
-
-def price_for(
-    provider: str, model: str | None, table: PricingTable | None = None
-) -> ModelPricing | None:
-    """The price of *model* run through *provider*, or ``None`` when it is not known.
-
-    Never falls back to another model's price or to zero.
-    """
-    if not model:
-        return None
-    key = vendor_and_model(provider, model)
-    if key is None:
-        return None
-    return (table or DEFAULT_PRICING).get(*key)
-
-
-def default_pricing() -> PricingTable:
-    """The table agentshim ships (:data:`DEFAULT_PRICING`)."""
-    return DEFAULT_PRICING
-
-
 def cost_usd(usage: TokenUsage, pricing: ModelPricing) -> float:
     """USD cost of *usage* at *pricing*.
 
@@ -377,90 +307,3 @@ def _date(value: object, name: str) -> dt.date:
         return dt.date.fromisoformat(value)
     msg = f"{name} must be an ISO date string or a date, got {value!r}"
     raise TypeError(msg)
-
-
-_CHECKED = dt.date(2026, 9, 27)
-_OPENAI_NOTE = (
-    "Short-context standard tier; the long-context rates on the same page are not modelled."
-)
-_OPENAI_NO_WRITE_NOTE = (
-    "Short-context standard tier; the page lists no cache-write rate, so cache writes "
-    "are priced at base input."
-)
-
-
-def _openai(
-    model: str,
-    input_usd: float,
-    cache_read_usd: float,
-    output_usd: float,
-    cache_write_usd: float | None = None,
-) -> ModelPricing:
-    return ModelPricing(
-        vendor="openai",
-        model=model,
-        input_usd=input_usd,
-        cache_read_usd=cache_read_usd,
-        cache_write_usd=input_usd if cache_write_usd is None else cache_write_usd,
-        output_usd=output_usd,
-        source=OPENAI_PRICING_URL,
-        checked=_CHECKED,
-        note=_OPENAI_NOTE if cache_write_usd is not None else _OPENAI_NO_WRITE_NOTE,
-    )
-
-
-def _anthropic(  # noqa: PLR0913 - one positional per price column
-    model: str,
-    input_usd: float,
-    cache_write_usd: float,
-    cache_write_1h_usd: float,
-    cache_read_usd: float,
-    output_usd: float,
-) -> ModelPricing:
-    return ModelPricing(
-        vendor="anthropic",
-        model=model,
-        input_usd=input_usd,
-        cache_read_usd=cache_read_usd,
-        cache_write_usd=cache_write_usd,
-        cache_write_1h_usd=cache_write_1h_usd,
-        output_usd=output_usd,
-        source=ANTHROPIC_PRICING_URL,
-        checked=_CHECKED,
-        note="Claude API first-party, global inference; thinking is billed as output.",
-    )
-
-
-#: The table agentshim ships. Update it as described in ``docs/pricing.md``.
-DEFAULT_PRICING = PricingTable(
-    version="2026-09-27",
-    last_updated=_CHECKED,
-    entries=(
-        # OpenAI (Codex). Reasoning tokens are part of output and billed as output.
-        _openai("gpt-6-astra", 10.00, 1.00, 50.00, cache_write_usd=12.50),
-        _openai("gpt-6-sol", 2.00, 0.20, 10.00, cache_write_usd=2.50),
-        _openai("gpt-6-luna", 0.10, 0.01, 0.50, cache_write_usd=0.125),
-        _openai("gpt-5.6-sol", 4.00, 0.40, 20.00, cache_write_usd=5.00),
-        _openai("gpt-5.6-terra", 2.00, 0.20, 12.00, cache_write_usd=2.50),
-        _openai("gpt-5.6-luna", 0.20, 0.02, 1.20, cache_write_usd=0.25),
-        _openai("gpt-5.5", 5.00, 0.50, 30.00),
-        _openai("gpt-5.4", 2.50, 0.25, 15.00),
-        _openai("gpt-5.4-mini", 0.75, 0.075, 4.50),
-        _openai("gpt-5.4-nano", 0.20, 0.02, 1.25),
-        _openai("gpt-5.3-codex", 1.75, 0.175, 14.00),
-        _openai("gpt-5.2", 1.75, 0.175, 14.00),
-        _openai("gpt-5.1", 1.25, 0.125, 10.00),
-        _openai("gpt-5", 1.25, 0.125, 10.00),
-        _openai("gpt-5-mini", 0.25, 0.025, 2.00),
-        _openai("gpt-5-nano", 0.05, 0.005, 0.40),
-        # Anthropic (Claude): input, 5m write, 1h write, cache read, output.
-        _anthropic("claude-fable-5-1", 10.00, 12.50, 20.00, 0.25, 50.00),
-        _anthropic("claude-fable-5", 10.00, 12.50, 20.00, 1.00, 50.00),
-        _anthropic("claude-opus-5-5", 4.00, 5.00, 8.00, 0.20, 20.00),
-        _anthropic("claude-opus-5", 5.00, 6.25, 10.00, 0.50, 25.00),
-        _anthropic("claude-opus-4-8", 5.00, 6.25, 10.00, 0.50, 25.00),
-        _anthropic("claude-sonnet-5", 2.00, 2.50, 4.00, 0.20, 10.00),
-        _anthropic("claude-sonnet-4-6", 3.00, 3.75, 6.00, 0.30, 15.00),
-        _anthropic("claude-haiku-4-5", 1.00, 1.25, 2.00, 0.10, 5.00),
-    ),
-)

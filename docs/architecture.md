@@ -13,6 +13,8 @@ how to render events.
 agentshim/
   __init__.py          public API; everything importable from here is supported
   agent.py             CliAgent, AgentSession: composition over providers/
+  models.py            public model lookup, composes catalog-supplied facts
+  pricing.py           public price lookup, composes catalog-supplied facts
   oneshot.py           OneShotTransport: CliAgent behind the Transport protocol
   session.py           Session, TurnTicket, Turn: the thin shell around the policy
   runtime.py           Agent: transport + permissions + clock + recovery policy
@@ -23,8 +25,9 @@ agentshim/
     turn.py            TurnRequest, TurnResult, OutputSchema
     events.py          event dataclasses, AgentEvent union, handlers
     usage.py           TokenUsage, TokenWeights, ProviderUsage
-    pricing.py         ModelPricing, PricingTable, price_for, cost_usd
-    models.py          ModelSpec, ModelTable, model_spec, context_window
+    models.py          ModelSpec, ModelTable (provider-independent values)
+    pricing.py         ModelPricing, PricingTable, cost_usd
+    plugin.py          ProviderPlugin contract and test-support protocols
     errors.py          exception hierarchy
     permissions.py     NativeMode, NativePermissions, ApprovalPolicy
     clock.py           StopSignal, Clock, SystemClock
@@ -45,16 +48,16 @@ agentshim/
     confinement.py     Confinement protocol, confine(), PathMap
     docker.py          DockerExecConfinement
   providers/           one folder per CLI, all with the same layout
-    catalog.py          immutable ProviderCatalog and ProviderPlugin declarations
+    catalog.py          immutable ProviderCatalog
     __init__.py         built-in catalog and compatibility lookup functions
-    claude/            plugin.py, provider.py, parser.py, events.py, scripted.py, testing.py,
+    claude/            plugin.py, model_data.py, provider.py, parser.py, events.py, scripted.py, testing.py,
                        sandbox.py, hooks/, stream_transport.py (ClaudeStreamTransport),
                        stream_argv.py
-    codex/             plugin.py, provider.py, parser.py, events.py, scripted.py, testing.py,
+    codex/             plugin.py, model_data.py, provider.py, parser.py, events.py, scripted.py, testing.py,
                        app_server/ (generated protocol types, see below)
     copilot/           plugin.py, provider.py, parser.py, events.py, scripted.py, testing.py
     gemini/            plugin.py, provider.py, parser.py, events.py, scripted.py, testing.py
-    opencode/          plugin.py, provider.py, parser.py, events.py, scripted.py, testing.py
+    opencode/          plugin.py, model_data.py, provider.py, parser.py, events.py, scripted.py, testing.py
   testing/             test doubles shipped for consumers
     __init__.py        FakeExecutor, FakeRun, RecordingEventHandler, scripted_turn,
                        scripted_resume_failure, installed_mcp_servers
@@ -102,6 +105,9 @@ Rules:
 - No module-level mutable registries. Each provider exports a single plugin
   declaration; `providers/__init__.py` assembles the immutable default catalog.
   Callers can extend it without changing the built-in catalog.
+- Core owns model/pricing value types and the plugin contract, not vendor
+  facts. Each provider owns its model and pricing entries and vendor mappings;
+  the catalog assembles them. Callers can supply versioned override tables.
 - No required runtime dependencies. Logging goes through a
   `Callable[[str], None]` supplied by the caller.
 - Python 3.10 compatible, `from __future__ import annotations` everywhere,

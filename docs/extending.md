@@ -1,15 +1,21 @@
 # Adding a Provider
 
-A provider package holds only argv construction, stream parsing, and
-provider-specific options. Everything shared (tool pairing, JSON line
-handling, MCP file merge, schema materialization) already lives in `core/`.
+A provider integration lives in its own package. The shipped providers are
+under `agentshim/providers/<name>/`; an application or third party can keep
+the same layout in a package outside `agentshim`. Shared behaviour (tool
+pairing, JSON line handling, MCP file merge, schema materialization) lives
+in `core/`.
 
-Create `agentshim/providers/<name>/` with `provider.py`, `parser.py`,
-`events.py`, `scripted.py` and an `__init__.py` exporting `<Name>Provider`,
-`PROFILE` and `scripted_lines`, then add one entry to each dict in
-`agentshim/providers/__init__.py`. Import `core/` and `execution/`
-absolutely (`from agentshim.core.events import ...`) and your own siblings
-relatively (`from .parser import ...`), as the five shipped packages do.
+Put argv construction in `provider.py`, stream parsing in `parser.py`, and
+provider-specific options beside them. Add a `plugin.py` that exports one
+`ProviderPlugin` declaration. It gathers the provider profile, an optional
+one-shot provider factory, an optional long-lived transport factory, an optional readiness `ProbeSpec`,
+and optional `ProviderTestSupport`. The built-in catalog imports that one
+declaration from each shipped provider. No provider module changes a global
+registry as an import side effect.
+
+Import `core/` and `execution/` absolutely (`from agentshim.core.events
+import ...`) and your own siblings relatively (`from .parser import ...`).
 
 ## The protocol
 
@@ -58,10 +64,11 @@ failed tool on `ToolResult.stderr` with a nonzero `exit_code`, never on
 ## Test doubles
 
 Expose `scripted_lines(...)` in `scripted.py`, returning the provider's real
-stdout for one turn, and register it so `scripted_turn("<name>", ...)` finds
-it. Consumers test against that, so it has to round-trip through your own
-parser. If the provider has no native output schema, raise `ValueError` when
-`structured_output` is passed rather than ignoring it.
+stdout for one turn. Put it, `resume_failure_lines`, and any probe or MCP
+test adapters in the plugin's `ProviderTestSupport`. Consumer test helpers
+receive the same catalog as the runtime API and round-trip the stream through
+the provider's own parser. If the provider has no native output schema, raise
+`ValueError` when `structured_output` is passed rather than ignoring it.
 
 ## Tests
 
@@ -72,16 +79,29 @@ parametrized over `provider_names()` and will pick the new provider up
 automatically: it pins the profile fields, the prompt staying out of argv,
 the resume flag, the scripted round trip, the usage invariant, and
 `RawOutput` for non-object JSON. Add the new name to its `RESUME_FLAGS` map.
+An external plugin can run the equivalent tests in its own repository;
+`tests/external_provider/` is an example that works without adding a module
+to the `agentshim` namespace.
 
 ## Installing it
 
 ```python
-from agentshim import CliAgent
-from myapp.providers import MyProvider
+from agentshim import Agent, ApprovalPolicy, CliAgent, DEFAULT_CATALOG, NativePermissions
+from myagent.plugin import PLUGIN
 
-agent = CliAgent(MyProvider(), model="my-model-id")
+catalog = DEFAULT_CATALOG.with_plugin(PLUGIN)
+cli = CliAgent("myagent", catalog=catalog, model="my-model-id")
+agent = Agent(
+    "myagent", catalog=catalog,
+    permissions=NativePermissions.bypass(), approvals=ApprovalPolicy.DENY,
+)
 ```
 
-Providers reached by name go in the dicts in `providers/__init__.py`; there is
-no mutable registry and no import side effect. A provider that lives outside
-agentshim never needs to be registered: pass the instance.
+At least one transport factory is required, so a stream-only integration does
+not need to implement the one-shot `Provider` protocol. `ProviderCatalog.with_plugin` returns a new catalog and rejects duplicate
+names. Pass it to `Agent`, `CliAgent`, `probe_provider`, `provider_names`, or
+the consumer test helpers. The built-in default remains unchanged. A caller
+can still pass a `Provider` instance to `CliAgent` or a `Transport` instance
+to `Agent` without using a catalog. A plugin may live in a separately
+installed package or a local application; publishing to agentshim is not
+required.

@@ -45,16 +45,16 @@ agentshim/
     confinement.py     Confinement protocol, confine(), PathMap
     docker.py          DockerExecConfinement
   providers/           one folder per CLI, all with the same layout
-    __init__.py        get_provider(name), provider_names(), get_scripted_lines(name),
-                       get_stream_transport(name, ...)
-    claude/            provider.py, parser.py, events.py, scripted.py,
+    catalog.py          immutable ProviderCatalog and ProviderPlugin declarations
+    __init__.py         built-in catalog and compatibility lookup functions
+    claude/            plugin.py, provider.py, parser.py, events.py, scripted.py, testing.py,
                        sandbox.py, hooks/, stream_transport.py (ClaudeStreamTransport),
                        stream_argv.py
-    codex/             provider.py, parser.py, events.py, scripted.py,
+    codex/             plugin.py, provider.py, parser.py, events.py, scripted.py, testing.py,
                        app_server/ (generated protocol types, see below)
-    copilot/           provider.py, parser.py, events.py, scripted.py
-    gemini/            provider.py, parser.py, events.py, scripted.py
-    opencode/          provider.py, parser.py, events.py, scripted.py
+    copilot/           plugin.py, provider.py, parser.py, events.py, scripted.py, testing.py
+    gemini/            plugin.py, provider.py, parser.py, events.py, scripted.py, testing.py
+    opencode/          plugin.py, provider.py, parser.py, events.py, scripted.py, testing.py
   testing/             test doubles shipped for consumers
     __init__.py        FakeExecutor, FakeRun, RecordingEventHandler, scripted_turn,
                        scripted_resume_failure, installed_mcp_servers
@@ -77,13 +77,15 @@ Rules:
   `providers/`, which `core/` may not do.
 - The layering is a build gate, not a convention. `[tool.importlinter]` in
   `pyproject.toml` declares it and `scripts/check_imports.sh` runs it.
-- A provider folder holds only argv construction, stream parsing, and
-  provider-specific options. Shared behaviour (tool pairing, JSON line
-  handling, MCP file merge, schema materialization) lives in `core/`.
+- A provider folder owns argv construction, stream parsing, provider-specific
+  options, its catalog declaration, and its test adapters. Shared behaviour
+  (tool pairing, JSON line handling, MCP file merge, schema materialization)
+  lives in `core/`.
 - Every provider package has the same shape: `provider.py`, `parser.py`,
   `events.py`, `scripted.py`, and an `__init__.py` exporting
   `<Name>Provider`, `PROFILE`, `<Name>StreamParser`, `scripted_lines`,
-  `resume_failure_lines`, and `mcp_entry` where the provider has one.
+  `resume_failure_lines`, and `mcp_entry` where the provider has one. Its
+  `plugin.py` exports the complete `PLUGIN` declaration.
   `fold_usage` is deliberately not on that list: every package has one and no
   two take the same arguments, so a caller could never write code against the
   name. It stays private to its own `parser.py`. Anything beyond that is
@@ -97,8 +99,9 @@ Rules:
   classes. `tests/unit/providers/test_conventions.py` is parametrized over
   `provider_names()` and pins the rules a per-provider suite cannot see one
   package dropping.
-- No module-level mutable registries. `providers/__init__.py` maps names to
-  provider factories with a plain dict.
+- No module-level mutable registries. Each provider exports a single plugin
+  declaration; `providers/__init__.py` assembles the immutable default catalog.
+  Callers can extend it without changing the built-in catalog.
 - No required runtime dependencies. Logging goes through a
   `Callable[[str], None]` supplied by the caller.
 - Python 3.10 compatible, `from __future__ import annotations` everywhere,

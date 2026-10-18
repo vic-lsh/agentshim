@@ -166,7 +166,15 @@ from .execution import (
 )
 from .oneshot import OneShotTransport
 from .probe import probe_provider
-from .providers import get_provider, provider_names, stream_provider_names
+from .providers import (
+    DEFAULT_CATALOG,
+    ProviderCatalog,
+    ProviderPlugin,
+    ProviderTestSupport,
+    get_provider,
+    provider_names,
+    stream_provider_names,
+)
 from .providers.claude import ClaudeHook, ClaudeProvider, ClaudeStreamTransport, SandboxConfig
 from .providers.codex import CodexProvider, CodexSandboxConfig
 from .providers.codex.app_server import CodexAppServerTransport
@@ -178,7 +186,7 @@ from .session import Session, Turn, TurnTicket, map_mcp_servers
 
 __version__ = "0.19.0"
 
-__all__ = [
+__all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "Agent",
     "AgentEvent",
     "AgentEventHandler",
@@ -225,6 +233,7 @@ __all__ = [
     "CopilotProvider",
     "CredentialKind",
     "CredentialSource",
+    "DEFAULT_CATALOG",
     "DockerExecConfinement",
     "EndpointSpec",
     "EnvCredential",
@@ -271,9 +280,12 @@ __all__ = [
     "ProcessOutput",
     "Provider",
     "ProviderCapabilityError",
+    "ProviderCatalog",
     "ProviderError",
+    "ProviderPlugin",
     "ProviderProfile",
     "ProviderStatus",
+    "ProviderTestSupport",
     "ProviderUsage",
     "RandomIds",
     "RateLimitStatus",

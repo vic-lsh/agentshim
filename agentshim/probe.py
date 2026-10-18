@@ -22,7 +22,7 @@ from agentshim.core.status import (
 from agentshim.execution.confinement import confine
 from agentshim.execution.executor import CommandRequest, NullSink
 from agentshim.execution.host import HostCommandExecutor
-from agentshim.providers import get_probe_spec, get_provider
+from agentshim.providers import DEFAULT_CATALOG, ProviderCatalog, get_probe_spec
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -31,13 +31,14 @@ if TYPE_CHECKING:
     from agentshim.execution.executor import CommandExecutor
 
 
-def probe_provider(
+def probe_provider(  # noqa: PLR0913
     provider: str,
     *,
     executor: CommandExecutor | None = None,
     confinement: Confinement | None = None,
     env: Mapping[str, str] | None = None,
     timeout: float = 15.0,
+    catalog: ProviderCatalog = DEFAULT_CATALOG,
 ) -> ProviderStatus:
     """Report the readiness of *provider* without running a turn.
 
@@ -59,15 +60,26 @@ def probe_provider(
             raise ValueError(msg)
         base = confine(base, confinement)
         env = dict(confinement.env)
-    return probe_on(provider, base, dict(env) if env is not None else interactive_env(), timeout)
+    return probe_on(
+        provider,
+        base,
+        dict(env) if env is not None else interactive_env(),
+        timeout,
+        catalog=catalog,
+    )
 
 
 def probe_on(
-    provider: str, executor: CommandExecutor, env: Mapping[str, str], timeout: float
+    provider: str,
+    executor: CommandExecutor,
+    env: Mapping[str, str],
+    timeout: float,
+    *,
+    catalog: ProviderCatalog = DEFAULT_CATALOG,
 ) -> ProviderStatus:
     """Probe *provider* on an executor that is already confined, with the final *env*."""
-    profile = get_provider(provider).profile
-    spec = get_probe_spec(provider)
+    profile = catalog.plugin(provider).profile
+    spec = get_probe_spec(provider, catalog=catalog)
     try:
         path = executor.find_binary(profile.binary, env)
     except CliNotFoundError:

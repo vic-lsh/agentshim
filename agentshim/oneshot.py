@@ -23,6 +23,7 @@ from agentshim.core.permissions import NativeMode
 from agentshim.core.profile import McpMechanism
 from agentshim.core.turn import TurnResult
 from agentshim.core.usage import ProviderUsage
+from agentshim.providers import DEFAULT_CATALOG, ProviderCatalog
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -59,7 +60,7 @@ class OneShotTransport:
     """
 
     # Each argument is an independent documented option, as on ``CliAgent``.
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         provider: str | Provider,
         *,
@@ -67,10 +68,16 @@ class OneShotTransport:
         env: Mapping[str, str] | None = None,
         check_timeout: float = 15.0,
         log: Callable[[str], None] | None = None,
+        catalog: ProviderCatalog = DEFAULT_CATALOG,
     ) -> None:
         """Check the install of *provider* on *executor* (the local host by default)."""
         self._agent = CliAgent(
-            provider, executor=executor, env=env, check_timeout=check_timeout, log=log
+            provider,
+            executor=executor,
+            env=env,
+            check_timeout=check_timeout,
+            log=log,
+            catalog=catalog,
         )
 
     @property

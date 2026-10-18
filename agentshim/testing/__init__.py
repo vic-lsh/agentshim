@@ -6,7 +6,6 @@ events; never on a provider's internal attributes.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -16,16 +15,12 @@ from agentshim.core.status import AuthState
 from agentshim.core.usage import TokenUsage
 from agentshim.execution.executor import CommandResult
 from agentshim.providers import (
+    DEFAULT_CATALOG,
+    ProviderCatalog,
     get_failure_lines,
-    get_provider,
     get_resume_failure_lines,
     get_scripted_lines,
 )
-from agentshim.providers.claude import provider as _claude
-from agentshim.providers.codex.provider import parse_mcp_servers as _parse_codex_mcp_servers
-from agentshim.providers.copilot.provider import parse_mcp_servers as _parse_copilot_mcp_servers
-from agentshim.providers.gemini import provider as _gemini
-from agentshim.providers.opencode import provider as _opencode
 
 from .claude_stream import (
     ClaudeApiError,
@@ -122,6 +117,7 @@ def probe_executor(
     version: str = "1.2.3",
     auth: AuthState = AuthState.KNOWN_OK,
     installed: bool = True,
+    catalog: ProviderCatalog = DEFAULT_CATALOG,
 ) -> FakeExecutor:
     """A ``FakeExecutor`` that answers *provider*'s probe commands like the real CLI.
 
@@ -129,7 +125,7 @@ def probe_executor(
     declared to run exits 2 with a usage error, so a probe that strays shows
     up in ``executor.requests`` and in the status.
     """
-    binary = get_provider(provider).profile.binary
+    binary = catalog.plugin(provider).profile.binary
 
     def pick(request: CommandRequest) -> FakeRun:
         argv = list(request.argv)
@@ -137,7 +133,7 @@ def probe_executor(
         # arguments are whatever follows the binary's name.
         named = [i for i, arg in enumerate(argv) if arg.rsplit("/", 1)[-1] == binary]
         args = argv[named[0] + 1 :] if named else argv[1:]
-        out = probe_run(provider, args, version=version, auth=auth)
+        out = probe_run(provider, args, version=version, auth=auth, catalog=catalog)
         return FakeRun(stdout=[out.stdout], stderr=[out.stderr], returncode=out.returncode)
 
     binaries = {binary: f"/usr/local/bin/{binary}"} if installed else {"": ""}
@@ -268,6 +264,7 @@ def scripted_turn(  # noqa: PLR0913
     returncode: int = 0,
     skills_offered: Sequence[str] | None = None,
     skills_invoked: Sequence[str] = (),
+    catalog: ProviderCatalog = DEFAULT_CATALOG,
 ) -> FakeRun:
     """Build a ``FakeRun`` whose stdout is *provider*'s real stream format.
 
@@ -277,7 +274,7 @@ def scripted_turn(  # noqa: PLR0913
     on a provider whose stream cannot carry it (the matching
     ``profile.skill_*`` signal is ``NONE``).
     """
-    lines = get_scripted_lines(provider)(
+    lines = get_scripted_lines(provider, catalog=catalog)(
         text=text,
         session_id=session_id,
         usage=usage,
@@ -289,7 +286,12 @@ def scripted_turn(  # noqa: PLR0913
     return FakeRun(stdout=lines, returncode=returncode)
 
 
-def scripted_resume_failure(provider: str, *, session_id: str | None = None) -> FakeRun:
+def scripted_resume_failure(
+    provider: str,
+    *,
+    session_id: str | None = None,
+    catalog: ProviderCatalog = DEFAULT_CATALOG,
+) -> FakeRun:
     """Build a ``FakeRun`` for a resumed turn *provider* cannot continue.
 
     Serve this to a session that has already ``adopt``-ed a session id: the
@@ -310,15 +312,24 @@ def scripted_resume_failure(provider: str, *, session_id: str | None = None) -> 
         session_id: Folded into the scripted failure message for realism;
             it does not change what a raised error reports, which is always
             read from the resumed turn's own argv.
+        catalog: Provider implementations and test adapters to use.
 
     Returns:
         A ``FakeRun`` with a nonzero exit code.
     """
-    stdout, stderr, returncode = get_resume_failure_lines(provider)(session_id=session_id)
+    stdout, stderr, returncode = get_resume_failure_lines(provider, catalog=catalog)(
+        session_id=session_id
+    )
     return FakeRun(stdout=list(stdout), stderr=list(stderr), returncode=returncode)
 
 
-def scripted_failure(provider: str, kind: FailureKind, *, session_id: str | None = None) -> FakeRun:
+def scripted_failure(
+    provider: str,
+    kind: FailureKind,
+    *,
+    session_id: str | None = None,
+    catalog: ProviderCatalog = DEFAULT_CATALOG,
+) -> FakeRun:
     """Build a ``FakeRun`` for a turn that fails and classifies as *kind*.
 
     The run is *provider*'s real report of such a failure (an overload, a
@@ -335,16 +346,23 @@ def scripted_failure(provider: str, kind: FailureKind, *, session_id: str | None
             constrained to the schema.
         kind: The ``FailureKind`` the raised error must carry.
         session_id: The conversation the failed run names, if any.
+        catalog: Provider implementations and test adapters to use.
 
     Returns:
         A ``FakeRun`` with a nonzero exit code.
     """
-    stdout, stderr, returncode = get_failure_lines(provider)(kind, session_id=session_id)
+    stdout, stderr, returncode = get_failure_lines(provider, catalog=catalog)(
+        kind, session_id=session_id
+    )
     return FakeRun(stdout=list(stdout), stderr=list(stderr), returncode=returncode)
 
 
 def installed_mcp_servers(
-    provider: str, request: CommandRequest, workspace: Path
+    provider: str,
+    request: CommandRequest,
+    workspace: Path,
+    *,
+    catalog: ProviderCatalog = DEFAULT_CATALOG,
 ) -> dict[str, dict[str, Any]]:
     """Return the MCP servers *request* installed for one turn, keyed by name.
 
@@ -367,86 +385,18 @@ def installed_mcp_servers(
         workspace: The turn's MCP workspace (its ``cwd``, unless
             ``TurnRequest.mcp_workspace`` overrode it). Unused for a
             CLI-flags provider.
+        catalog: Provider implementations and test adapters to use.
 
     Returns:
         One canonical entry per installed server.
     """
-    profile = get_provider(provider).profile
-    if profile.mcp is McpMechanism.NONE:
+    if catalog.plugin(provider).profile.mcp is McpMechanism.NONE:
         return {}
-    if profile.mcp is McpMechanism.CLI_FLAGS:
-        return _flags_mcp_servers(provider, request.argv)
-    return _config_file_mcp_servers(provider, workspace)
-
-
-def _flags_mcp_servers(provider: str, argv: Sequence[str]) -> dict[str, dict[str, Any]]:
-    if provider == "codex":
-        return _parse_codex_mcp_servers(argv)
-    if provider == "copilot":
-        return _parse_copilot_mcp_servers(argv)
-    msg = f"no MCP-flags parser registered for provider {provider!r}"
-    raise ValueError(msg)
-
-
-def _config_file_mcp_servers(provider: str, workspace: Path) -> dict[str, dict[str, Any]]:
-    if provider == "claude":
-        target = workspace / _claude.MCP_CONFIG_FILENAME
-        server_key = _claude.MCP_SERVER_KEY
-        canonical = _claude_mcp_entry
-    elif provider == "gemini":
-        target = workspace / _gemini.MCP_CONFIG_FILENAME
-        server_key = _gemini.MCP_SERVER_KEY
-        canonical = _gemini_mcp_entry
-    elif provider == "opencode":
-        target = workspace / _opencode.MCP_CONFIG_FILENAME
-        server_key = _opencode.MCP_SERVER_KEY
-        canonical = _opencode_mcp_entry
-    else:
-        msg = f"no MCP config-file reader registered for provider {provider!r}"
+    reader = catalog.test_support(provider).installed_mcp_servers
+    if reader is None:
+        msg = f"no MCP test reader for provider {provider!r}"
         raise ValueError(msg)
-    if not target.exists():
-        return {}
-    config = json.loads(target.read_text())
-    servers = config.get(server_key, {})
-    return {name: canonical(raw) for name, raw in servers.items()}
-
-
-def _claude_mcp_entry(raw: Mapping[str, Any]) -> dict[str, Any]:
-    if "url" in raw:
-        return {"url": raw["url"], "transport": raw.get("type", "http")}
-    return {
-        "command": raw.get("command", ""),
-        "args": list(raw.get("args", ())),
-        "env": dict(raw.get("env", {})),
-    }
-
-
-def _gemini_mcp_entry(raw: Mapping[str, Any]) -> dict[str, Any]:
-    # gemini picks the transport by which key holds the address: ``httpUrl``
-    # is streamable HTTP, plain ``url`` is SSE.
-    if "httpUrl" in raw:
-        return {"url": raw["httpUrl"], "transport": "http"}
-    if "url" in raw:
-        return {"url": raw["url"], "transport": "sse"}
-    return {
-        "command": raw.get("command", ""),
-        "args": list(raw.get("args", ())),
-        "env": dict(raw.get("env", {})),
-    }
-
-
-def _opencode_mcp_entry(raw: Mapping[str, Any]) -> dict[str, Any]:
-    if raw.get("type") == "remote":
-        # opencode has one remote server type and negotiates the transport
-        # itself, so it is not recoverable from the config; "http" matches
-        # ``HttpMcpServer``'s own default.
-        return {"url": raw["url"], "transport": "http"}
-    command = list(raw.get("command", ()))
-    return {
-        "command": command[0] if command else "",
-        "args": command[1:],
-        "env": dict(raw.get("environment", {})),
-    }
+    return reader(request, workspace)
 
 
 __all__ = [

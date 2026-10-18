@@ -45,7 +45,7 @@ class ProviderCatalog:
                 msg = "provider plugin is missing a required method"
                 raise TypeError(msg)
             if (
-                not isinstance(plugin.name, str)
+                not isinstance(cast("object", plugin.name), str)
                 or not plugin.name
                 or plugin.name != plugin.name.strip()
             ):

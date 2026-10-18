@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date
+from typing import cast
 
 import pytest
 from agentshim import (
@@ -28,6 +29,7 @@ from agentshim import (
     probe_provider,
     provider_names,
 )
+from agentshim.core.plugin import PricingContext
 from agentshim.testing import (
     FakeExecutor,
     FakeTransport,
@@ -37,7 +39,7 @@ from agentshim.testing import (
     scripted_turn,
 )
 
-from tests.external_provider.plugin import PLUGIN, PROFILE, OutsideProvider
+from tests.external_provider.plugin import PLUGIN, PROFILE, OutsidePlugin, OutsideProvider
 
 ENV = {"PATH": "/usr/bin:/bin", "HOME": "/home/tester"}
 
@@ -92,11 +94,17 @@ def test_external_provider_probe_and_test_helpers() -> None:
 def test_external_stream_only_plugin_works_by_name() -> None:
     profile = replace(PLUGIN.profile, name="outside-stream")
 
-    def stream_factory(**kwargs: object) -> FakeTransport:
-        del kwargs
+    def stream_factory(options: object) -> FakeTransport:
+        del options
         return FakeTransport((FakeTurn(text="stream turn"),), profile=profile)
 
-    plugin = ProviderPlugin(name="outside-stream", profile=profile, stream_factory=stream_factory)
+    plugin = replace(
+        PLUGIN,
+        name="outside-stream",
+        profile=profile,
+        provider_factory=None,
+        stream_factory=stream_factory,
+    )
     catalog = DEFAULT_CATALOG.with_plugin(plugin)
     assert "outside-stream" in catalog.stream_names()
     agent = Agent(
@@ -122,6 +130,13 @@ def test_external_provider_supplies_vendor_mapping_for_model_facts() -> None:
     standalone = ProviderCatalog((PLUGIN,))
     assert context_window("outside", "sample", catalog=standalone) == 32000
     assert price_for("outside", "sample", catalog=standalone) == PLUGIN.pricing_entries[0]
+    assert context_window("outside", "sample-dynamic", catalog=standalone) == 64000
+    premium = price_for(
+        "outside", "sample", catalog=standalone, context=PricingContext(tier="premium")
+    )
+    assert premium is not None
+    assert premium.input_usd == 3.0
+    assert price_for("codex", "gpt-6-luna", context=PricingContext(tier="standard")) is not None
     sibling = replace(
         PLUGIN, name="outside-sibling", profile=replace(PROFILE, name="outside-sibling")
     )
@@ -175,4 +190,6 @@ def test_catalog_is_immutable_and_rejects_collisions() -> None:
     with pytest.raises(ValueError, match="duplicate provider plugin"):
         ProviderCatalog((PLUGIN, PLUGIN))
     with pytest.raises(ValueError, match="profile name"):
-        ProviderPlugin(name="wrong", profile=PLUGIN.profile, provider_factory=OutsideProvider)
+        ProviderCatalog((OutsidePlugin(name="wrong", profile=PLUGIN.profile),))
+    with pytest.raises(TypeError, match="missing a required method"):
+        ProviderCatalog((cast("ProviderPlugin", object()),))

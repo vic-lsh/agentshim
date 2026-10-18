@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from agentshim.core.plugin import ProviderPlugin, ProviderTestSupport
+from agentshim.core.plugin import ProviderTestSupport
+from agentshim.providers.static_plugin import StaticProviderPlugin
 
 from .app_server import CodexAppServerTransport
 from .model_data import MODEL_ENTRIES, PRICING_ENTRIES
@@ -11,11 +12,11 @@ from .provider import PROFILE, CodexProvider
 from .scripted import failure_lines, resume_failure_lines, scripted_lines
 from .testing import installed_mcp_servers, probe_fixture
 
-PLUGIN = ProviderPlugin(
+PLUGIN = StaticProviderPlugin(
     name="codex",
     profile=PROFILE,
     provider_factory=CodexProvider,
-    probe=PROBE,
+    readiness=PROBE,
     model_vendor="openai",
     pricing_vendor="openai",
     model_entries=MODEL_ENTRIES,

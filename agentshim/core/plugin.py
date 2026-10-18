@@ -1,25 +1,26 @@
-"""Provider contract: runtime factories, optional test adapters, and facts."""
+"""Method-based contract implemented by built-in and third-party plugins."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    import datetime as dt
     from collections.abc import Callable, Mapping, Sequence
     from pathlib import Path
 
     from agentshim.execution.executor import CommandExecutor, CommandRequest
 
     from .clock import Clock
-    from .conversation import Transport
+    from .conversation import Transport, TransportKind
     from .errors import FailureKind
     from .ids import IdAllocator
-    from .models import ModelSpec
-    from .pricing import ModelPricing
+    from .models import ModelSpec, ModelTable
+    from .pricing import ModelPricing, PricingTable
     from .profile import ProviderProfile
     from .provider import Provider
-    from .status import AuthState, ProbeSpec
+    from .status import AuthState, ProviderStatus
     from .usage import TokenUsage
 
 
@@ -62,7 +63,7 @@ class FailureLines(Protocol):
 
 
 class StreamTransportFactory(Protocol):
-    """Build a provider's long-lived transport."""
+    """Legacy type for provider-internal stream constructors."""
 
     def __call__(  # noqa: PLR0913
         self,
@@ -74,7 +75,7 @@ class StreamTransportFactory(Protocol):
         check_timeout: float,
         log: Callable[[str], None] | None,
     ) -> Transport:
-        """Return a checked, ready-to-use transport."""
+        """Create a stream transport."""
         ...
 
 
@@ -100,34 +101,72 @@ class ProviderTestSupport:
 
 
 @dataclass(frozen=True)
-class ProviderPlugin:
-    """The single declaration of a provider's runtime and optional test features."""
+class ConnectionOptions:
+    """Dependencies for a requested connection mode."""
 
-    name: str
-    profile: ProviderProfile
-    provider_factory: Callable[[], Provider] | None = None
-    probe: ProbeSpec | None = None
-    stream_factory: StreamTransportFactory | None = None
-    testing: ProviderTestSupport | None = None
-    #: Vendor for unprefixed model ids this provider runs, if known.
-    model_vendor: str | None = None
-    #: Vendor that bills this provider's token usage, if known.
-    pricing_vendor: str | None = None
-    #: Extra model-id prefixes this provider understands, such as google-vertex/google.
-    model_aliases: tuple[tuple[str, str], ...] = ()
-    #: Facts supplied by this plugin for model lookup.
-    model_entries: tuple[ModelSpec, ...] = ()
-    #: Facts supplied by this plugin for cost lookup.
-    pricing_entries: tuple[ModelPricing, ...] = ()
+    kind: TransportKind
+    executor: CommandExecutor | None = None
+    env: Mapping[str, str] | None = None
+    clock: Clock | None = None
+    ids: IdAllocator | None = None
+    check_timeout: float = 15.0
+    log: Callable[[str], None] | None = None
 
-    def __post_init__(self) -> None:
-        """Reject unusable names and declarations that disagree with the provider."""
-        if not self.name or self.name != self.name.strip():
-            msg = "provider plugin name must be non-empty and unpadded"
-            raise ValueError(msg)
-        if self.profile.name != self.name:
-            msg = f"plugin {self.name!r} has provider profile name {self.profile.name!r}"
-            raise ValueError(msg)
-        if self.provider_factory is None and self.stream_factory is None:
-            msg = f"plugin {self.name!r} needs a one-shot or stream transport factory"
-            raise ValueError(msg)
+
+@dataclass(frozen=True)
+class PricingContext:
+    """Conditions under which a rate is requested; omitted values mean standard tier."""
+
+    as_of: dt.date | None = None
+    region: str | None = None
+    tier: str | None = None
+
+
+@runtime_checkable
+class ProviderPlugin(Protocol):
+    """Required methods for every provider; unsupported facts return ``None``."""
+
+    @property
+    def name(self) -> str:
+        """Stable catalog key."""
+        ...
+
+    def describe(self) -> ProviderProfile:
+        """Describe capabilities independently of local installation state."""
+        ...
+
+    def connection_modes(self) -> frozenset[TransportKind]:
+        """Declare which connection modes ``connect`` accepts."""
+        ...
+
+    def connect(self, options: ConnectionOptions) -> Provider | Transport:
+        """Create the requested one-shot provider or stream transport."""
+        ...
+
+    def probe(
+        self, executor: CommandExecutor, env: Mapping[str, str], timeout: float
+    ) -> ProviderStatus:
+        """Check readiness on the supplied executor, without running a model."""
+        ...
+
+    def model_info(self, model: str, table: ModelTable | None = None) -> ModelSpec | None:
+        """Resolve context-window facts; *table* overrides built-in facts."""
+        ...
+
+    def pricing_info(
+        self, model: str, context: PricingContext, table: PricingTable | None = None
+    ) -> ModelPricing | None:
+        """Resolve a rate for *model* and *context*, or report it unknown."""
+        ...
+
+    def known_models(self) -> tuple[ModelSpec, ...]:
+        """Enumerate facts available for a reproducible table snapshot."""
+        ...
+
+    def known_prices(self) -> tuple[ModelPricing, ...]:
+        """Enumerate standard-tier prices for a reproducible table snapshot."""
+        ...
+
+    def test_support(self) -> ProviderTestSupport | None:
+        """Return consumer-test adapters, if provided."""
+        ...

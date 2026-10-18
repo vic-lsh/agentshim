@@ -6,6 +6,7 @@ import datetime as dt
 import re
 from typing import TYPE_CHECKING
 
+from agentshim.core.plugin import PricingContext
 from agentshim.core.pricing import ModelPricing, PricingTable, cost_usd
 
 __all__ = [
@@ -47,26 +48,8 @@ def vendor_and_model(
     variant (``claude-opus-5-5[1m]``). Returns ``None`` when the provider is
     not billed per token by a known vendor.
     """
-    name = model.strip().lower()
-    source = table if table is not None else default_pricing(catalog=catalog)
-    catalog = _catalog_or_default(catalog)
-    vendors = {entry.vendor for entry in source.entries}
-    provider_name = provider.strip().lower()
-    vendor = catalog.pricing_vendor(provider_name)
-    if vendor is None and provider_name in vendors:
-        vendor = provider_name
-    if "/" in name:
-        prefix, _, rest = name.partition("/")
-        prefix_vendor = catalog.pricing_vendor(prefix)
-        if prefix_vendor is None and prefix in vendors:
-            prefix_vendor = prefix
-        vendor = prefix_vendor or vendor
-        name = rest
-    if vendor is None or not name:
-        return None
-    name = _BRACKET_SUFFIX.sub("", name)
-    name = _DATE_SUFFIX.sub("", name)
-    return (vendor, name)
+    entry = price_for(provider, model, table, catalog=catalog)
+    return None if entry is None else entry.key
 
 
 def price_for(
@@ -75,6 +58,7 @@ def price_for(
     table: PricingTable | None = None,
     *,
     catalog: ProviderCatalog | None = None,
+    context: PricingContext | None = None,
 ) -> ModelPricing | None:
     """The price of *model* run through *provider*, or ``None`` when it is not known.
 
@@ -82,10 +66,31 @@ def price_for(
     """
     if not model:
         return None
-    key = vendor_and_model(provider, model, table, catalog=catalog)
-    if key is None:
+    source = table if table is not None else default_pricing(catalog=catalog)
+    catalog = _catalog_or_default(catalog)
+    provider_name = provider.strip().lower()
+    if provider_name in catalog.names():
+        resolved = catalog.plugin(provider_name).pricing_info(
+            model, context or PricingContext(), source if table is not None else None
+        )
+        if resolved is not None or "/" not in model:
+            return resolved
+    name = model.strip().lower()
+    vendors = {entry.vendor for entry in source.entries}
+    vendor = provider_name if provider_name in vendors else None
+    if "/" in name:
+        prefix, _, rest = name.partition("/")
+        vendor = prefix if prefix in vendors else None
+        name = rest
+    if vendor is None or not name:
         return None
-    return (table if table is not None else default_pricing(catalog=catalog)).get(*key)
+    if context is not None and (
+        context.as_of is not None
+        or context.region not in (None, "global")
+        or context.tier not in (None, "standard")
+    ):
+        return None
+    return source.get(vendor, _DATE_SUFFIX.sub("", _BRACKET_SUFFIX.sub("", name)))
 
 
 def default_pricing(*, catalog: ProviderCatalog | None = None) -> PricingTable:
@@ -93,7 +98,7 @@ def default_pricing(*, catalog: ProviderCatalog | None = None) -> PricingTable:
     catalog = _catalog_or_default(catalog)
     by_key: dict[tuple[str, str], ModelPricing] = {}
     for name in catalog.names():
-        for entry in catalog.plugin(name).pricing_entries:
+        for entry in catalog.plugin(name).known_prices():
             previous = by_key.get(entry.key)
             if previous is not None and previous != entry:
                 msg = f"conflicting prices for {entry.vendor}/{entry.model}"

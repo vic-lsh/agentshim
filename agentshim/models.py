@@ -45,16 +45,18 @@ def model_spec(
         return None
     source = table if table is not None else default_models(catalog=catalog)
     catalog = _catalog_or_default(catalog)
-    vendors = {entry.vendor for entry in source.entries}
     provider_name = provider.strip().lower()
-    vendor = catalog.model_vendor(provider_name)
-    if vendor is None and provider_name in vendors:
-        vendor = provider_name
+    if provider_name in catalog.names():
+        resolved = catalog.plugin(provider_name).model_info(
+            name, source if table is not None else None
+        )
+        if resolved is not None or "/" not in name:
+            return resolved
+    vendors = {entry.vendor for entry in source.entries}
+    vendor = provider_name if provider_name in vendors else None
     if "/" in name:
         prefix, _, rest = name.partition("/")
-        vendor = catalog.model_vendor(prefix)
-        if vendor is None and prefix in vendors:
-            vendor = prefix
+        vendor = prefix if prefix in vendors else None
         name = rest
     if vendor is None or not name:
         return None
@@ -78,7 +80,7 @@ def default_models(*, catalog: ProviderCatalog | None = None) -> ModelTable:
     catalog = _catalog_or_default(catalog)
     by_key: dict[tuple[str, str], ModelSpec] = {}
     for name in catalog.names():
-        for entry in catalog.plugin(name).model_entries:
+        for entry in catalog.plugin(name).known_models():
             previous = by_key.get(entry.key)
             if previous is not None and previous != entry:
                 msg = f"conflicting model facts for {entry.vendor}/{entry.model}"

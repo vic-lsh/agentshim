@@ -27,7 +27,7 @@ agentshim/
     usage.py           TokenUsage, TokenWeights, ProviderUsage
     models.py          ModelSpec, ModelTable (provider-independent values)
     pricing.py         ModelPricing, PricingTable, cost_usd
-    plugin.py          ProviderPlugin contract and test-support protocols
+    plugin.py          required ProviderPlugin protocol, connection/pricing contexts
     errors.py          exception hierarchy
     permissions.py     NativeMode, NativePermissions, ApprovalPolicy
     clock.py           StopSignal, Clock, SystemClock
@@ -42,6 +42,7 @@ agentshim/
     _files.py          private: atomic_write, shared by schema.py and mcp.py
   execution/           process transport
     executor.py        CommandRequest, CommandResult, CommandHandle, sinks, CommandExecutor
+    readiness.py       run a static ProbeSpec on a CommandExecutor
     host.py            HostCommandExecutor
     transform.py       TransformingExecutor
     process.py         SpawnRequest, ProcessOutput, Process (long-lived processes)
@@ -49,6 +50,7 @@ agentshim/
     docker.py          DockerExecConfinement
   providers/           one folder per CLI, all with the same layout
     catalog.py          immutable ProviderCatalog
+    static_plugin.py    adapter for built-ins with static facts and constructors
     __init__.py         built-in catalog and compatibility lookup functions
     claude/            plugin.py, model_data.py, provider.py, parser.py, events.py, scripted.py, testing.py,
                        sandbox.py, hooks/, stream_transport.py (ClaudeStreamTransport),
@@ -88,7 +90,7 @@ Rules:
   `events.py`, `scripted.py`, and an `__init__.py` exporting
   `<Name>Provider`, `PROFILE`, `<Name>StreamParser`, `scripted_lines`,
   `resume_failure_lines`, and `mcp_entry` where the provider has one. Its
-  `plugin.py` exports the complete `PLUGIN` declaration.
+  `plugin.py` exports the complete `PLUGIN` implementation.
   `fold_usage` is deliberately not on that list: every package has one and no
   two take the same arguments, so a caller could never write code against the
   name. It stays private to its own `parser.py`. Anything beyond that is
@@ -105,9 +107,10 @@ Rules:
 - No module-level mutable registries. Each provider exports a single plugin
   declaration; `providers/__init__.py` assembles the immutable default catalog.
   Callers can extend it without changing the built-in catalog.
-- Core owns model/pricing value types and the plugin contract, not vendor
-  facts. Each provider owns its model and pricing entries and vendor mappings;
-  the catalog assembles them. Callers can supply versioned override tables.
+- Core owns model/pricing value types and the method-based plugin contract, not
+  vendor facts. Each provider answers model and pricing queries and can
+  enumerate facts for a versioned table snapshot. Callers can supply override
+  tables and a pricing context; an external plugin can calculate answers.
 - No required runtime dependencies. Logging goes through a
   `Callable[[str], None]` supplied by the caller.
 - Python 3.10 compatible, `from __future__ import annotations` everywhere,

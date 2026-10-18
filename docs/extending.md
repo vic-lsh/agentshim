@@ -8,24 +8,49 @@ in `core/`.
 
 Put argv construction in `provider.py`, stream parsing in `parser.py`, and
 provider-specific options beside them. Add a `plugin.py` that exports one
-`ProviderPlugin` declaration. It gathers the provider profile, an optional
-one-shot provider factory, an optional long-lived transport factory, an optional readiness `ProbeSpec`,
-and optional `ProviderTestSupport`. The built-in catalog imports that one
-declaration from each shipped provider. No provider module changes a global
-registry as an import side effect.
+object implementing the core `ProviderPlugin` protocol. Every method is
+required. `connect` is the single connection entry point; `connection_modes`
+declares which modes it accepts. An unsupported mode raises
+`ProviderCapabilityError`. The built-in providers use a `StaticProviderPlugin`
+adapter for their fixed declarations, but third-party plugins may compute
+answers directly. No provider registers itself on import.
 
-Set `model_vendor` and `pricing_vendor` when the provider uses known vendor
-models or per-token billing. Supply `model_entries` and `pricing_entries` as
-tuples of core `ModelSpec` and `ModelPricing` values. The catalog composes them
-into the default lookup tables, so `model_spec(..., catalog=catalog)` and
-`price_for(..., catalog=catalog)` work without passing separate tables. A caller
-may still pass a `ModelTable` or `PricingTable` to override or pin the facts.
-Model facts and prices are vendor data and may be shared by several providers.
+`describe` reports agent capabilities without checking the local install;
+`probe` checks local readiness using the supplied executor and environment.
+`model_info` returns a `ModelSpec` (including a context window and provenance)
+or `None`; `pricing_info` returns a `ModelPricing` for a `PricingContext` or
+`None`. These methods can calculate answers dynamically. `known_models` and
+`known_prices` enumerate facts for versioned table snapshots and may return
+empty tuples even if dynamic lookups are available. `test_support` returns
+consumer-test adapters or `None`. Methods are never omitted to signal lack of
+a capability. A caller may still pass a `ModelTable` or `PricingTable` to
+override or pin lookup facts. Identical snapshot entries from multiple plugins
+deduplicate; conflicting entries raise an error.
 
 Import `core/` and `execution/` absolutely (`from agentshim.core.events
 import ...`) and your own siblings relatively (`from .parser import ...`).
 
 ## The protocol
+
+```python
+class ProviderPlugin(Protocol):
+    @property
+    def name(self) -> str: ...
+    def describe(self) -> ProviderProfile: ...
+    def connection_modes(self) -> frozenset[TransportKind]: ...
+    def connect(self, options: ConnectionOptions) -> Provider | Transport: ...
+    def probe(self, executor: CommandExecutor, env: Mapping[str, str], timeout: float) -> ProviderStatus: ...
+    def model_info(self, model: str, table: ModelTable | None = None) -> ModelSpec | None: ...
+    def pricing_info(self, model: str, context: PricingContext, table: PricingTable | None = None) -> ModelPricing | None: ...
+    def known_models(self) -> tuple[ModelSpec, ...]: ...
+    def known_prices(self) -> tuple[ModelPricing, ...]: ...
+    def test_support(self) -> ProviderTestSupport | None: ...
+```
+
+The one-shot `Provider` below is a separate, lower-level protocol returned by
+`connect(ConnectionOptions(TransportKind.ONE_SHOT))`. A stream connection
+returns `Transport`. The union preserves both existing runtimes behind one
+plugin method; the requested kind determines which is returned.
 
 ```python
 class Provider(Protocol):
@@ -73,7 +98,7 @@ failed tool on `ToolResult.stderr` with a nonzero `exit_code`, never on
 
 Expose `scripted_lines(...)` in `scripted.py`, returning the provider's real
 stdout for one turn. Put it, `resume_failure_lines`, and any probe or MCP
-test adapters in the plugin's `ProviderTestSupport`. Consumer test helpers
+test adapters in the `ProviderTestSupport` returned by `test_support()`. Consumer test helpers
 receive the same catalog as the runtime API and round-trip the stream through
 the provider's own parser. If the provider has no native output schema, raise
 `ValueError` when `structured_output` is passed rather than ignoring it.

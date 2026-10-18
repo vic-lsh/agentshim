@@ -20,7 +20,7 @@ profile.default_model  # "claude-opus-5"
 
 ## Context windows
 
-`agentshim.models` composes a versioned table of provider-supplied context windows in
+`agentshim.models` composes a versioned snapshot of provider-supplied context windows in
 tokens, one `ModelSpec` per `(vendor, model)`, each with the official page it
 was read from (`source`) and the date it was checked (`checked`).
 
@@ -42,6 +42,9 @@ context_window("claude", "claude-opus-9")     # None: not known
 - A caller pins or extends the table with
   `default_models().with_entries([...], version="mine")` and passes it as the
   `table` argument.
+- A plugin's `model_info(model, table)` method may calculate a model's facts
+  even when that model is not in the enumerated snapshot. It must still return
+  a `ModelSpec` with a source and checked date.
 
 ## Names, families and tiers
 

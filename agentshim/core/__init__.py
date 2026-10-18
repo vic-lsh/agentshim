@@ -97,7 +97,7 @@ from .mcp import (
 )
 from .models import ModelSpec, ModelTable
 from .permissions import ApprovalPolicy, NativeMode, NativePermissions
-from .plugin import ProviderPlugin, ProviderTestSupport
+from .plugin import ConnectionOptions, PricingContext, ProviderPlugin, ProviderTestSupport
 from .pricing import ModelPricing, PricingTable, cost_usd
 from .profile import (
     ConfigScope,
@@ -149,6 +149,7 @@ __all__ = [
     "CompositeEventHandler",
     "ConfigFileInstallation",
     "ConfigScope",
+    "ConnectionOptions",
     "ConsoleEventHandler",
     "ContextualStreamParser",
     "Continuity",
@@ -189,6 +190,7 @@ __all__ = [
     "ParsedTurn",
     "ParserContext",
     "PolicyConfig",
+    "PricingContext",
     "PricingTable",
     "ProcessClosedError",
     "Provider",

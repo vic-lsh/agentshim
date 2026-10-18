@@ -59,7 +59,7 @@ million tokens and multiples of the base input rate both work.
 
 ## Pricing table
 
-`agentshim.pricing` composes provider-supplied USD prices per million
+`agentshim.pricing` composes a snapshot of provider-supplied USD prices per million
 tokens, one `ModelPricing` per `(vendor, model)`, at the vendor's standard
 (non-batch, global, short-context) tier.
 
@@ -85,6 +85,13 @@ print(table.version, table.last_updated)
   `default_pricing().with_entries([...], version="my-experiment")`, or
   `PricingTable.from_dict(json.load(...))`. Either way the table carries its
   own `version` and `last_updated`, so a report can say which prices it used.
+- A plugin's `pricing_info(model, context, table)` method may compute a rate
+  for a `PricingContext` (for example, a billing tier). Pass that context to
+  `price_for(..., context=...)`. The returned `ModelPricing` records the source
+  and checked date; a dynamic result need not appear in `default_pricing()`.
+  The built-in static facts cover only the current global standard tier;
+  historical `as_of` requests return `None` rather than pretending to know
+  an earlier rate.
 
 Every entry records `source` (the official pricing page's URL) and `checked`
 (the date its numbers were last compared with that page); the table records

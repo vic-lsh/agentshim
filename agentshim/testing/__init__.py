@@ -125,7 +125,7 @@ def probe_executor(
     declared to run exits 2 with a usage error, so a probe that strays shows
     up in ``executor.requests`` and in the status.
     """
-    binary = catalog.plugin(provider).profile.binary
+    binary = catalog.plugin(provider).describe().binary
 
     def pick(request: CommandRequest) -> FakeRun:
         argv = list(request.argv)
@@ -390,7 +390,7 @@ def installed_mcp_servers(
     Returns:
         One canonical entry per installed server.
     """
-    if catalog.plugin(provider).profile.mcp is McpMechanism.NONE:
+    if catalog.plugin(provider).describe().mcp is McpMechanism.NONE:
         return {}
     reader = catalog.test_support(provider).installed_mcp_servers
     if reader is None:

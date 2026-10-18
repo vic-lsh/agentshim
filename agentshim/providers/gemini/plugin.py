@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-from agentshim.core.plugin import ProviderPlugin, ProviderTestSupport
+from agentshim.core.plugin import ProviderTestSupport
+from agentshim.providers.static_plugin import StaticProviderPlugin
 
 from .probe import PROBE
 from .provider import PROFILE, GeminiProvider
 from .scripted import resume_failure_lines, scripted_lines
 from .testing import installed_mcp_servers, probe_fixture
 
-PLUGIN = ProviderPlugin(
+PLUGIN = StaticProviderPlugin(
     name="gemini",
     profile=PROFILE,
     provider_factory=GeminiProvider,
-    probe=PROBE,
+    readiness=PROBE,
     testing=ProviderTestSupport(
         scripted_lines=scripted_lines,
         resume_failure_lines=resume_failure_lines,

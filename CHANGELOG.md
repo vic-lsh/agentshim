@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Claude Sonnet 5.5, Claude Haiku 5.5, Claude Opus 4.7 and Claude Opus 4.6 have prices, so
+  `price_for` and cost lookups no longer come back empty for them. Haiku 5.5 carries its
+  prompts-up-to-100,000-tokens prices; its higher over-100,000-token prices are in the entry
+  `note`. Every Claude model in `default_models()` now has a price (tested).
+
 ## 0.21.0 (2026-10-18)
 
 ### Added

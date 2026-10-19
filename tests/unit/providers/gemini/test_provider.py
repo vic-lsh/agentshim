@@ -49,6 +49,7 @@ class TestProfile:
             "renewal",
             "endpoint",
             "models",
+            "login",  # Gemini CLI signs in on its first interactive run
         }
         for field in fields(ProviderProfile):
             value = getattr(profile, field.name)

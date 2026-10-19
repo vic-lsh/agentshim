@@ -88,4 +88,4 @@ def default_models(*, catalog: ProviderCatalog | None = None) -> ModelTable:
             by_key[entry.key] = entry
     entries = tuple(by_key.values())
     updated = max((entry.checked for entry in entries), default=dt.date(2026, 10, 17))
-    return ModelTable(version="2026-10-17.1", last_updated=updated, entries=entries)
+    return ModelTable(version="2026-10-18.1", last_updated=updated, entries=entries)

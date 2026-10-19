@@ -11,6 +11,7 @@ from agentshim.core.auth import (
     EnvCredential,
     ExternalCredential,
     FileCredential,
+    LoginSpec,
     SettingsSpec,
 )
 from agentshim.core.errors import FailureKind, ProviderCapabilityError, SessionResumeError
@@ -83,6 +84,9 @@ PROFILE = ProviderProfile(
         "claude-haiku-4-5",
     ),
     display_name="Claude Code",
+    # ``claude auth login`` opens a browser page and, when none opens, asks for a
+    # pasted code, so it needs a terminal. It has no device-code variant.
+    login=LoginSpec(argv=("auth", "login"), needs_terminal=True),
     binary="claude",
     supports_resume=True,
     supports_reasoning_effort=True,

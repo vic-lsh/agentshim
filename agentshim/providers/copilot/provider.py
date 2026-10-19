@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from agentshim.core.auth import CredentialKind, EnvCredential, FileCredential
+from agentshim.core.auth import CredentialKind, EnvCredential, FileCredential, LoginSpec
 from agentshim.core.errors import ProviderCapabilityError
 from agentshim.core.mcp import FlagsInstallation, HttpMcpServer, NoopInstallation
 from agentshim.core.profile import McpMechanism, OutputSchemaStyle, ProviderProfile
@@ -28,6 +28,8 @@ PROFILE = ProviderProfile(
     name="copilot",
     display_name="Copilot CLI",
     binary="copilot",
+    # ``copilot login`` runs GitHub's device flow: a code to enter at a URL.
+    login=LoginSpec(argv=("login",)),
     supports_resume=True,
     # ``--effort`` exists on the CLI but the provider does not expose it: the
     # levels are model-specific and unvalidated, so a request naming one is

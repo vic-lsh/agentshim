@@ -15,8 +15,10 @@ def _openai_model(
     model: str,
     context_window: int,
     display_name: str,
+    version: str,
     tier: tuple[int, str] | None = None,
 ) -> ModelSpec:
+    generation_id, generation_rank = _GENERATIONS[version]
     return ModelSpec(
         vendor="openai",
         model=model,
@@ -27,8 +29,16 @@ def _openai_model(
         family="GPT",
         tier=None if tier is None else tier[0],
         tier_name=None if tier is None else tier[1],
+        generation_id=generation_id,
+        generation=f"GPT-{version}",
+        generation_rank=generation_rank,
     )
 
+
+#: GPT's generations by version, newest first: ``(generation_id, rank)``.
+_GENERATIONS = {
+    version: (version, rank) for rank, version in enumerate(("6.1", "6", "5.6", "5.5"), start=1)
+}
 
 _LUNA = (1, "Luna")
 _TERRA = (2, "Terra")
@@ -37,14 +47,14 @@ _ASTRA = (4, "Astra")
 _OPENAI_1_05M = 1_050_000
 
 MODEL_ENTRIES = (
-    _openai_model("gpt-6-astra", _OPENAI_1_05M, "GPT-6 Astra", _ASTRA),
-    _openai_model("gpt-6.1-sol", _OPENAI_1_05M, "GPT-6.1 Sol", _SOL),
-    _openai_model("gpt-6-sol", _OPENAI_1_05M, "GPT-6 Sol", _SOL),
-    _openai_model("gpt-6-luna", _OPENAI_1_05M, "GPT-6 Luna", _LUNA),
-    _openai_model("gpt-5.6-sol", _OPENAI_1_05M, "GPT-5.6 Sol", _SOL),
-    _openai_model("gpt-5.6-terra", _OPENAI_1_05M, "GPT-5.6 Terra", _TERRA),
-    _openai_model("gpt-5.6-luna", _OPENAI_1_05M, "GPT-5.6 Luna", _LUNA),
-    _openai_model("gpt-5.5", _OPENAI_1_05M, "GPT-5.5"),
+    _openai_model("gpt-6-astra", _OPENAI_1_05M, "GPT-6 Astra", "6", _ASTRA),
+    _openai_model("gpt-6.1-sol", _OPENAI_1_05M, "GPT-6.1 Sol", "6.1", _SOL),
+    _openai_model("gpt-6-sol", _OPENAI_1_05M, "GPT-6 Sol", "6", _SOL),
+    _openai_model("gpt-6-luna", _OPENAI_1_05M, "GPT-6 Luna", "6", _LUNA),
+    _openai_model("gpt-5.6-sol", _OPENAI_1_05M, "GPT-5.6 Sol", "5.6", _SOL),
+    _openai_model("gpt-5.6-terra", _OPENAI_1_05M, "GPT-5.6 Terra", "5.6", _TERRA),
+    _openai_model("gpt-5.6-luna", _OPENAI_1_05M, "GPT-5.6 Luna", "5.6", _LUNA),
+    _openai_model("gpt-5.5", _OPENAI_1_05M, "GPT-5.5", "5.5"),
 )
 
 _OPENAI_NOTE = (

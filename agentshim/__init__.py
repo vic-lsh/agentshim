@@ -51,6 +51,7 @@ from .core import (
     IdAllocator,
     InMemoryCheckpointStore,
     Lifecycle,
+    LoginSpec,
     McpConfigError,
     McpInstallation,
     McpMechanism,
@@ -184,7 +185,7 @@ from .providers.opencode import OpencodeProvider
 from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 
-__version__ = "0.20.0"
+__version__ = "0.21.0"
 
 __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "Agent",
@@ -253,6 +254,7 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "IdAllocator",
     "InMemoryCheckpointStore",
     "Lifecycle",
+    "LoginSpec",
     "McpConfigError",
     "McpInstallation",
     "McpMechanism",

@@ -64,6 +64,23 @@ spec.display_name, spec.family, spec.tier, spec.tier_name
 A caller-built entry may leave all four `None`; `display_name` and `family`
 are set together, as are `tier` and `tier_name`, and a tier needs a family.
 
+## Generations
+
+Each shipped `ModelSpec` also places the model in a generation of its vendor:
+`generation_id` (`"5.5"`), `generation` (`"Claude 5.5"`, `"GPT-6"`) and
+`generation_rank`, `1` for the vendor's newest. Every model of one generation
+shares all three (`claude-opus-5-5` and `claude-sonnet-5-5` are both Claude
+5.5), and one vendor's generations have distinct ranks, which `ModelTable`
+checks. The three are set together and may all be `None` on a caller-built
+entry. A picker groups by `generation_id` and orders groups by
+`generation_rank`, then orders models within a group by `tier`.
+
+```python
+spec = model_spec("codex", "gpt-6.1-sol")
+spec.generation_id, spec.generation, spec.generation_rank
+# ("6.1", "GPT-6.1", 1)
+```
+
 ### Updating the table
 
 1. Read each model's window from its vendor's page:
@@ -76,7 +93,8 @@ are set together, as are `tier` and `tier_name`, and a tier needs a family.
 2. Edit `MODEL_ENTRIES` in the relevant provider's `model_data.py` and update
    `_MODEL_CHECKED`. Update the composed table version in `agentshim/models.py`
    when facts change.
-3. Give each new model its `display_name`, `family` and tier (see above).
+3. Give each new model its `display_name`, `family`, tier and generation (see above). A
+   new generation takes rank 1 and pushes the older ones down by one.
 4. Where a window is not published, leave the model out rather than guess.
 5. A model added to a provider's `ProviderProfile.models` needs a window;
    `tests/unit/test_models.py` fails otherwise.

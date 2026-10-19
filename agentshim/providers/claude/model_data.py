@@ -16,6 +16,7 @@ _PRICE_CHECKED = dt.date(2026, 9, 27)
 def _anthropic_model(
     model: str, context_window: int, tier: tuple[int, str], version: str
 ) -> ModelSpec:
+    generation_id, generation_rank = _GENERATIONS[version]
     return ModelSpec(
         vendor="anthropic",
         model=model,
@@ -26,8 +27,17 @@ def _anthropic_model(
         family="Claude",
         tier=tier[0],
         tier_name=tier[1],
+        generation_id=generation_id,
+        generation=f"Claude {version}",
+        generation_rank=generation_rank,
     )
 
+
+#: Claude's generations by version, newest first: ``(generation_id, rank)``.
+_GENERATIONS = {
+    version: (version, rank)
+    for rank, version in enumerate(("5.5", "5.1", "5", "4.8", "4.7", "4.6", "4.5"), start=1)
+}
 
 _HAIKU = (1, "Haiku")
 _SONNET = (2, "Sonnet")

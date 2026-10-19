@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from agentshim.core.auth import LoginSpec
 from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
 from agentshim.core.mcp import (
     HttpMcpServer,
@@ -52,6 +53,8 @@ PROFILE = ProviderProfile(
     models=("google-vertex/gemini-3-pro-preview",),
     display_name="opencode",
     binary="opencode",
+    # ``opencode auth login`` prompts for a provider and its credential.
+    login=LoginSpec(argv=("auth", "login"), needs_terminal=True),
     supports_resume=True,
     # ``run --session <id>`` continues a stored session.
     supports_reasoning_effort=False,

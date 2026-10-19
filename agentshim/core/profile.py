@@ -16,7 +16,7 @@ from .permissions import NativeMode
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from .auth import CredentialSource, EndpointSpec, SettingsSpec
+    from .auth import CredentialSource, EndpointSpec, LoginSpec, SettingsSpec
 
 
 class McpMechanism(Enum):
@@ -242,6 +242,10 @@ class ProviderProfile:
     #: agentshim knows of none: a caller may still pass any model, at its own
     #: risk. A model's facts (its context window) are in ``model_spec``.
     models: tuple[str, ...] = ()
+    #: The CLI's own command for a person to sign in (0.21.0+), or ``None``
+    #: when it has none (Gemini CLI signs in on its first interactive run).
+    #: Signed-in state is read by the provider's ``ProbeSpec``.
+    login: LoginSpec | None = None
 
     @property
     def default_model(self) -> str | None:

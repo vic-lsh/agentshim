@@ -11,6 +11,7 @@ from agentshim.core.auth import (
     EndpointSpec,
     EnvCredential,
     FileCredential,
+    LoginSpec,
     classify_json_field,
 )
 from agentshim.core.errors import ProviderCapabilityError, SessionResumeError
@@ -87,6 +88,9 @@ PROFILE = ProviderProfile(
     ),
     display_name="Codex",
     binary="codex",
+    # ``codex login`` prints a URL and waits for the browser redirect on a local
+    # port; ``--device-auth`` prints a code to enter on another device instead.
+    login=LoginSpec(argv=("login",), device_argv=("login", "--device-auth")),
     supports_resume=True,
     supports_reasoning_effort=True,
     mcp=McpMechanism.CLI_FLAGS,

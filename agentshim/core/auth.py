@@ -152,6 +152,44 @@ class EndpointSpec:
 
 
 @dataclass(frozen=True)
+class LoginSpec:
+    """How a person signs a CLI in, as the CLI itself does it.
+
+    ``argv`` follows the binary and starts the CLI's own subscription login
+    (a browser page, or a URL to open). ``device_argv`` is the variant for a
+    machine without a usable browser, where the CLI prints a code to enter on
+    another device, or ``None`` when the CLI has none. ``needs_terminal`` is
+    true when the command prompts the person (a menu, a pasted code), so it
+    must run attached to a terminal; false when it runs unattended and only
+    prints a URL. Whether a CLI is signed in is not here: the provider's
+    ``ProbeSpec.auth`` reads that, where the CLI has a status command.
+    """
+
+    argv: tuple[str, ...]
+    device_argv: tuple[str, ...] | None = None
+    needs_terminal: bool = False
+
+    def __post_init__(self) -> None:
+        """Reject an empty command."""
+        if not self.argv or (self.device_argv is not None and not self.device_argv):
+            msg = "LoginSpec commands need at least one argument"
+            raise ValueError(msg)
+
+    def command(self, binary: str, *, device: bool = False) -> tuple[str, ...]:
+        """The full command line, with *binary* first.
+
+        Raises:
+            ValueError: *device* is asked for and the CLI has no device login.
+        """
+        if not device:
+            return (binary, *self.argv)
+        if self.device_argv is None:
+            msg = f"{binary} has no device login"
+            raise ValueError(msg)
+        return (binary, *self.device_argv)
+
+
+@dataclass(frozen=True)
 class AuthPolicy:
     """Which credentials a caller allows, and the endpoint to use.
 

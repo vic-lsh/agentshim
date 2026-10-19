@@ -168,6 +168,107 @@ class TestPresentation:
         assert (spec.display_name, spec.family, spec.tier, spec.tier_name) == (None,) * 4
 
 
+class TestGenerations:
+    @pytest.mark.parametrize(
+        "entry", TABLE.entries, ids=lambda entry: f"{entry.vendor}/{entry.model}"
+    )
+    def test_every_shipped_model_has_a_generation(self, entry: ModelSpec) -> None:
+        assert entry.generation_id
+        assert entry.generation
+        assert entry.generation_rank is not None
+        assert entry.generation_rank >= 1
+
+    @pytest.mark.parametrize(
+        ("provider", "model", "expected"),
+        [
+            ("claude", "claude-opus-5-5", ("5.5", "Claude 5.5", 1)),
+            ("claude", "claude-sonnet-5-5", ("5.5", "Claude 5.5", 1)),
+            ("claude", "claude-fable-5-1", ("5.1", "Claude 5.1", 2)),
+            ("claude", "claude-opus-5", ("5", "Claude 5", 3)),
+            ("claude", "claude-opus-4-6", ("4.6", "Claude 4.6", 6)),
+            ("claude", "claude-haiku-4-5-20251001", ("4.5", "Claude 4.5", 7)),
+            ("codex", "gpt-6.1-sol", ("6.1", "GPT-6.1", 1)),
+            ("codex", "gpt-6-luna", ("6", "GPT-6", 2)),
+            ("codex", "gpt-5.6-terra", ("5.6", "GPT-5.6", 3)),
+            ("codex", "gpt-5.5", ("5.5", "GPT-5.5", 4)),
+            ("opencode", "google-vertex/gemini-3-pro-preview", ("3", "Gemini 3", 1)),
+        ],
+    )
+    def test_known_models_read_back(
+        self, provider: str, model: str, expected: tuple[str, str, int]
+    ) -> None:
+        spec = model_spec(provider, model)
+        assert spec is not None
+        assert (spec.generation_id, spec.generation, spec.generation_rank) == expected
+
+    def test_a_generation_is_one_name_and_one_rank_per_vendor(self) -> None:
+        ranks: dict[tuple[str, int], str] = {}
+        for entry in TABLE.entries:
+            assert entry.generation_id is not None
+            assert entry.generation_rank is not None
+            assert ranks.setdefault((entry.vendor, entry.generation_rank), entry.generation_id) == (
+                entry.generation_id
+            )
+
+    def test_a_newer_version_ranks_before_an_older_one_of_the_same_tier(self) -> None:
+        """Within a tier, rank order is the reverse of version order: the newest is 1."""
+        for vendor, family in {(e.vendor, e.family) for e in TABLE.entries}:
+            by_tier: dict[tuple[int, str], list[tuple[tuple[int, ...], int]]] = {}
+            for entry in TABLE.entries:
+                if (entry.vendor, entry.family) != (vendor, family) or entry.tier is None:
+                    continue
+                assert entry.generation_id is not None
+                assert entry.generation_rank is not None
+                version = tuple(int(part) for part in entry.generation_id.split("."))
+                by_tier.setdefault((entry.tier, entry.tier_name or ""), []).append(
+                    (version, entry.generation_rank)
+                )
+            for versions in by_tier.values():
+                newest_first = sorted(versions, key=lambda pair: pair[0], reverse=True)
+                assert [rank for _, rank in newest_first] == sorted(rank for _, rank in versions)
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"generation_id": "1"},
+            {"generation": "G"},
+            {"generation_rank": 1},
+            {"generation_id": "1", "generation": "G"},
+            {"generation_id": " ", "generation": "G", "generation_rank": 1},
+            {"generation_id": "1", "generation": "G", "generation_rank": 0},
+            {"generation_id": "1", "generation": "G", "generation_rank": True},
+        ],
+    )
+    def test_a_bad_generation_is_rejected(self, overrides: dict[str, object]) -> None:
+        with pytest.raises(ValueError, match=r"\S"):
+            _spec(**overrides)
+
+    def test_a_caller_entry_may_omit_the_generation(self) -> None:
+        spec = _spec()
+        assert (spec.generation_id, spec.generation, spec.generation_rank) == (None,) * 3
+
+    @pytest.mark.parametrize(
+        "second",
+        [
+            {"model": "b", "generation_id": "1", "generation": "G one", "generation_rank": 1},
+            {"model": "b", "generation_id": "1", "generation": "G", "generation_rank": 2},
+            {"model": "b", "generation_id": "2", "generation": "H", "generation_rank": 1},
+        ],
+    )
+    def test_a_table_rejects_generations_that_disagree(self, second: dict[str, object]) -> None:
+        first = _spec(model="a", generation_id="1", generation="G", generation_rank=1)
+        with pytest.raises(ValueError, match="generation"):
+            ModelTable(version="t", last_updated=CHECKED, entries=(first, _spec(**second)))
+
+    def test_a_table_accepts_one_generation_across_models_and_ranks_across_vendors(self) -> None:
+        entries = (
+            _spec(model="a", generation_id="1", generation="G", generation_rank=1),
+            _spec(model="b", generation_id="1", generation="G", generation_rank=1),
+            _spec(vendor="other", model="c", generation_id="9", generation="H", generation_rank=1),
+        )
+        assert len(ModelTable(version="t", last_updated=CHECKED, entries=entries).entries) == 3
+
+
 class TestLookup:
     def test_a_vendor_prefix_and_a_date_snapshot_resolve_to_the_model(self) -> None:
         assert context_window("opencode", "anthropic/claude-opus-5-5") == 1_000_000

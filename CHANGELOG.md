@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.21.0 (2026-10-18)
+
+### Added
+
+- `ModelSpec` ranks a model's generation among its vendor's: `generation_id` (`"5.5"`, shared
+  by every model of that generation), `generation` (`"Claude 5.5"`, `"GPT-6"`) and
+  `generation_rank` (`1` the newest). The three are set together, default to `None`, and are
+  filled for every shipped model. `ModelTable` rejects a vendor whose generations disagree on a
+  name or rank, or share a rank. Newest first: Claude 5.5, 5.1, 5, 4.8, 4.7, 4.6, 4.5; GPT-6.1,
+  6, 5.6, 5.5; Gemini 3.
+- `ProviderProfile.login` is a `LoginSpec`: the CLI's own command for a person to sign in
+  (`claude auth login`, `codex login` with `--device-auth` as its device variant,
+  `copilot login`, `opencode auth login`), and whether it needs a terminal.
+  `LoginSpec.command(binary, device=False)` is the full command line. Gemini CLI has no
+  sign-in command (`login` is `None`). Signed-in state stays in `ProbeSpec.auth` and
+  `probe_provider`.
+
 ## 0.20.0 (2026-10-18)
 
 ### Added

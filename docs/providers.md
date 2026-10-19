@@ -493,6 +493,25 @@ built from a provider name (constructing it already requires the binary).
 | copilot | `copilot --version` | none (`copilot login` is interactive only) | always `UNKNOWN` |
 | opencode | `opencode --version` | none that proves a usable model (`opencode auth list` shows stored keys only) | always `UNKNOWN` |
 
+## Signing in
+
+`ProviderProfile.login` is a `LoginSpec` for the CLIs that have a sign-in
+command, or `None` for Gemini CLI, which signs in on its first interactive run.
+`login.command(profile.binary)` is the command line that starts the CLI's own
+subscription login; `device=True` gives the device-code variant (Codex's
+`--device-auth`) and raises `ValueError` for a CLI that has none. `needs_terminal`
+is true when the command prompts the person, so it must run attached to a
+terminal. agentshim does not run it: spawning the process, and whether to, belong
+to the caller. Whether the CLI is signed in is the readiness probe above.
+
+| provider | login command | device variant | needs a terminal |
+|---|---|---|---|
+| claude | `claude auth login` | none | yes |
+| codex | `codex login` | `codex login --device-auth` | no |
+| copilot | `copilot login` | none | no |
+| opencode | `opencode auth login` | none | yes |
+| gemini | none | none | n/a |
+
 `agentshim.testing.probe_executor(provider, version=..., auth=..., installed=...)`
 is a `FakeExecutor` that answers these commands the way each CLI does.
 

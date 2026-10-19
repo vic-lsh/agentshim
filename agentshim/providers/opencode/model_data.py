@@ -19,6 +19,9 @@ def _google(model: str, context_window: int, display_name: str, tier: tuple[int,
         family="Gemini",
         tier=tier[0],
         tier_name=tier[1],
+        generation_id="3",
+        generation="Gemini 3",
+        generation_rank=1,
     )
 
 

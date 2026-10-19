@@ -30,6 +30,14 @@ class ModelSpec:
             that sits on no tier ladder.
         tier_name: The tier's readable name (``"Opus"``); set together with
             ``tier``.
+        generation_id: A short stable token naming the model's generation
+            within its vendor (``"5.5"``); every model of one generation
+            shares it, and no two generations of a vendor do.
+        generation: The generation as people call it (``"Claude 5.5"``,
+            ``"GPT-6"``); set together with ``generation_id``.
+        generation_rank: The generation's rank among its vendor's, ``1`` the
+            newest; set together with ``generation_id``. ``ModelTable``
+            checks that one vendor's generations have distinct ranks.
     """
 
     vendor: str
@@ -41,6 +49,9 @@ class ModelSpec:
     family: str | None = None
     tier: int | None = None
     tier_name: str | None = None
+    generation_id: str | None = None
+    generation: str | None = None
+    generation_rank: int | None = None
 
     def __post_init__(self) -> None:
         """Reject a missing name, source or date, and a window that is not a positive int."""
@@ -62,6 +73,26 @@ class ModelSpec:
             msg = f"{self.vendor}/{self.model}: context_window must be a positive int"
             raise ValueError(msg)
         self._check_presentation()
+        self._check_generation()
+
+    def _check_generation(self) -> None:
+        """Reject a half-set generation triple, a blank name, and a rank that is not a positive int."""
+        parts = (self.generation_id, self.generation, self.generation_rank)
+        if any(part is None for part in parts) and any(part is not None for part in parts):
+            msg = (
+                f"{self.vendor}/{self.model}: "
+                "generation_id, generation and generation_rank are set together"
+            )
+            raise ValueError(msg)
+        for name in ("generation_id", "generation"):
+            value: object = getattr(self, name)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                msg = f"{self.vendor}/{self.model}: {name} must be a non-empty string"
+                raise ValueError(msg)
+        rank = cast("object", self.generation_rank)
+        if rank is not None and (isinstance(rank, bool) or not isinstance(rank, int) or rank < 1):
+            msg = f"{self.vendor}/{self.model}: generation_rank must be a positive int"
+            raise ValueError(msg)
 
     def _check_presentation(self) -> None:
         """Reject a half-set name pair or tier pair, and a tier that is not a positive int."""
@@ -123,6 +154,31 @@ class ModelTable:
                 msg = (
                     f"{entry.vendor}/{entry.model} was checked {entry.checked}, "
                     f"after the table's last_updated {self.last_updated}"
+                )
+                raise ValueError(msg)
+        self._check_generations()
+
+    def _check_generations(self) -> None:
+        """Reject a vendor whose generations disagree on a name or rank, or share a rank."""
+        by_id: dict[tuple[str, str], tuple[str | None, int | None]] = {}
+        by_rank: dict[tuple[str, int], str] = {}
+        for entry in self.entries:
+            if entry.generation_id is None or entry.generation_rank is None:
+                continue
+            known = by_id.setdefault(
+                (entry.vendor, entry.generation_id), (entry.generation, entry.generation_rank)
+            )
+            if known != (entry.generation, entry.generation_rank):
+                msg = (
+                    f"{entry.vendor}/{entry.model}: generation {entry.generation_id!r} "
+                    "has another name or rank on another model"
+                )
+                raise ValueError(msg)
+            holder = by_rank.setdefault((entry.vendor, entry.generation_rank), entry.generation_id)
+            if holder != entry.generation_id:
+                msg = (
+                    f"{entry.vendor}: generations {holder!r} and {entry.generation_id!r} "
+                    f"share rank {entry.generation_rank}"
                 )
                 raise ValueError(msg)
 

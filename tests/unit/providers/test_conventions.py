@@ -94,7 +94,15 @@ _MAY_BE_EMPTY = frozenset(
 #: cannot be pointed at another API endpoint, and ``settings`` for one whose
 #: settings files cannot change how it logs in.
 _MAY_BE_NONE = frozenset(
-    {"schema_dialect", "state_root_env", "mcp_config_file", "renewal", "endpoint", "settings"}
+    {
+        "schema_dialect",
+        "state_root_env",
+        "mcp_config_file",
+        "renewal",
+        "endpoint",
+        "settings",
+        "login",
+    }
 )
 
 

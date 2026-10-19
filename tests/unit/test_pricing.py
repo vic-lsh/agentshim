@@ -12,6 +12,7 @@ from agentshim import (
     PricingTable,
     TokenUsage,
     cost_usd,
+    default_models,
     default_pricing,
     price_for,
 )
@@ -192,3 +193,10 @@ class TestCost:
 def test_entries_are_frozen() -> None:
     with pytest.raises(dataclasses.FrozenInstanceError):
         TABLE.entries[0].input_usd = 0  # type: ignore[misc]
+
+
+def test_every_listed_claude_model_has_a_price() -> None:
+    claude_models = {spec.model for spec in default_models().entries if spec.vendor == "anthropic"}
+    assert claude_models
+    for model in claude_models:
+        assert price_for("claude", model) is not None, model

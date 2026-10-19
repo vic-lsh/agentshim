@@ -10,7 +10,7 @@ ANTHROPIC_CONTEXT_WINDOWS_URL = (
 )
 ANTHROPIC_PRICING_URL = "https://platform.claude.com/docs/en/about-claude/pricing"
 _MODEL_CHECKED = dt.date(2026, 10, 17)
-_PRICE_CHECKED = dt.date(2026, 9, 27)
+_PRICE_CHECKED = dt.date(2026, 10, 19)
 
 
 def _anthropic_model(
@@ -61,6 +61,9 @@ MODEL_ENTRIES = (
 )
 
 
+_NOTE = "Claude API first-party, global inference; thinking is billed as output."
+
+
 def _anthropic(  # noqa: PLR0913 - one positional per price column
     model: str,
     input_usd: float,
@@ -68,6 +71,7 @@ def _anthropic(  # noqa: PLR0913 - one positional per price column
     cache_write_1h_usd: float,
     cache_read_usd: float,
     output_usd: float,
+    note: str = "",
 ) -> ModelPricing:
     return ModelPricing(
         vendor="anthropic",
@@ -79,7 +83,7 @@ def _anthropic(  # noqa: PLR0913 - one positional per price column
         output_usd=output_usd,
         source=ANTHROPIC_PRICING_URL,
         checked=_PRICE_CHECKED,
-        note="Claude API first-party, global inference; thinking is billed as output.",
+        note=f"{_NOTE} {note}".strip(),
     )
 
 
@@ -89,7 +93,23 @@ PRICING_ENTRIES = (
     _anthropic("claude-opus-5-5", 4.00, 5.00, 8.00, 0.20, 20.00),
     _anthropic("claude-opus-5", 5.00, 6.25, 10.00, 0.50, 25.00),
     _anthropic("claude-opus-4-8", 5.00, 6.25, 10.00, 0.50, 25.00),
+    _anthropic("claude-opus-4-7", 5.00, 6.25, 10.00, 0.50, 25.00),
+    _anthropic("claude-opus-4-6", 5.00, 6.25, 10.00, 0.50, 25.00),
+    _anthropic("claude-sonnet-5-5", 2.00, 2.50, 4.00, 0.10, 10.00),
     _anthropic("claude-sonnet-5", 2.00, 2.50, 4.00, 0.20, 10.00),
     _anthropic("claude-sonnet-4-6", 3.00, 3.75, 6.00, 0.30, 15.00),
+    _anthropic(
+        "claude-haiku-5-5",
+        0.10,
+        0.125,
+        0.20,
+        0.01,
+        0.50,
+        note=(
+            "Prices for prompts up to 100,000 tokens; a request whose prompt is over "
+            "100,000 tokens pays 0.50 input, 0.625 cache write, 1.00 1h cache write, "
+            "0.05 cache read and 2.50 output, which this table leaves out."
+        ),
+    ),
     _anthropic("claude-haiku-4-5", 1.00, 1.25, 2.00, 0.10, 5.00),
 )

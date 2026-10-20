@@ -69,6 +69,15 @@ class TurnResult:
     #: The turn ended because it was interrupted. The conversation is kept; the
     #: text and usage are whatever the turn produced before it stopped.
     interrupted: bool = False
+    #: How many tokens the conversation's context holds after this turn: what
+    #: the next turn that resumes it starts from. It is the last model call of
+    #: the turn, counted as the prompt that call sent (uncached input, cache
+    #: reads and cache writes) plus the output it wrote, not ``usage``, which
+    #: sums every call of the turn and so counts the prompt once per call.
+    #: Calls made by a subagent are not this conversation's and are skipped.
+    #: Each provider's source is listed in ``docs/sessions.md``. ``None`` when
+    #: the provider does not report a single model call's usage.
+    context_tokens: int | None = None
 
 
 def coerce_request(request: TurnRequest | str) -> TurnRequest:

@@ -67,6 +67,9 @@ class ParsedTurn:
     error: str | None = None
     #: The parser's classification of ``error``; ``OTHER`` when it cannot tell.
     error_kind: FailureKind = FailureKind.OTHER
+    #: Tokens in the conversation's context after the turn; see
+    #: ``TurnResult.context_tokens``. ``None`` when the stream cannot say.
+    context_tokens: int | None = None
 
 
 class StreamParser(Protocol):

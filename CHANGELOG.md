@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.23.0 (2026-10-20)
+
+### Added
+
+- `FailureKind.CONTEXT_OVERFLOW`: the provider refused the turn because the conversation and the
+  new prompt do not fit the model's context window. Claude is read from the result frame's
+  `terminal_reason` (`prompt_too_long`, `blocking_limit`, `rapid_refill_breaker`), and from the
+  text `Prompt is too long` on builds without it; this wins over the 503 a failed compaction
+  appends, which used to make the overflow look `TRANSIENT`. Codex is read from the app-server's
+  `codexErrorInfo: contextWindowExceeded`, from the Responses API error body's `error.code`
+  `context_length_exceeded` (which the app-server relays under `other`, and `codex exec` as its
+  only report), and from Codex's "ran out of room in the model's context window". Before, every
+  one of these was `OTHER` or `TRANSIENT`. Gemini CLI 0.25.2 reports an overflow as a `success`
+  with zero tokens, so it cannot be classified; Copilot and opencode have no recorded overflow
+  and stay `OTHER`.
+- `TurnResult.context_tokens` (and `ParsedTurn.context_tokens`): how many tokens the
+  conversation's context holds after the turn, which is what the next resume starts from. It is
+  the turn's last model call, its whole prompt (uncached input, cache reads, cache writes) plus
+  its output, not the turn's summed `usage`. Claude: the last main-thread assistant frame's usage,
+  skipping subagent frames and the CLI's synthetic error messages; the output count on that frame
+  is taken when the reply starts, so it can undercount the final reply. Codex app-server:
+  `last.totalTokens` of the turn's last `thread/tokenUsage/updated`. opencode: the last
+  `step_finish`, without reasoning. `None` for `codex exec` (thread totals only), Gemini (one sum
+  per turn), Copilot (per-request usage is not printed), and a turn with no model call.
+- `FakeTurn(context_tokens=...)` scripts the reading in `agentshim.testing`.
+
+### Changed
+
+- A session forgets its conversation after a `CONTEXT_OVERFLOW`, whether or not the turn resumed
+  it, since the conversation cannot take another turn. Strict and pinned turns keep it.
+- `scripted_failure("codex", FailureKind.OTHER)` scripts a refused model; its old text was a
+  context overflow.
+
 ## 0.22.0 (2026-10-19)
 
 ### Fixed

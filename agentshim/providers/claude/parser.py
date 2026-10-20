@@ -89,6 +89,28 @@ def fold_usage(usage: Mapping[str, Any] | None, turns: int = 0) -> TokenUsage:
     )
 
 
+#: The ``model`` of a message Claude Code wrote itself rather than a model.
+SYNTHETIC_MODEL = "<synthetic>"
+
+
+def context_tokens(usage: Mapping[str, Any]) -> int:
+    """Tokens one model call leaves in the context: its whole prompt plus its output.
+
+    The prompt is ``input_tokens`` (uncached) plus the cache reads and cache
+    writes, which Anthropic reports disjoint from it. The output count is the
+    one Claude Code writes on the message's frames. It is taken when the reply
+    starts, so it can fall short of the final reply by the tokens generated
+    after that; most of those are thinking, which the API drops from the
+    prompt of later turns anyway.
+    """
+    return (
+        _int(usage.get("input_tokens"))
+        + _int(usage.get("cache_read_input_tokens"))
+        + _int(usage.get("cache_creation_input_tokens"))
+        + _int(usage.get("output_tokens"))
+    )
+
+
 def _int(value: object) -> int:
     if isinstance(value, bool):
         return 0
@@ -172,9 +194,12 @@ class ClaudeStreamParser:
         self._api_error_text: str | None = None
         self._api_error_status: int | None = None
         self._subtype: str | None = None
+        self._terminal_reason: str | None = None
         # The validation errors of the last rejected StructuredOutput call.
         self._schema_errors: str | None = None
         self._stderr: list[str] = []
+        # The context the main conversation's last model call left.
+        self._context_tokens: int | None = None
 
     def feed_stdout(self, line: str) -> None:
         """Consume one stdout line, emitting the events its frame implies.
@@ -211,6 +236,7 @@ class ClaudeStreamParser:
             cost_usd=self._cost_usd,
             error=self._error,
             error_kind=self._error_kind(),
+            context_tokens=self._context_tokens,
         )
 
     def _error_kind(self) -> FailureKind:
@@ -226,6 +252,7 @@ class ClaudeStreamParser:
             api_error=self._api_error,
             status=self._api_error_status,
             text=text,
+            terminal_reason=self._terminal_reason,
         )
 
     def _handle(self, frame: object) -> None:
@@ -251,6 +278,12 @@ class ClaudeStreamParser:
             self._api_error_text = "\n".join(
                 block.text for block in frame.blocks if isinstance(block, TextBlock)
             )
+        if (
+            frame.usage is not None
+            and frame.parent_tool_use_id is None
+            and frame.model != SYNTHETIC_MODEL
+        ):
+            self._context_tokens = context_tokens(frame.usage)
         if frame.usage is not None:
             self._emit(
                 UsageReport(
@@ -313,6 +346,7 @@ class ClaudeStreamParser:
         if frame.is_error:
             self._api_error_status = frame.api_error_status
             self._subtype = frame.subtype
+            self._terminal_reason = frame.terminal_reason
             self._error = self._error_text(frame)
             self._emit(ProviderError(self._error))
 

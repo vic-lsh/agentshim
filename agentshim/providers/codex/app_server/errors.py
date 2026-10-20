@@ -9,6 +9,9 @@ source; when it says only ``other`` (it then carries the raw HTTP body in
   a lost connection or response stream (unless it ended in a client error
   other than 408 and 429): ``TRANSIENT``.
 - ``unauthorized``, or a connection failure with HTTP 401 or 403: ``AUTH``.
+- ``contextWindowExceeded``: ``CONTEXT_OVERFLOW``. A request the Responses API
+  refuses for its length arrives as ``other`` with the API's error body, and
+  the text classifier reads its ``context_length_exceeded`` code.
 - anything else: the text classifier, which returns ``OTHER`` for text it does
   not recognize.
 """
@@ -35,6 +38,7 @@ _BY_KIND: dict[CodexErrorInfoKind, FailureKind] = {
     CodexErrorInfoKind.INTERNAL_SERVER_ERROR: FailureKind.TRANSIENT,
     CodexErrorInfoKind.FLEX_UNAVAILABLE: FailureKind.TRANSIENT,
     CodexErrorInfoKind.UNAUTHORIZED: FailureKind.AUTH,
+    CodexErrorInfoKind.CONTEXT_WINDOW_EXCEEDED: FailureKind.CONTEXT_OVERFLOW,
 }
 
 _AUTH_STATUSES = frozenset({401, 403})

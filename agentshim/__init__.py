@@ -186,7 +186,7 @@ from .providers.opencode import OpencodeProvider
 from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 
-__version__ = "0.22.0"
+__version__ = "0.23.0"
 
 __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "Agent",

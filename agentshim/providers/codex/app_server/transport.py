@@ -318,6 +318,9 @@ class _Turn:
     turn_id: str | None = None
     items: list[ThreadItem] = field(default_factory=_no_items)
     total: Totals | None = None
+    #: ``last.totalTokens`` of the turn's latest usage report: the context
+    #: its last model call left.
+    context_tokens: int | None = None
     completed: Turn | None = None
     error: TurnError | None = None
     fail: TurnFailedError | None = None
@@ -752,6 +755,7 @@ class _Conversation:
         elif isinstance(params, ThreadTokenUsageUpdatedNotification):
             if self._is_mine(params.thread_id, params.turn_id, turn):
                 turn.total = totals_of(params.token_usage.total)
+                turn.context_tokens = params.token_usage.last.total_tokens
         elif isinstance(params, ErrorNotification):
             self._on_error(params, turn)
         elif isinstance(params, TurnCompletedNotification):
@@ -909,6 +913,7 @@ class _Conversation:
             duration_ms=duration_ms,
             exit_code=0,
             interrupted=interrupted,
+            context_tokens=turn.context_tokens,
         )
         return result if skills is None else replace(result, skills=skills)
 

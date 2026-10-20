@@ -124,7 +124,9 @@ carries out the commands (`Open`, `Execute`, `Wait`, `CloseConversation`,
    conversation before the error propagates, so the next turn starts fresh.
    Classified failures (`TRANSIENT` after its retries, `USAGE_LIMIT`, `AUTH`,
    `SCHEMA`), timeouts and interrupts keep it. Strict and pinned turns keep it
-   too.
+   too. A `FailureKind.CONTEXT_OVERFLOW` forgets the conversation whether or
+   not the turn resumed it, because the conversation can no longer take a
+   turn; strict and pinned turns keep it, and the caller decides.
 4. **Renewal.** After a successful turn, if the profile's `RenewalBudget` is
    reached (`max_turns` successful turns in the conversation, or one turn with
    `max_turn_input_tokens` input tokens or `max_turn_duration_ms`), the
@@ -217,7 +219,7 @@ frame; the process keeps its context between turns.
 | Approvals | The process runs with `--permission-prompts none`, so the CLI denies anything that would prompt and lists it in the result's `permission_denials`. Those become `ApprovalDenied` events; with `FAIL_TURN` the turn then fails. A `can_use_tool` request that arrives anyway is denied at once (`FAIL_TURN`: with `interrupt: true`, then the turn fails); `hook_callback`, `mcp_message` and unknown requests get an error answer. The transport never leaves a request unanswered. |
 | Schema, MCP servers, effort | These are flags of the process, but a schema is chosen per turn. A turn whose set differs from the running process's restarts the process with `--resume=<id>`; the conversation id is unchanged, so the session reports `CONTINUED`. A fresh conversation whose first turn carries a schema therefore costs one extra process start. |
 | Cost and usage | `total_cost_usd` is cumulative over the process; the turn's cost is the difference from the previous result (reset by a restart). `usage` is per turn. |
-| Errors | An API failure arrives as a `result` with subtype `success` and `is_error` true; every `is_error` result is classified (`TRANSIENT`, `USAGE_LIMIT`, `AUTH`, `SCHEMA`, `OTHER`) by the same rules as the one-shot path. A process that dies mid-turn raises `CliExitError` (a `TurnFailedError`) with its stderr; the next turn resumes in a new process. |
+| Errors | An API failure arrives as a `result` with subtype `success` and `is_error` true; every `is_error` result is classified (`TRANSIENT`, `USAGE_LIMIT`, `AUTH`, `SCHEMA`, `CONTEXT_OVERFLOW`, `OTHER`) by the same rules as the one-shot path. A process that dies mid-turn raises `CliExitError` (a `TurnFailedError`) with its stderr; the next turn resumes in a new process. |
 | Interrupt | `interrupt()` sends a control request; the turn's `result` is `error_during_execution` with `terminal_reason` `aborted_*`, which becomes `TurnResult.interrupted` and `TurnInterrupted`. The process and conversation survive. |
 | Timeouts | `TurnRequest.timeout` is measured on the injected `Clock`. An overrun interrupts the turn, waits `interrupt_grace_s` for its result, then raises `TurnTimeoutError` (killing the process if it ignored the interrupt; the next turn resumes). |
 | Close | stdin is closed, then terminate, then kill, each after `close_grace_s`. |

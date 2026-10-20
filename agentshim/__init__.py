@@ -36,6 +36,7 @@ from .core import (
     ContinuityError,
     Conversation,
     ConversationSpec,
+    CostSource,
     CredentialKind,
     CredentialSource,
     EndpointSpec,
@@ -185,7 +186,7 @@ from .providers.opencode import OpencodeProvider
 from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 
-__version__ = "0.21.1"
+__version__ = "0.22.0"
 
 __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "Agent",
@@ -234,6 +235,7 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "Conversation",
     "ConversationSpec",
     "CopilotProvider",
+    "CostSource",
     "CredentialKind",
     "CredentialSource",
     "DEFAULT_CATALOG",

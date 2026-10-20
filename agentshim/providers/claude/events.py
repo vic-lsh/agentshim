@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from .cost import ModelCounts, parse_model_usage
 from .rate_limits import RateLimitFrame, parse_rate_limit
 
 if TYPE_CHECKING:
@@ -86,6 +87,8 @@ class ResultFrame:
     num_turns: int | None = None
     usage: Mapping[str, Any] | None = None
     total_cost_usd: float | None = None
+    #: Per-model cumulative token counts (the CLI's ``modelUsage``); ``None`` when absent.
+    model_usage: Mapping[str, ModelCounts] | None = None
     duration_ms: int | None = None
     is_error: bool = False
     subtype: str | None = None
@@ -126,6 +129,7 @@ def parse_frame(data: Mapping[str, Any]) -> ClaudeFrame | None:
             num_turns=_int_or_none(data.get("num_turns")),
             usage=_mapping_or_none(data.get("usage")),
             total_cost_usd=_float_or_none(data.get("total_cost_usd")),
+            model_usage=parse_model_usage(data.get("modelUsage")),
             duration_ms=_int_or_none(data.get("duration_ms")),
             is_error=bool(data.get("is_error")),
             subtype=_str_or_none(data.get("subtype")),

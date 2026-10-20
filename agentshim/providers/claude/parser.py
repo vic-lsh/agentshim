@@ -21,8 +21,9 @@ from agentshim.core.events import (
 )
 from agentshim.core.provider import ParsedTurn
 from agentshim.core.stream import ToolTracker, parse_json_object
-from agentshim.core.usage import ProviderUsage, TokenUsage, normalized_usage
+from agentshim.core.usage import CostSource, ProviderUsage, TokenUsage, normalized_usage
 
+from .cost import ModelCounts, priced_turn
 from .events import (
     AssistantMessage,
     ResultFrame,
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
 
     from agentshim.core.errors import FailureKind
     from agentshim.core.events import AgentEvent
+    from agentshim.core.pricing import PricingTable
 
 PROVIDER_NAME = "claude"
 
@@ -128,6 +130,8 @@ class ClaudeStreamParser:
         *,
         expect_structured: bool = False,
         cost_baseline_usd: float = 0.0,
+        model_usage_baseline: Mapping[str, ModelCounts] | None = None,
+        pricing: PricingTable | None = None,
     ) -> None:
         """Start a parser for one run.
 
@@ -137,9 +141,20 @@ class ClaudeStreamParser:
         total its previous turn ended at as *cost_baseline_usd* and this
         parser reports the turn's own cost (``total_cost_usd`` then still
         holds the cumulative figure).
+
+        The turn's cost is priced from the result's ``modelUsage`` with the
+        agentshim price table (*pricing*, or the default one), never from the
+        CLI's ``total_cost_usd`` when the models are known. ``modelUsage`` is
+        cumulative too: pass the previous turn's ``model_usage_total`` as
+        *model_usage_baseline*. Only a result without ``modelUsage`` falls
+        back to the CLI's figure.
         """
         self._cost_baseline = cost_baseline_usd
+        self._model_usage_baseline: Mapping[str, ModelCounts] = model_usage_baseline or {}
+        self._pricing = pricing
         self.total_cost_usd: float | None = None
+        #: The cumulative per-model counts the last result reported.
+        self.model_usage_total: Mapping[str, ModelCounts] | None = None
         self._emit = emit
         self._expect_structured = expect_structured
         self._tools = ToolTracker()
@@ -150,6 +165,7 @@ class ClaudeStreamParser:
         self._usage = ProviderUsage(provider=PROVIDER_NAME)
         self._results = 0
         self._cost_usd: float | None = None
+        self._cost_source: CostSource | None = None
         self._error: str | None = None
         # What the stream said about a failed API request, for classifying it.
         self._api_error: str | None = None
@@ -278,11 +294,9 @@ class ClaudeStreamParser:
     def _result(self, frame: ResultFrame) -> None:
         self._final_text = frame.text
         self.total_cost_usd = frame.total_cost_usd
-        self._cost_usd = (
-            None if frame.total_cost_usd is None else frame.total_cost_usd - self._cost_baseline
-        )
-        self._structured = self._structured_payload(frame)
         tokens = fold_usage(frame.usage, turns=frame.num_turns or 0)
+        self._price(frame, tokens)
+        self._structured = self._structured_payload(frame)
         if self._results:
             # A steered message can start a follow-on turn inside this run; its
             # ``result`` reports only its own tokens, so the run sums them.
@@ -293,6 +307,7 @@ class ClaudeStreamParser:
             total_cost_usd=self._cost_usd,
             provider=PROVIDER_NAME,
             raw=frame.usage,
+            cost_source=self._cost_source,
         )
         self._emit(UsageReport(self._usage, self._cost_usd))
         if frame.is_error:
@@ -300,6 +315,27 @@ class ClaudeStreamParser:
             self._subtype = frame.subtype
             self._error = self._error_text(frame)
             self._emit(ProviderError(self._error))
+
+    def _price(self, frame: ResultFrame, tokens: TokenUsage) -> None:
+        """Set the turn's cost from its per-model tokens, or from the CLI's when it names none."""
+        if frame.model_usage is not None:
+            self.model_usage_total = frame.model_usage
+            writes = tokens.cache_write_input_tokens
+            share = tokens.cache_write_1h_input_tokens / writes if writes else 0.0
+            priced = priced_turn(
+                frame.model_usage,
+                self._model_usage_baseline,
+                one_hour_share=share,
+                table=self._pricing,
+            )
+            self._cost_usd = priced.usd
+            self._cost_source = priced.source
+        elif frame.total_cost_usd is not None:
+            self._cost_usd = frame.total_cost_usd - self._cost_baseline
+            self._cost_source = CostSource.PROVIDER_REPORTED
+        else:
+            self._cost_usd = None
+            self._cost_source = None
 
     def _structured_payload(self, frame: ResultFrame) -> object | None:
         # Only a turn that asked for a schema gets a payload: an unrequested

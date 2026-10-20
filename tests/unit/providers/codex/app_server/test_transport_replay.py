@@ -249,7 +249,8 @@ def test_a_turn_the_model_provider_rejects_fails_with_what_it_said(s3: list[Entr
 
 def test_a_turn_reports_the_context_its_last_model_call_left(s4: list[Entry]) -> None:
     """``last.totalTokens``, not the thread's running ``total``."""
-    transport, _ = _served([*s4[0:3], *s4[3:26]])
+    # The recording's thread is ephemeral; the transport keeps its threads.
+    transport, _ = _served([*s4[0:3], *s4[3:26]], skip=frozenset({"ephemeral"}))
     conversation = _open(transport, reasoning_effort="low")
     result = _turn(conversation, "reply with the word ok", [])
     assert result.text == "ok"  # type: ignore[attr-defined]
@@ -259,7 +260,7 @@ def test_a_turn_reports_the_context_its_last_model_call_left(s4: list[Entry]) ->
 
 def test_a_prompt_the_window_cannot_hold_is_a_context_overflow(s4: list[Entry]) -> None:
     """Codex relays the Responses API's ``context_length_exceeded`` under ``other``."""
-    transport, peer = _served(s4)
+    transport, peer = _served(s4, skip=frozenset({"ephemeral"}))
     conversation = _open(transport, reasoning_effort="low")
     _turn(conversation, "reply with the word ok", [])
     with pytest.raises(TurnFailedError) as caught:

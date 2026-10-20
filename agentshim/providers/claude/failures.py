@@ -7,6 +7,11 @@ kind on the synthetic assistant message it writes for the failure, an
 have the text, so all three are read. A turn whose ``StructuredOutput`` calls
 never validated ends with the ``result`` subtype
 ``error_max_structured_output_retries`` instead.
+
+A prompt the context window cannot hold is named by the ``result`` frame's
+``terminal_reason``. Builds without that field write ``Prompt is too long``
+as the message, sometimes followed by why the CLI's own compaction failed
+(which can be an API 503), so the overflow is checked before the status.
 """
 
 from __future__ import annotations
@@ -43,22 +48,38 @@ _TRANSIENT_STATUSES = frozenset({408, 429})
 _SERVER_ERRORS = range(500, 600)
 #: The ``result`` subtype of a turn that used up its output-schema retries.
 SCHEMA_RETRIES_SUBTYPE = "error_max_structured_output_retries"
+#: ``terminal_reason`` values Claude Code groups as a context limit: the API
+#: refused the prompt, the CLI's own estimate was over its blocking limit, or
+#: the context refilled right after a compaction.
+CONTEXT_LIMIT_REASONS = frozenset({"prompt_too_long", "blocking_limit", "rapid_refill_breaker"})
+#: The CLI's message for the same, and the API's (``prompt is too long: N
+#: tokens > M maximum``), for builds that write no ``terminal_reason`` or a
+#: path that sets another one (a compaction that failed on its own error).
+_CONTEXT_LIMIT_TEXT = re.compile(r"\bprompt is too long\b", re.IGNORECASE)
 
 
 def classify_failure(
-    *, subtype: str | None, api_error: str | None, status: int | None, text: str
+    *,
+    subtype: str | None,
+    api_error: str | None,
+    status: int | None,
+    text: str,
+    terminal_reason: str | None = None,
 ) -> FailureKind:
     """Classify one failed turn from what Claude reported about it.
 
     ``subtype`` is the error ``result`` frame's subtype, ``api_error`` the
     assistant frame's ``error`` kind, ``status`` the
-    result frame's ``api_error_status``, and ``text`` the error text the
-    stream (or, when the stream had none, stderr) carried. Tool output is
-    never part of ``text``, so a tool that printed an API error cannot make
-    the turn look like one.
+    result frame's ``api_error_status``, ``text`` the error text the
+    stream (or, when the stream had none, stderr) carried, and
+    ``terminal_reason`` why the CLI said it stopped. Tool output is never part
+    of ``text``, so a tool that printed an API error cannot make the turn
+    look like one.
     """
     if subtype == SCHEMA_RETRIES_SUBTYPE:
         return FailureKind.SCHEMA
+    if terminal_reason in CONTEXT_LIMIT_REASONS or _CONTEXT_LIMIT_TEXT.search(text):
+        return FailureKind.CONTEXT_OVERFLOW
     return _classify_api_failure(api_error=api_error, status=status, text=text)
 
 

@@ -16,3 +16,9 @@ contained no two-invocation recording.
 Codex 0.144.4's JSON event processor copies all five fields from the thread
 usage `total` into `turn.completed.usage`; it does not expose a per-turn field:
 [provider source](https://github.com/openai/codex/blob/rust-v0.144.4/codex-rs/exec/src/event_processor_with_jsonl_output.rs).
+
+`exec_context_overflow_gpt6_luna.jsonl` is recorded `codex exec --json` stdout
+(codex-cli 0.160.0, `gpt-6-luna`, 2026-10-20) for a prompt of 700,000 random
+CJK characters, about 1.4 million tokens. The Responses API refuses it, and
+Codex relays the API's error body, code `context_length_exceeded`, as the
+`error` and `turn.failed` message.

@@ -436,6 +436,7 @@ class _StreamConversation:
             exit_code=0,
             skills=skills.summary(),
             interrupted=_interrupted(frame),
+            context_tokens=parsed.context_tokens,
         )
         if result.interrupted:
             relay(TurnInterrupted())

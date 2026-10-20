@@ -787,12 +787,26 @@ last `error`/`turn.failed` event, and never reports `SCHEMA` because
 `--output-schema` is sent as a strict response format that constrains decoding
 (a `maxLength` or `minItems` is met by truncating or padding the output, exit 0). Each reads stderr only when the stream
 reported nothing, and never tool output. The other providers report `OTHER`.
+
+`CONTEXT_OVERFLOW` is a prompt the model's context window cannot hold. Claude
+reads it from the result frame's `terminal_reason` (`prompt_too_long`,
+`blocking_limit` or `rapid_refill_breaker`, which Claude Code itself groups as
+a context limit), and on builds without that field from the text
+`Prompt is too long`, checked before the status so that a failed compaction's
+503 does not make it look transient. Codex's app-server reports it as
+`codexErrorInfo: contextWindowExceeded` when Codex's own accounting catches
+it; a request the Responses API refuses arrives as `other` with the API's
+error body, whose `error.code` is `context_length_exceeded`. `codex exec`
+reports only text, so the same code, or Codex's "ran out of room in the
+model's context window", is read from it. Gemini CLI 0.25.2 reports nothing:
+its stream ends with a `success` result and zero tokens. Copilot and opencode
+have no recorded overflow, so they report `OTHER`.
 The error text goes into the message because Claude reports its failures in
 the stream and leaves stderr empty.
 
 **Claude, Gemini and opencode map an unclassified nonzero exit on a resumed
 turn to `SessionResumeError`.** A Claude failure the parser classified as
-`TRANSIENT`, `USAGE_LIMIT`, `AUTH` or `SCHEMA` happened inside a conversation that
+`TRANSIENT`, `USAGE_LIMIT`, `AUTH`, `SCHEMA` or `CONTEXT_OVERFLOW` happened inside a conversation that
 resumed, so it keeps its kind and the session keeps the conversation. None of those CLIs gives a distinguishable exit for
 a missing transcript, and a resumed turn that failed is unusable either way:
 the caller has to start a fresh conversation, and without the typed error a

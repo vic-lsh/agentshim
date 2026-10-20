@@ -33,6 +33,11 @@ class FailureKind(str, Enum):
     #: schema. ``detail`` carries the last validation errors it reported, and
     #: the conversation survives: a correction can be sent as the next turn.
     SCHEMA = "schema"
+    #: The conversation plus the new prompt do not fit the model's context
+    #: window, so the provider refused the turn. Sending the same turn to the
+    #: same conversation fails again; a fresh conversation, or a shorter
+    #: prompt, is the way forward.
+    CONTEXT_OVERFLOW = "context_overflow"
     #: Anything else, including every failure a provider cannot classify.
     OTHER = "other"
 

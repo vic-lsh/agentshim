@@ -415,6 +415,7 @@ class AgentSession:
             duration_ms=duration_ms,
             exit_code=result.returncode,
             skills=skills.summary(),
+            context_tokens=parsed.context_tokens,
         )
         self.last_result = turn_result
         return turn_result

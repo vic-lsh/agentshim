@@ -129,7 +129,11 @@ _FAILURES: dict[FailureKind, tuple[str, int, str]] = {
     ),
     FailureKind.USAGE_LIMIT: ("rate_limit", 429, "You've hit your limit \u00b7 resets 3pm (UTC)"),
     FailureKind.AUTH: ("authentication_failed", 401, "Invalid API key \u00b7 Please run /login"),
+    FailureKind.CONTEXT_OVERFLOW: ("invalid_request", 400, "Prompt is too long"),
 }
+
+#: Why Claude Code says a turn of each kind stopped, where that is its signal.
+_TERMINAL_REASONS: dict[FailureKind, str] = {FailureKind.CONTEXT_OVERFLOW: "prompt_too_long"}
 
 #: The validation errors Claude's ``StructuredOutput`` tool returns for a
 #: submission that does not match the schema.
@@ -170,6 +174,8 @@ def failure_lines(
         message = {"role": "assistant", "content": [{"type": "text", "text": text}]}
         lines.append(_line({"type": "assistant", "message": message, "error": error}))
         result.update(subtype="success", result=text, api_error_status=status)
+        if kind in _TERMINAL_REASONS:
+            result["terminal_reason"] = _TERMINAL_REASONS[kind]
     lines.append(_line(result))
     return lines, [], 1
 

@@ -131,7 +131,16 @@ _FAILURES: dict[FailureKind, str] = {
         "(https://chatgpt.com/explore/plus), or try again in 2 hours."
     ),
     FailureKind.AUTH: "unexpected status 401 Unauthorized: Missing bearer authentication",
-    FailureKind.OTHER: "Codex ran out of room in the model's context window.",
+    FailureKind.CONTEXT_OVERFLOW: (
+        '{"type":"error","error":{"message":"Your input exceeds the context window of this '
+        'model. Please adjust your input and try again.","type":"invalid_request_error",'
+        '"param":"input","code":"context_length_exceeded"},"status":400}'
+    ),
+    FailureKind.OTHER: (
+        '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":'
+        "\"The 'no-such-model-xyz' model is not supported when using Codex with a ChatGPT "
+        'account."}}'
+    ),
 }
 
 

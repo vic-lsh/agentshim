@@ -449,6 +449,28 @@ def test_an_unclassified_failure_of_a_resumed_turn_forgets_the_conversation(
 
 
 @given(scenarios())
+def test_a_context_overflow_forgets_the_conversation_unless_the_turn_keeps_it(
+    played: Played,
+) -> None:
+    """The conversation cannot take another turn, resumed or not; a pinned one is the caller's."""
+    for state, trace in completed(played):
+        last = trace.events[-1]
+        if not (
+            trace.failed
+            and isinstance(last, Failed)
+            and last.outcome is Outcome.CONTEXT_OVERFLOW
+            and not _refusals(trace)
+        ):
+            continue
+        if trace.keeps:
+            if trace.expected is not None:
+                assert state.conversation_id == trace.expected
+        else:
+            assert state.conversation_id is None
+            assert trace.checkpoint_after is None
+
+
+@given(scenarios())
 def test_classified_failures_and_timeouts_keep_the_conversation(played: Played) -> None:
     kept = {Outcome.TRANSIENT, Outcome.USAGE_LIMIT, Outcome.AUTH, Outcome.SCHEMA, Outcome.TIMEOUT}
     for state, trace in completed(played):

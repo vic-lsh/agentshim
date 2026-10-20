@@ -54,6 +54,8 @@ class FakeTurn:
     duration_ms: int = 0
     events: Sequence[AgentEvent] = ()
     during: Callable[[], None] | None = None
+    #: The ``TurnResult.context_tokens`` the turn reports.
+    context_tokens: int | None = None
 
 
 FakeOutcome = FakeTurn | AgentShimError
@@ -156,6 +158,7 @@ class FakeConversation:
             duration_ms=outcome.duration_ms,
             exit_code=0,
             interrupted=interrupted,
+            context_tokens=outcome.context_tokens,
         )
 
     def steer(self, text: str) -> None:

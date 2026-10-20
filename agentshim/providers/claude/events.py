@@ -67,6 +67,14 @@ class AssistantMessage:
     #: when a request fails (``overloaded``, ``rate_limit``, ...); ``None`` on
     #: a normal reply.
     error: str | None = None
+    #: The API message id; the frames of one model call share it.
+    message_id: str | None = None
+    #: The model that wrote the message: ``<synthetic>`` for a message the CLI
+    #: wrote itself (an error) rather than a model call.
+    model: str | None = None
+    #: The ``Task`` call whose subagent wrote this, or ``None`` for the main
+    #: conversation.
+    parent_tool_use_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -157,7 +165,14 @@ def _assistant(data: Mapping[str, Any]) -> AssistantMessage | None:
     error = _str_or_none(data.get("error"))
     if not blocks and usage is None and error is None:
         return None
-    return AssistantMessage(blocks=tuple(blocks), usage=usage, error=error)
+    return AssistantMessage(
+        blocks=tuple(blocks),
+        usage=usage,
+        error=error,
+        message_id=_str_or_none(payload.get("id")),
+        model=_str_or_none(payload.get("model")),
+        parent_tool_use_id=_str_or_none(data.get("parent_tool_use_id")),
+    )
 
 
 def _content_block(raw: object) -> ContentBlock | None:

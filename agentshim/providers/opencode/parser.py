@@ -114,6 +114,8 @@ class OpencodeStreamParser:
         self._cost_usd: float | None = None
         self._raw_tokens: Mapping[str, Any] | None = None
         self._error: str | None = None
+        # The context the last step (one model call) left.
+        self._context_tokens: int | None = None
 
     def feed_stdout(self, line: str) -> None:
         """Consume one stdout line."""
@@ -143,6 +145,7 @@ class OpencodeStreamParser:
             usage=self._usage(),
             cost_usd=self._cost_usd,
             error=self._error,
+            context_tokens=self._context_tokens,
         )
 
     def _usage(self) -> ProviderUsage:
@@ -201,6 +204,12 @@ class OpencodeStreamParser:
     def _step_finish(self, frame: StepFinishEvent) -> None:
         step = fold_usage(frame.tokens)
         self._tokens = self._tokens + step
+        if frame.tokens is not None:
+            # One step is one model call: its whole prompt plus the answer it
+            # wrote. Reasoning is not sent back in the next step's prompt.
+            self._context_tokens = (
+                step.input_tokens + step.output_tokens - step.reasoning_output_tokens
+            )
         self._raw_tokens = frame.tokens if frame.tokens is not None else self._raw_tokens
         if frame.cost is not None:
             self._cost_usd = (self._cost_usd or 0.0) + frame.cost

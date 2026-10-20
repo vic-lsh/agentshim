@@ -622,7 +622,7 @@ def test_per_turn_usage_sums_to_the_growth_of_the_total(
         ({"httpConnectionFailed": {"httpStatusCode": 401}}, FailureKind.AUTH),
         ("unauthorized", FailureKind.AUTH),
         ("badRequest", FailureKind.OTHER),
-        ("contextWindowExceeded", FailureKind.OTHER),
+        ("contextWindowExceeded", FailureKind.CONTEXT_OVERFLOW),
         ("somethingNew", FailureKind.OTHER),
         ({"responseStreamConnectionFailed": {"httpStatusCode": 400}}, FailureKind.OTHER),
     ],

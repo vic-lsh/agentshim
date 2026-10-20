@@ -90,6 +90,15 @@ def test_usage_is_the_turns_own() -> None:
     assert second.usage.tokens.turns == 1
 
 
+def test_each_turn_reports_the_context_its_last_model_call_left() -> None:
+    """The prompt the call sent (uncached, cache reads, cache writes) plus what it wrote."""
+    conversation = _transport("a_two_turns").open(_spec())
+    first = conversation.turn(TurnRequest(prompt="a"), _ignore)
+    second = conversation.turn(TurnRequest(prompt="b"), _ignore)
+    assert first.context_tokens == 2 + 10_482 + 6_867 + 4
+    assert second.context_tokens == 2 + 17_349 + 4_734 + 2
+
+
 def test_a_recorded_interrupt_is_an_interrupted_turn_and_the_conversation_goes_on() -> None:
     conversation = _transport("b_bash_interrupt").open(_spec())
     events = RecordingEventHandler()

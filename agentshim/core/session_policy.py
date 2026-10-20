@@ -16,6 +16,8 @@ What the policy decides, per turn:
   did not itself resume (the conversation was lost under it) forgets the
   conversation without replaying the turn.
 * An unclassified failure of a resumed turn forgets the conversation.
+* A context overflow forgets the conversation, resumed or not: it cannot take
+  another turn.
 * After a successful turn that exhausts the provider's ``RenewalBudget`` the
   conversation is retired.
 * An idle conversation is released at prepare time and reopened by id.
@@ -87,6 +89,8 @@ class Outcome(Enum):
     USAGE_LIMIT = "usage_limit"
     AUTH = "auth"
     SCHEMA = "schema"
+    #: The conversation no longer fits the model's context window.
+    CONTEXT_OVERFLOW = "context_overflow"
     #: A failure the provider could not classify.
     OTHER = "other"
     #: The provider no longer has the conversation the attempt tried to resume.
@@ -103,6 +107,7 @@ _OUTCOME_OF_KIND = {
     FailureKind.USAGE_LIMIT: Outcome.USAGE_LIMIT,
     FailureKind.AUTH: Outcome.AUTH,
     FailureKind.SCHEMA: Outcome.SCHEMA,
+    FailureKind.CONTEXT_OVERFLOW: Outcome.CONTEXT_OVERFLOW,
     FailureKind.OTHER: Outcome.OTHER,
 }
 
@@ -535,6 +540,8 @@ class SessionPolicy:
         if event.outcome is Outcome.RESUME_REFUSED:
             return self._on_resume_refused(state, turn, event)
         if event.outcome is Outcome.OTHER and turn.resumed and not turn.keeps_conversation:
+            return _forget_conversation(state, event.now)
+        if event.outcome is Outcome.CONTEXT_OVERFLOW and not turn.keeps_conversation:
             return _forget_conversation(state, event.now)
         return _give_up(state, event.now)
 

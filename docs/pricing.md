@@ -41,6 +41,16 @@ The retained raw total supplies the next invocation's baseline. The marker is
 included in `ProviderUsage.to_dict()`. See
 [provider behavior](providers.md#token-usage) for checkpointed resumes.
 
+## Where a cost comes from
+
+`ProviderUsage.cost_source` is a `CostSource`. Claude turns are priced from the per-model counts in
+the CLI's `modelUsage` and agentshim's table (`PRICE_TABLE`), because a CLI older than its model
+bills the model at a fallback rate. `modelUsage` is cumulative over the process, so each turn is
+priced by the difference, and its one-hour share of cache writes comes from the turn's
+`usage.cache_creation`. A turn whose model has no table price has `total_cost_usd=None` and
+`UNKNOWN_MODEL`. `PROVIDER_REPORTED` is the CLI's own figure, used only when its result named no
+model. `None` means no cost was reported.
+
 Known gaps: Claude's `result.usage` covers the main conversation only, so
 tokens spent by a Task subagent are missing from it (they are in the CLI's
 `modelUsage` and `total_cost_usd`). Copilot 1.0.83 prints no token counts.

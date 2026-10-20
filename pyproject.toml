@@ -1,6 +1,6 @@
 [project]
 name = "agentshim"
-version = "0.21.1"
+version = "0.22.0"
 description = "Provider-agnostic coding-agent CLI shims"
 readme = "README.md"
 license = "MIT"

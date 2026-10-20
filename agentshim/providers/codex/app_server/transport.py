@@ -51,6 +51,7 @@ from agentshim.core.permissions import ApprovalPolicy
 from agentshim.core.schema import dialect_problems
 from agentshim.core.skills import SkillTracker
 from agentshim.core.turn import TurnResult
+from agentshim.core.usage import CostSource
 from agentshim.execution.host import HostCommandExecutor
 from agentshim.execution.process import SpawnRequest
 from agentshim.pricing import cost_usd, price_for
@@ -927,7 +928,11 @@ class _Conversation:
         usage = turn_usage(turn.total, self._baseline)
         pricing = self._pricing
         if usage.increment_known and pricing is not None:
-            usage = replace(usage, total_cost_usd=cost_usd(usage.tokens, pricing))
+            usage = replace(
+                usage,
+                total_cost_usd=cost_usd(usage.tokens, pricing),
+                cost_source=CostSource.PRICE_TABLE,
+            )
         if turn.total is not None:
             self._baseline = turn.total
         return usage

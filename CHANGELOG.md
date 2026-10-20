@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.22.0 (2026-10-19)
+
+### Fixed
+
+- A Claude turn's cost is priced from the per-model token counts in the CLI's `modelUsage` and
+  agentshim's own price table, not taken from the CLI's `total_cost_usd`. A Claude Code build older
+  than the model it runs does not know the model and bills it at a fallback rate (Claude Code
+  2.1.268 priced `claude-sonnet-5-5` about 2.6 times too high). `modelUsage` is cumulative over the
+  process, so a long-lived `ClaudeStreamTransport` prices each turn by the difference. A turn that
+  used a model with no table price has `cost_usd=None`; no price is guessed. Only a result with no
+  `modelUsage` keeps the CLI's figure.
+
+### Added
+
+- `CostSource` (`PRICE_TABLE`, `PROVIDER_REPORTED`, `UNKNOWN_MODEL`) and
+  `ProviderUsage.cost_source` say where `total_cost_usd` came from; `None` when no cost was
+  reported. The Codex app-server transport reports `PRICE_TABLE`. `to_dict()` gains `cost_source`.
+- `ClaudeStreamParser` takes `model_usage_baseline` and `pricing`, and exposes
+  `model_usage_total` for the next turn's baseline.
+
 ## 0.21.1 (2026-10-19)
 
 ### Fixed

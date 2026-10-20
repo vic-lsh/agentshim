@@ -126,7 +126,7 @@ from .skills import SkillSummary, SkillTracker
 from .status import AuthState, ProviderStatus
 from .stream import ToolTracker, parse_json_object
 from .turn import OutputSchema, TurnRequest, TurnResult
-from .usage import ProviderUsage, TokenUsage, TokenWeights, normalized_usage
+from .usage import CostSource, ProviderUsage, TokenUsage, TokenWeights, normalized_usage
 
 __all__ = [
     "AgentEvent",
@@ -157,6 +157,7 @@ __all__ = [
     "ContinuityError",
     "Conversation",
     "ConversationSpec",
+    "CostSource",
     "CredentialKind",
     "CredentialSource",
     "EndpointSpec",

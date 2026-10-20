@@ -10,8 +10,9 @@ in ``tests/fixtures/claude_stream``):
 
 * ``system/init`` is repeated at the start of every turn, so readiness is the
   reply to the ``initialize`` request, not ``init``.
-* ``total_cost_usd`` is cumulative over the process while ``usage`` is per turn,
-  so the cost of a turn is the difference from the previous result.
+* ``total_cost_usd`` and ``modelUsage`` are cumulative over the process while
+  ``usage`` is per turn, so the cost of a turn is the difference from the
+  previous result. The cost is priced from ``modelUsage`` (see ``cost.py``).
 * A failed API request arrives as a ``result`` with subtype ``success`` and
   ``is_error`` true; a failure is classified on ``is_error`` first.
 * ``--json-schema``, MCP servers, effort and extra arguments are flags of the
@@ -99,6 +100,7 @@ if TYPE_CHECKING:
     from agentshim.execution.executor import CommandExecutor
     from agentshim.execution.process import Process, ProcessOutput
 
+    from .cost import ModelCounts
     from .user_hooks import ClaudeHook
 
 #: How often an idle pull loop looks at the clock again.
@@ -288,6 +290,7 @@ class _StreamConversation:
         self._argv: tuple[str, ...] = ()
         self._config = ProcessConfig()
         self._cost_baseline = 0.0
+        self._model_usage_baseline: Mapping[str, ModelCounts] = {}
         self._stderr_tail: deque[str] = _lines()
         self._closed = False
         self._running = False
@@ -414,6 +417,7 @@ class _StreamConversation:
             relay,
             expect_structured=request.output_schema is not None,
             cost_baseline_usd=self._cost_baseline,
+            model_usage_baseline=self._model_usage_baseline,
         )
         deadline = None if request.timeout is None else started + request.timeout
         run = _TurnRun(parser, relay, request.timeout, deadline)
@@ -502,6 +506,7 @@ class _StreamConversation:
                 self._argv = tuple(argv)
                 self._config = config
                 self._cost_baseline = 0.0
+                self._model_usage_baseline = {}
         if closed:
             self._stop(process)  # outside the lock: a stop waits, and interrupts need the lock
             msg = "conversation closed while its process started"
@@ -863,6 +868,8 @@ class _StreamConversation:
         parsed = parser.finish()
         if parser.total_cost_usd is not None:
             self._cost_baseline = parser.total_cost_usd
+        if parser.model_usage_total is not None:
+            self._model_usage_baseline = parser.model_usage_total
         self._learn_id(parsed.session_id)
         self._report_denials(run, frame)
         if run.expired:

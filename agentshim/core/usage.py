@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -261,6 +262,17 @@ def normalized_usage(  # noqa: PLR0913 - one keyword per normalized count
     )
 
 
+class CostSource(str, Enum):
+    """Where a reported cost came from."""
+
+    #: Computed from the turn's token counts and agentshim's price table.
+    PRICE_TABLE = "price_table"
+    #: The CLI's own figure, used only when it did not say which model ran.
+    PROVIDER_REPORTED = "provider_reported"
+    #: The turn used a model agentshim has no price for, so there is no cost.
+    UNKNOWN_MODEL = "unknown_model"
+
+
 @dataclass(frozen=True)
 class ProviderUsage:
     """Normalized token counts plus the raw provider mapping.
@@ -278,6 +290,9 @@ class ProviderUsage:
     provider: str = ""
     raw: Mapping[str, Any] | None = None
     increment_known: bool = True
+    #: Where ``total_cost_usd`` came from; ``None`` when no cost was reported.
+    #: ``UNKNOWN_MODEL`` goes with a ``None`` cost: no price is guessed.
+    cost_source: CostSource | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Flatten the normalized counts, cost, and provider name into one mapping.
@@ -290,4 +305,5 @@ class ProviderUsage:
             "total_cost_usd": self.total_cost_usd,
             "provider": self.provider,
             "increment_known": self.increment_known,
+            "cost_source": None if self.cost_source is None else self.cost_source.value,
         }

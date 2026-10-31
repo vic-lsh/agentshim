@@ -8,6 +8,8 @@ is each provider's :class:`TranscriptFormat`.
 
 agentshim keeps no state between calls. The caller remembers a
 :class:`FilePosition` per file and hands it back, and gets only what is new.
+The positions of every root of a provider go in one mapping: a session file
+that moves between roots is then read on from where the old path stopped.
 """
 
 from __future__ import annotations
@@ -40,28 +42,30 @@ class TranscriptRoot:
     Attributes:
         provider: The provider that wrote them.
         path: The directory, resolved from the environment (it may not exist).
-        shared_sessions: Whether one session's records can appear in more than
-            one file under this provider, because a session file moved after
-            it was read. A caller then counts each session from one file only.
     """
 
     provider: str
     path: Path
-    shared_sessions: bool = False
 
 
 @dataclass(frozen=True)
 class TranscriptRecord:
-    """One model request's usage, as a transcript recorded it.
+    """One model request's usage, or the part of it one line of a transcript added.
 
     Attributes:
-        timestamp: When the request was recorded (timezone-aware).
+        timestamp: When the request was recorded (timezone-aware). For the
+            tokens a later line of the file added, when that line was written.
         model: The model id as the transcript names it.
         session_id: The session it belongs to; a subagent's records carry
             their parent's session.
-        cwd: The working directory the session ran in, when the file says.
+        cwd: The working directory the session ran in: an absolute path on the
+            user's machine, so a personal one. ``None`` unless the caller asked
+            for it with ``include_cwd``, and then only when the file says.
         tokens: The request's tokens. ``input_tokens`` includes cache reads and
-            writes, as everywhere in agentshim.
+            writes, as everywhere in agentshim. A request is counted once, at
+            the most any line of the file reported: the records of one request
+            add up to its final usage, the first holding the request and its
+            ``turns``, and later ones (``turns`` 0) only what a later line added.
         speed: The service speed it was billed at.
         reported_usd: A cost the file states. ``None`` for every shipped
             format: a CLI's own figure is not trusted (see :mod:`agentshim.providers.claude.cost`).
@@ -153,7 +157,9 @@ class TranscriptScan:
     Attributes:
         files: The files read this call, in path order.
         unchanged: Files whose size and modification time match the known
-            position of a finished read, so nothing was read.
+            position of a finished read, and files that are earlier copies of
+            a session already read further under another path, so nothing was
+            read.
         skipped: Files too old to matter for the window.
         pending: Files not finished: the byte budget ran out first. Call again
             with the new positions until it is zero.
@@ -211,7 +217,11 @@ class TranscriptFormat:
         suffix: Which file names are transcripts.
         unreadable_suffixes: Transcript names agentshim cannot read (a
             compressed archive). They are reported in ``failed``, not skipped.
-        shared_sessions: See :attr:`TranscriptRoot.shared_sessions`.
+        session_file: The name every copy of one session's file has, for a
+            provider that moves or copies a file between its directories after
+            it was read. A file with the name of one already read is read on
+            from there, so the move adds nothing twice. ``None`` when a file
+            keeps its path.
     """
 
     subdirs: tuple[str, ...]
@@ -220,7 +230,7 @@ class TranscriptFormat:
     parser: Callable[[Path, bytes | None], TranscriptParser | None]
     suffix: str = ".jsonl"
     unreadable_suffixes: tuple[str, ...] = field(default=())
-    shared_sessions: bool = False
+    session_file: Callable[[Path], str] | None = None
 
     def __post_init__(self) -> None:
         """Reject a format that would read nothing, or read non-ASCII markers."""

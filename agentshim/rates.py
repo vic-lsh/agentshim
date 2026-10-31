@@ -10,10 +10,20 @@ agentshim holds no HTTP client and chooses no directory. The caller supplies a
 passes the time in, so a refresh is a plain function of its arguments:
 
 * :func:`read_rates` never touches the network. It returns what the store
-  holds, or the pinned table shipped in the wheel.
+  holds laid over the pinned table shipped in the wheel, or the pinned table.
 * :func:`refresh_rates` fetches only when the document is older than
   :data:`RATES_TTL` (or ``force`` is set) and no attempt, failed or not, was
   made within :data:`REFRESH_FLOOR`.
+
+A fetched document never takes a known price away. It is laid over the pinned
+table: a model the document lacks keeps its pinned rates, and a row the
+document lists with no input or output price (LiteLLM carries such
+placeholders, and rows for models that are not chat models) does not replace a
+pinned price. A model is priced in the result if either source prices it.
+
+Times are timezone-aware, and a clock set back is tolerated: a time stamped
+ahead of *now* has an unknown age, so it counts as expired, and an attempt
+within :data:`REFRESH_FLOOR` of *now* on either side holds the floor.
 """
 
 from __future__ import annotations
@@ -178,10 +188,12 @@ class RateRead:
     """Rates and how current they are.
 
     Attributes:
-        table: The rates to price with.
-        status: Where they came from.
+        table: The rates to price with: the stored document laid over the
+            pinned table, or the pinned table alone. Every model the pinned
+            table prices is priced in it.
+        status: How current the document behind ``table`` is.
         fetched_at: When the document behind ``table`` was fetched; ``None`` for the pinned table.
-        known_models: How many names ``table`` knows.
+        known_models: How many names ``table`` knows, the pinned table's included.
         refresh_due: Whether :func:`refresh_rates` would try to fetch now.
     """
 
@@ -255,9 +267,13 @@ def read_rates(
 ) -> RateRead:
     """The best rates available without the network.
 
-    The stored document when it parses, otherwise the pinned table. Never
-    fetches, so it cannot block on a dead network.
+    The stored document laid over the pinned table when it parses, otherwise
+    the pinned table. Never fetches, so it cannot block on a dead network.
+
+    Raises:
+        ValueError: *now* is naive.
     """
+    _require_aware(now)
     return _read(store.read(), now=now, catalog=catalog)
 
 
@@ -279,18 +295,18 @@ def refresh_rates(
     failure too.
 
     Raises:
+        ValueError: *now* is naive. Checked before anything is fetched.
         Exception: Whatever *store* raises when it cannot write.
     """
+    _require_aware(now)
     snapshot = store.read()
     if not _due(snapshot, now=now, force=force):
         return _read(snapshot, now=now, catalog=catalog)
     document = _fetch(source, now=now)
-    previous = snapshot or RateSnapshot(None, None, None)
-    attempted = max(now, previous.fetched_at or now)
     updated = (
         RateSnapshot(document, now, now)
         if document is not None
-        else RateSnapshot(previous.document, previous.fetched_at, attempted)
+        else _after_failure(snapshot or RateSnapshot(None, None, None), now)
     )
     store.write(updated)
     return _read(updated, now=now, catalog=catalog)
@@ -329,20 +345,46 @@ def _catalog_or_default(catalog: ProviderCatalog | None) -> ProviderCatalog:
     return DEFAULT_CATALOG
 
 
+def _require_aware(now: dt.datetime) -> None:
+    if now.tzinfo is None:
+        msg = "now must be timezone-aware"
+        raise ValueError(msg)
+
+
 def _read(
     snapshot: RateSnapshot | None, *, now: dt.datetime, catalog: ProviderCatalog | None
 ) -> RateRead:
     due = _due(snapshot, now=now, force=False)
-    table = _parse_stored(snapshot)
-    if snapshot is None or snapshot.fetched_at is None or table is None:
-        bundled = bundled_rates(catalog=catalog)
-        return RateRead(bundled, RateStatus.BUNDLED, None, len(bundled), due)
+    pinned = bundled_rates(catalog=catalog)
+    fetched = _parse_stored(snapshot)
+    if snapshot is None or snapshot.fetched_at is None or fetched is None:
+        return RateRead(pinned, RateStatus.BUNDLED, None, len(pinned), due)
+    table = _laid_over(pinned, fetched)
     failed_since = (
         snapshot.last_attempt_at is not None and snapshot.last_attempt_at > snapshot.fetched_at
     )
-    fresh = now - snapshot.fetched_at < RATES_TTL and not failed_since
+    fresh = not _expired(snapshot.fetched_at, now) and not failed_since
     status = RateStatus.FRESH if fresh else RateStatus.CACHED
     return RateRead(table, status, snapshot.fetched_at, len(table), due)
+
+
+def _laid_over(pinned: RateTable, fetched: RateTable) -> RateTable:
+    """*fetched* over *pinned*, where *fetched* takes no known price away.
+
+    Every name *pinned* prices is priced in the result: from *fetched* when its row prices the
+    model too, otherwise from *pinned*. Names only *fetched* knows come as listed.
+    """
+    entries = dict(fetched.entries)
+    for name, known in pinned.entries.items():
+        listed = entries.get(name)
+        if listed is None or (_prices(known.standard) and not _prices(listed.standard)):
+            entries[name] = known
+    return RateTable(fetched.checked_on, entries)
+
+
+def _prices(rates: Rates) -> bool:
+    """Whether *rates* give the model an input and an output price, as every chat model has."""
+    return rates.input_usd > 0 and rates.output_usd > 0
 
 
 def _parse_stored(snapshot: RateSnapshot | None) -> RateTable | None:
@@ -358,11 +400,34 @@ def _parse_stored(snapshot: RateSnapshot | None) -> RateTable | None:
 def _due(snapshot: RateSnapshot | None, *, now: dt.datetime, force: bool) -> bool:
     if snapshot is None:
         return True
-    if snapshot.last_attempt_at is not None and now - snapshot.last_attempt_at < REFRESH_FLOOR:
+    if snapshot.last_attempt_at is not None and abs(now - snapshot.last_attempt_at) < REFRESH_FLOOR:
         return False
     if force or snapshot.fetched_at is None:
         return True
-    return now - snapshot.fetched_at >= RATES_TTL
+    return _expired(snapshot.fetched_at, now)
+
+
+def _expired(fetched_at: dt.datetime, now: dt.datetime) -> bool:
+    """Whether a document fetched at *fetched_at* is past its TTL, or its age cannot be known.
+
+    A fetch time ahead of *now* by more than the floor was stamped by a clock that has since
+    been set back, so the document's age is unknown and it is treated as old.
+    """
+    age = now - fetched_at
+    return age >= RATES_TTL or age < -REFRESH_FLOOR
+
+
+def _after_failure(previous: RateSnapshot, now: dt.datetime) -> RateSnapshot:
+    """The snapshot after a fetch at *now* failed: the document held, with the attempt recorded.
+
+    The attempt is stamped *now*. A fetch time ahead of *now* is stamped as one TTL old, so the
+    snapshot stays consistent (an attempt never precedes the fetch it follows) and still shows
+    that the last attempt failed.
+    """
+    fetched = previous.fetched_at
+    if fetched is not None and fetched > now:
+        fetched = now - RATES_TTL
+    return RateSnapshot(previous.document, fetched, now)
 
 
 def _fetch(source: RateSource, *, now: dt.datetime) -> bytes | None:
@@ -389,10 +454,15 @@ def _read_entries(document: Mapping[str, object]) -> dict[str, RateEntry]:
         entries[key] = RateEntry(
             key,
             standard,
-            fast=_read_fast(fields, standard),
-            ultrafast=_read_rates(fields, "_ultrafast", standard),
+            fast=_tier(standard, _read_fast(fields, standard)),
+            ultrafast=_tier(standard, _read_rates(fields, "_ultrafast", standard)),
         )
     return entries
+
+
+def _tier(standard: Rates, tier: Rates | None) -> Rates | None:
+    """*tier*, unless it is a placeholder: a model with a price has no speed tier that is free."""
+    return None if tier is not None and _prices(standard) and not _prices(tier) else tier
 
 
 def _read_fast(fields: Mapping[str, object], standard: Rates) -> Rates | None:

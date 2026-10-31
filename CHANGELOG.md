@@ -1,5 +1,78 @@
 # Changelog
 
+## 0.24.1 (2026-10-31)
+
+Fixes the usage numbers 0.24.0 got wrong. Recorded cost does not move for any single-result turn:
+every price, `price_for` and `cost_usd` are as in 0.24.0, and `tests/fixtures/recorded_costs.json`
+still proves it.
+
+### Fixed
+
+- **Claude transcripts undercounted output by about a third.** The CLI writes one line per content
+  block of a message, and the lines do not repeat the same usage: the prompt side is identical, but
+  `output_tokens` grows as the reply streams, from a few tokens on the first line to the whole reply
+  on the last. 0.24.0 kept the first line and dropped the rest. A message is now counted once, at
+  the most any line reported, and the records of a message add up to its final usage: the first
+  line yields the request (`turns=1`), each later line yields only the tokens it added (`turns=0`,
+  usually only output). Sum tokens over records, and count requests by summing `turns`. An advisor
+  call that shows only on a later line is counted too. A position saved by 0.24.0 has no such
+  counts, so it is refused and the file is read again from the start (`reset`), which also corrects
+  what 0.24.0 missed.
+- **`ProviderUsage.by_model` counted the first turn after a steer twice.** `modelUsage` is
+  cumulative over the CLI process, and the parser added each result's rows to the last. The rows of
+  a run are now those of its last result, which cover the run once, and the rows sum to
+  `total_cost_usd`. The same seam is fixed for the primary row's `turns` (the run's, not the last
+  result's) and for the one-hour share of cache writes (the run's, applied to the run's writes), so a
+  steered run whose results differ in cache TTL is no longer priced at the last result's share.
+  A single result is unchanged.
+- **A moved Codex session file was counted twice.** Codex archives a rollout by moving it from
+  `sessions` to `archived_sessions` under the same name. agentshim now owns that: a file with the
+  name of one already read is read on from the furthest position held for it (after the usual check
+  of the bytes before that position), and a copy that is shorter than what was read holds nothing
+  new. Keep one `known` mapping for all roots of a provider, as before. A caller no longer
+  de-duplicates anything. **Removed:** `TranscriptRoot.shared_sessions` and
+  `TranscriptFormat.shared_sessions`, which only told the caller to do this itself; a format sets
+  `session_file` (the name every copy of a session's file has) instead.
+- **A fetched LiteLLM document took known prices away.** It replaced the pinned table whole, so a
+  model LiteLLM dropped or renamed lost its estimate, and a row listed at zero before its price was
+  known turned a known price into $0. A document is now laid over the pinned table: a model it lacks
+  keeps its pinned rates, a row with no input or output price does not replace a pinned price, and a
+  speed tier with no price under a priced standard is dropped. A model only the document knows is
+  taken as listed, free or not. `RateRead.known_models` counts the result.
+- A `modelUsage` key with no name no longer raises out of the parser; its tokens are the row
+  `unknown`, which has no price, so the turn is `UNKNOWN_MODEL` as in 0.23.1. The CLI's
+  `<synthetic>` placeholder bills nothing and no longer makes a turn `UNKNOWN_MODEL`.
+- `ultrafast` is read as `UsageSpeed.ULTRAFAST` in a Claude result and in a transcript (it read as
+  none, and as standard). A speed agentshim has no name for is still `None` (read as standard).
+- `read_rates` and `refresh_rates` reject a naive `now` with `ValueError` before anything is
+  fetched. A clock set back is tolerated: a time stamped ahead of `now` by more than the floor has an
+  unknown age and counts as expired (it was fresh until the clock caught up), and an attempt more than
+  the floor away no longer holds off a refresh.
+- The Codex app-server transport skips the `by_model` row of a model name that is blank.
+
+### Changed
+
+- `read_transcript_usage(..., include_cwd=False)`: records carry `cwd` only when asked. It is an
+  absolute path on the user's machine, so a record a caller stores or sends holds no personal path by
+  default.
+- `ModelUsage.recorded_usd` is documented as what it was: the pinned table's standard-tier list
+  price, no bill. A row whose `speed` is fast or ultrafast was billed more; docs/pricing.md shows
+  how to price the tier with `rates_for`, `price_tokens` and `speed_premium_usd`. Recorded cost still
+  does not model speed tiers.
+- docs/transcripts.md states that `since` selects files, not records (filter on `timestamp`), and
+  that a line is held in memory whole while it is read.
+
+### Added
+
+- Tests built from data shaped like what the CLIs write, not idealised input:
+  `tests/unit/transcripts/shapes.py` (streamed Claude messages whose output grows, advisor calls
+  that show late, Codex session files that grow, move and are copied),
+  `tests/unit/stream_shapes.py` (a steered Claude process with cumulative `modelUsage`),
+  `tests/unit/rate_shapes.py` (partial, renamed and placeholder LiteLLM documents), and a synthetic
+  session file shaped like a real streamed message (`tests/fixtures/claude_session`). Properties over
+  them: records summed over any read split equal the final usage; a moved or copied session is
+  counted once; steered results equal one result of the whole run; no known price becomes 0.
+
 ## 0.24.0 (2026-10-30)
 
 Everything here is additive. Recorded cost does not move: every price, `price_for`, `cost_usd`,

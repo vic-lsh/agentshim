@@ -26,7 +26,6 @@ from agentshim.core.usage import (
     ModelUsage,
     ProviderUsage,
     TokenUsage,
-    merge_model_usage,
     normalized_usage,
 )
 
@@ -41,6 +40,7 @@ from .events import (
     parse_frame,
 )
 from .failures import SCHEMA_RETRIES_SUBTYPE, classify_failure
+from .model_data import SYNTHETIC_MODEL
 from .rate_limits import RateLimitFrame
 
 if TYPE_CHECKING:
@@ -94,10 +94,6 @@ def fold_usage(usage: Mapping[str, Any] | None, turns: int = 0) -> TokenUsage:
         cache_write_1h_input_tokens=created_1h,
         turns=turns,
     )
-
-
-#: The ``model`` of a message Claude Code wrote itself rather than a model.
-SYNTHETIC_MODEL = "<synthetic>"
 
 
 def context_tokens(usage: Mapping[str, Any]) -> int:
@@ -343,14 +339,14 @@ class ClaudeStreamParser:
         self._final_text = frame.text
         self.total_cost_usd = frame.total_cost_usd
         tokens = fold_usage(frame.usage, turns=frame.num_turns or 0)
+        if self._results:
+            # A steered message can start a follow-on turn inside this run. Its ``usage`` reports
+            # only its own tokens, so the run sums them; ``modelUsage`` and ``total_cost_usd``
+            # are cumulative over the process, so the cost and the per-model rows priced from
+            # them already cover every result of the run and are taken as they are, not added.
+            tokens = self._usage.tokens + tokens
         self._price(frame, tokens)
         self._structured = self._structured_payload(frame)
-        by_model = self._by_model
-        if self._results:
-            # A steered message can start a follow-on turn inside this run; its
-            # ``result`` reports only its own tokens, so the run sums them.
-            tokens = self._usage.tokens + tokens
-            by_model = merge_model_usage(self._usage.by_model, by_model)
         self._results += 1
         self._usage = ProviderUsage(
             tokens=tokens,
@@ -358,7 +354,7 @@ class ClaudeStreamParser:
             provider=PROVIDER_NAME,
             raw=frame.usage,
             cost_source=self._cost_source,
-            by_model=by_model,
+            by_model=self._by_model,
         )
         self._emit(UsageReport(self._usage, self._cost_usd))
         if frame.is_error:
@@ -369,7 +365,12 @@ class ClaudeStreamParser:
             self._emit(ProviderError(self._error))
 
     def _price(self, frame: ResultFrame, tokens: TokenUsage) -> None:
-        """Set the turn's cost from its per-model tokens, or from the CLI's when it names none."""
+        """Set the run's cost from its per-model tokens, or from the CLI's when it names none.
+
+        *tokens* are the run's so far, the same span the cumulative ``modelUsage`` covers: their
+        one-hour share of cache writes applies to those writes, and their turn count goes on the
+        primary row.
+        """
         if frame.model_usage is not None:
             self.model_usage_total = frame.model_usage
             writes = tokens.cache_write_input_tokens

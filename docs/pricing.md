@@ -68,8 +68,8 @@ feeding it to budgets, so it does not change).
 | --- | --- |
 | `model` | The id as the provider reports it (`claude-opus-5-5[1m]`, a dated snapshot). Normalize with `rates_for` or `price_for`. |
 | `tokens` | This turn's tokens for the model. Only the primary row carries the turn's `turns` count, so the rows' turns add up to `tokens.turns`. |
-| `recorded_usd` | The pinned-table price of `tokens`, never the CLI's own figure. `None` when the table has no price for the model. Added in order, the rows are the turn's `total_cost_usd` when none is unpriced. |
-| `speed` | The service speed (`UsageSpeed`), on the primary row only. `None` when the provider did not report one; read it as standard. |
+| `recorded_usd` | The pinned-table price of `tokens` at the **standard tier**, never the CLI's own figure, and never a bill: it carries no speed premium whatever `speed` says. `None` when the table has no price for the model. Added in order, the rows are the turn's `total_cost_usd` when none is unpriced. |
+| `speed` | The service speed (`UsageSpeed`), on the primary row only. `None` when the provider did not report one, or one agentshim has no name for; read it as standard. |
 | `primary` | The model the turn ran on. Exactly one row of a turn is. |
 
 - Claude: from `modelUsage`, priced exactly as the turn total is. One unpriced
@@ -79,14 +79,39 @@ feeding it to budgets, so it does not change).
   output. `result.usage.speed` is one value per turn, so it goes to the primary
   row. `thinkingTokens` fills `reasoning_output_tokens` when the CLI reports it.
   The one-hour share of cache writes is the turn's, applied to every model's
-  writes, so a subagent's split is approximate.
+  writes, so a subagent's split is approximate. A steered message can start a
+  follow-on turn inside one run: `modelUsage` is cumulative, so the rows are
+  those of the last result, covering the whole run once, and `tokens` (which
+  each result reports for itself) are the sum. A `modelUsage` key with no name
+  becomes the row `unknown`, which has no price; the CLI's `<synthetic>`
+  placeholder has no row.
 - Codex app-server: one row at the model and service tier the server started the
   thread with. Child threads are not counted, as in `tokens`. The one-shot `exec`
   path knows no model and reports none.
 - A provider that reports no split, or a turn whose increment is unknown, has
   `by_model == ()`.
-- `merge_model_usage` adds two turns of one run: rows with the same model and
-  speed add up, and the first turn's primary stays the only primary.
+- `merge_model_usage` adds the rows of two separate turns: rows with the same
+  model and speed add up, and the first turn's primary stays the only primary.
+
+### Billing a fast turn
+
+`recorded_usd` and `total_cost_usd` are standard-tier list prices: the pinned
+table has no speed tiers, and recorded cost does not move between releases. A
+row with `speed` of `FAST` or `ULTRAFAST` was billed more than that, so a sum of
+`recorded_usd` understates what a fast-tier user spent. To report the tier's
+price, add the premium from the rate table (see
+[Estimates at list prices](#estimates-at-list-prices)):
+
+```python
+entry = rates_for(read.table, "claude", row.model)
+if entry is not None:
+    tier = row.speed or UsageSpeed.STANDARD
+    billed = price_tokens(row.tokens, entry.at(tier) or entry.standard).total_usd
+    # or: row.recorded_usd + speed_premium_usd(row.tokens, entry, tier)
+```
+
+Use `price_tokens` at the tier for an estimate, and `recorded_usd` only for the
+number agentshim recorded.
 
 `to_dict()` only ever adds keys. `TokenUsage.from_dict` also reads a mapping
 written before 0.7.0, whose `cached_input_tokens` counted cache writes too on
@@ -148,7 +173,7 @@ and states its basis in `note`. The shipped table has no estimated entries.
 Not modelled in the pinned table: OpenAI's long-context rates, Anthropic's
 `inference_geo: "us"` 1.1x multiplier, fast mode and batch discounts. (Fast and
 ultrafast rates are in `RateTable`, for estimates; recorded cost stays standard
-tier, so it understates a fast turn.)
+tier, so it understates a fast turn. See [Billing a fast turn](#billing-a-fast-turn).)
 
 ### Updating the table
 
@@ -197,8 +222,8 @@ rate cannot reach a recorded cost:
 | Purpose | Recorded cost | Estimate |
 | Key | `(vendor, model)` | One flat, lowercase name |
 | Rows | The models agentshim prices, standard tier | Everything in LiteLLM's file, plus bare aliases, with fast and ultrafast tiers |
-| Zero input rate | Refused | Allowed (a free model) |
-| Source | Generated from a snapshot at release | Fetched at run time, or the pinned table |
+| Zero input rate | Refused | Allowed (a free model), but never over a pinned price |
+| Source | Generated from a snapshot at release | A fetched document laid over the pinned table |
 | Used by | `price_for`, `cost_usd` | `rates_for`, `price_tokens` |
 
 `price_for` and `cost_usd` take a `ModelPricing` only, and `price_tokens` takes
@@ -218,7 +243,8 @@ if entry is not None:
 ```
 
 - `parse_litellm(document, checked_on=...)` reads LiteLLM's file. A model needs
-  finite, non-negative input and output rates or it is dropped. A missing cache
+  finite, non-negative input and output rates or it is dropped; a speed tier
+  with no input or output price under a priced standard is dropped too. A missing cache
   read or write rate defaults to the input rate. Fast comes from
   `provider_specific_entry.fast` (a multiple of standard) or the `_priority`
   columns, ultrafast from `_ultrafast`, and a tier's missing cache rates scale by
@@ -238,9 +264,19 @@ if entry is not None:
   or `force` is set, and no attempt, failed or not, was made within
   `REFRESH_FLOOR` (60 seconds). A document that does not parse, or parses to no
   model, counts as a failed fetch and never replaces a good one.
-  `RateStatus` says where `read.table` came from: `FRESH`, `CACHED` (older, or
-  the latest refresh failed) or `BUNDLED` (no usable document: the pinned table
-  shipped in the wheel, with its speed tiers).
+  `RateStatus` says how current the document behind `read.table` is: `FRESH`,
+  `CACHED` (older, or the latest refresh failed) or `BUNDLED` (no usable
+  document: the pinned table shipped in the wheel, with its speed tiers).
+- A fetched document is laid over the pinned table, so it never takes a known
+  price away. A model the document lacks keeps its pinned rates (LiteLLM renames
+  and drops rows), and a row with no input or output price does not replace a
+  pinned price (LiteLLM lists placeholders, and rows for models that are not
+  chat models). Every model the pinned table prices is priced in `read.table`;
+  a model only the document knows comes as the document lists it, free or not.
+- `now` must be timezone-aware (`ValueError` otherwise, before anything is
+  fetched). A clock set back is tolerated: a time stamped ahead of `now` by more
+  than the floor has an unknown age and counts as expired, and an attempt within
+  the floor of `now` on either side holds the floor.
 - `rates_for(table, provider, model)` maps the provider's names onto the table's
   flat names: a bracketed variant is dropped, a dated snapshot falls back to its
   undated name, and a `vendor/` prefix is tried last. A name that is not a model

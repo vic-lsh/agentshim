@@ -1,5 +1,9 @@
 """Codex's session files: ``<state root>/sessions/**/rollout-*.jsonl``, and ``archived_sessions``.
 
+Codex archives a rollout by moving it to ``archived_sessions`` under the same file name, so the
+name is the session's identity: a rollout already read under one path is read on, not again, at
+the other (see :attr:`~agentshim.core.transcripts.TranscriptFormat.session_file`).
+
 One JSON object per line. A ``token_count`` line carries the usage of one
 model request, but not the model or the service tier: those come from earlier
 lines (``turn_context`` for the model, ``thread_settings_applied`` for the
@@ -362,6 +366,11 @@ def _decode(state: bytes) -> _State | None:
     return loaded
 
 
+def _rollout_name(path: Path) -> str:
+    """A rollout keeps its file name when Codex archives it, so the name is the session's identity."""
+    return path.name
+
+
 def _parser(path: Path, state: bytes | None) -> TranscriptParser | None:
     if state is None:
         return CodexTranscriptParser(path)
@@ -389,5 +398,5 @@ TRANSCRIPTS = TranscriptFormat(
     },
     parser=_parser,
     unreadable_suffixes=(".jsonl.zst",),
-    shared_sessions=True,
+    session_file=_rollout_name,
 )

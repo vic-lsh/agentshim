@@ -960,7 +960,7 @@ class _Conversation:
             cost = cost_usd(usage.tokens, pricing)
             usage = replace(usage, total_cost_usd=cost, cost_source=CostSource.PRICE_TABLE)
         model = self._reported_model or self._model
-        if usage.increment_known and model:
+        if usage.increment_known and model and model.strip():
             row = ModelUsage(model, usage.tokens, cost, self._speed, primary=True)
             usage = replace(usage, by_model=(row,))
         if turn.total is not None:

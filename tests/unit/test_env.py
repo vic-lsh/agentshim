@@ -5,15 +5,36 @@ from __future__ import annotations
 import os
 import subprocess
 from collections.abc import Sequence
+from types import SimpleNamespace
 
 import pytest
 from agentshim import interactive_env
 from agentshim.core import env as env_module
+from hypothesis import given
+from hypothesis import strategies as st
+
+
+class _Clock:
+    """The probe's monotonic clock, which only the shell's time advances."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def monotonic(self) -> float:
+        return self.now
 
 
 @pytest.fixture(autouse=True)
 def _clear_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(env_module, "_cache", {})
+
+
+@pytest.fixture(autouse=True)
+def clock(monkeypatch: pytest.MonkeyPatch) -> _Clock:
+    """A virtual clock in place of the module's ``time``: no test waits for the budget."""
+    virtual = _Clock()
+    monkeypatch.setattr(env_module, "time", SimpleNamespace(monotonic=virtual.monotonic))
+    return virtual
 
 
 def _completed(
@@ -27,11 +48,19 @@ class _FakeRun:
     """Stand-in for ``subprocess.run`` as ``env._probe`` calls it.
 
     Replays *outcomes* one per call, repeating the last once exhausted, and
-    records what the probe asked for.
+    records what the probe asked for. Each call takes ``elapsed`` seconds of the
+    virtual clock; a shell that times out takes the whole timeout it was given.
     """
 
-    def __init__(self, *outcomes: subprocess.CompletedProcess[str] | Exception) -> None:
+    def __init__(
+        self,
+        *outcomes: subprocess.CompletedProcess[str] | Exception,
+        clock: _Clock | None = None,
+        elapsed: float = 0.0,
+    ) -> None:
         self._outcomes = list(outcomes)
+        self._clock = clock
+        self._elapsed = elapsed
         self.calls = 0
         self.timeouts: list[float] = []
         self.commands: list[str] = []
@@ -49,6 +78,10 @@ class _FakeRun:
         self.calls += 1
         self.timeouts.append(timeout)
         outcome = self._outcomes[min(self.calls - 1, len(self._outcomes) - 1)]
+        if self._clock is not None:
+            hung = isinstance(outcome, subprocess.TimeoutExpired)
+            # A real shell is killed at its timeout, so no call outlasts the one it was given.
+            self._clock.now += timeout if hung else min(self._elapsed, timeout)
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
@@ -89,10 +122,55 @@ def test_the_probe_is_bounded_by_a_timeout(monkeypatch: pytest.MonkeyPatch) -> N
     assert probe.timeouts == [10.0]
 
 
-def test_a_hanging_shell_falls_back_to_os_environ(monkeypatch: pytest.MonkeyPatch) -> None:
-    probe = _FakeRun(subprocess.TimeoutExpired(cmd="bash", timeout=10.0))
+def test_a_hanging_shell_falls_back_to_os_environ(
+    monkeypatch: pytest.MonkeyPatch, clock: _Clock
+) -> None:
+    probe = _FakeRun(subprocess.TimeoutExpired(cmd="bash", timeout=10.0), clock=clock)
     monkeypatch.setattr(env_module.subprocess, "run", probe)
     assert interactive_env() == os.environ.copy()
+
+
+def test_a_hanging_shell_is_asked_once_not_twice(
+    monkeypatch: pytest.MonkeyPatch, clock: _Clock
+) -> None:
+    """A shell that used the whole budget leaves nothing for the plain-``env`` retry.
+
+    Regression: the retry had a timeout of its own, so a hung shell held a caller for twice the
+    timeout, longer than the limit of a host read that probes the machine.
+    """
+    probe = _FakeRun(subprocess.TimeoutExpired(cmd="bash", timeout=10.0), clock=clock)
+    monkeypatch.setattr(env_module.subprocess, "run", probe)
+    interactive_env()
+    assert probe.commands == ["env -0"]
+    assert clock.now - 1000.0 == 10.0
+
+
+@given(first=st.floats(min_value=0.0, max_value=30.0), second_hangs=st.booleans())
+def test_the_two_attempts_never_take_longer_than_the_budget(
+    first: float, *, second_hangs: bool
+) -> None:
+    """Whatever the first attempt spent, the two together never take longer than the budget.
+
+    The first attempt fails after ``first`` seconds (a shell without ``env -0``); the second is
+    granted what is left, and when nothing is left it is not made.
+    """
+    clock = _Clock()
+    probe = _FakeRun(
+        _completed(returncode=1),
+        subprocess.TimeoutExpired(cmd="bash", timeout=0.0) if second_hangs else _completed("A=1\n"),
+        clock=clock,
+        elapsed=first,
+    )
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(env_module, "_cache", {})
+        patch.setattr(env_module, "time", SimpleNamespace(monotonic=clock.monotonic))
+        patch.setattr(env_module.subprocess, "run", probe)
+        interactive_env()
+    assert clock.now - 1000.0 <= 10.0
+    assert probe.timeouts[0] == 10.0
+    assert (len(probe.timeouts) == 2) == (first < 10.0)
+    if len(probe.timeouts) == 2:
+        assert probe.timeouts[1] == pytest.approx(10.0 - first)
 
 
 def test_a_missing_shell_falls_back_to_os_environ(monkeypatch: pytest.MonkeyPatch) -> None:

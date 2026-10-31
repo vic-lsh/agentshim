@@ -5,8 +5,15 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
+import time
 
-_INTERACTIVE_ENV_TIMEOUT_S = 10.0
+_INTERACTIVE_ENV_BUDGET_S = 10.0
+"""The most time one capture may take, both attempts together.
+
+A caller that probes the machine inside a request with its own limit (a host read with a
+25 second cap) needs the capture's worst case to be one number it can subtract, not twice a
+timeout. A shell that hangs for the whole budget is answered once, with ``os.environ``.
+"""
 
 _lock = threading.Lock()
 # One-slot cache keyed by _CACHE_KEY. A dict rather than a rebound module
@@ -23,7 +30,9 @@ def interactive_env(*, refresh: bool = False) -> dict[str, str]:
     non-interactive process never sources, so PATH and credentials are read
     from ``bash -i``. The subprocess is run once per process and cached: it
     costs hundreds of milliseconds and the answer does not change. Any
-    failure, including the 10s timeout, falls back to ``os.environ``.
+    failure, including running out of the 10s budget, falls back to
+    ``os.environ``. The budget covers both attempts (``env -0``, then ``env``
+    for a shell without it), so the call never takes longer than 10 seconds.
     """
     with _lock:
         cached = _cache.get(_CACHE_KEY)
@@ -44,16 +53,23 @@ def _probe() -> dict[str, str]:
     -0`` is a GNU extension, so a shell whose ``env`` does not have it falls
     back to plain ``env`` and the line-based reading.
     """
-    raw = _run_env("env -0")
+    deadline = time.monotonic() + _INTERACTIVE_ENV_BUDGET_S
+    raw = _run_env("env -0", deadline)
     if raw is None:
-        raw = _run_env("env")
+        raw = _run_env("env", deadline)
     if raw is None:
         return os.environ.copy()
     return _parse_env(raw) or os.environ.copy()
 
 
-def _run_env(command: str) -> str | None:
-    """Run *command* in an interactive shell, or ``None`` if it did not work."""
+def _run_env(command: str, deadline: float) -> str | None:
+    """Run *command* in an interactive shell before *deadline* (a ``time.monotonic`` reading).
+
+    ``None`` if it did not work, or if the budget was already spent on the attempt before.
+    """
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
     try:
         # start_new_session detaches from the TTY so `bash -i` setting its
         # process group cannot stop us with SIGTTOU/SIGTTIN.
@@ -64,7 +80,7 @@ def _run_env(command: str) -> str | None:
             text=True,
             check=False,
             start_new_session=True,
-            timeout=_INTERACTIVE_ENV_TIMEOUT_S,
+            timeout=remaining,
         )
     except (OSError, subprocess.SubprocessError):
         return None

@@ -27,10 +27,10 @@ from .builders import (
 NAME = "sessions/2026/10/20/rollout-1-abc.jsonl"
 
 
-def read(*lines: str, name: str = NAME) -> list[TranscriptRecord]:
+def read(*lines: str, name: str = NAME, include_cwd: bool = False) -> list[TranscriptRecord]:
     with tree() as state:
         path = state.write(name, "".join(line + "\n" for line in lines))
-        return collect(codex_root(state)).records.get(path, [])
+        return collect(codex_root(state), include_cwd=include_cwd).records.get(path, [])
 
 
 def header(model: str = "gpt-6-luna", tier: str | None = None) -> list[str]:
@@ -45,7 +45,7 @@ class TestRecords:
         self,
     ) -> None:
         one = codex_usage(1000, cached=600, write=100, out=50, reasoning=20)
-        (record,) = read(*header(tier="priority"), codex_count(5, one, one))
+        (record,) = read(*header(tier="priority"), codex_count(5, one, one), include_cwd=True)
         assert record.model == "gpt-6-luna"
         assert (record.session_id, record.cwd) == ("codex-sess", "/work/project")
         assert record.speed is UsageSpeed.FAST
@@ -101,7 +101,10 @@ class TestRecords:
     def test_a_turn_context_directory_replaces_the_sessions(self) -> None:
         usage = codex_usage(10)
         (record,) = read(
-            codex_meta(0), codex_context(1, "m", cwd="/elsewhere"), codex_count(2, usage, usage)
+            codex_meta(0),
+            codex_context(1, "m", cwd="/elsewhere"),
+            codex_count(2, usage, usage),
+            include_cwd=True,
         )
         assert record.cwd == "/elsewhere"
 
@@ -129,7 +132,9 @@ class TestRecords:
                 "payload": {"session_id": "by-other-key"},
             }
         )
-        (record,) = read(meta, codex_context(1, "m"), codex_count(2, usage, usage))
+        (record,) = read(
+            meta, codex_context(1, "m"), codex_count(2, usage, usage), include_cwd=True
+        )
         assert record.session_id == "by-other-key"
         assert record.cwd is None
 
@@ -302,10 +307,6 @@ class TestRoots:
             archived = collect(codex_root(state, 1))
         assert list(sessions.records) == [live]
         assert list(archived.records) == [old]
-
-    def test_a_root_marks_that_one_session_may_appear_in_several_files(self) -> None:
-        with tree() as state:
-            assert codex_root(state).shared_sessions
 
 
 @st.composite

@@ -70,12 +70,14 @@ def test_every_user_skill_is_disabled_and_no_system_skill_is(
     codex_home: list[str], agents: list[str], system: list[str]
 ) -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        home = Path(tmp)
+        # Resolved, because the code under test reports real paths and the temporary directory
+        # is itself a symlink on macOS (/var is /private/var).
+        home = Path(tmp).resolve()
         user = {_skill(home, ".codex", "skills", name) for name in codex_home}
         user |= {_skill(home, ".agents", "skills", "group", name) for name in agents}
         for name in system:
             _skill(home, ".codex", "skills", ".system", name)
-        argv = _argv({"HOME": tmp}, SkillScope.PROJECT)
+        argv = _argv({"HOME": str(home)}, SkillScope.PROJECT)
         assert _disabled(argv) == user
 
 

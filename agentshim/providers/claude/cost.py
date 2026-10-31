@@ -22,12 +22,16 @@ from agentshim.core.rates import candidate_names
 from agentshim.core.usage import CostSource, ModelUsage, TokenUsage, UsageSpeed, normalized_usage
 from agentshim.pricing import price_for
 
+from .model_data import SYNTHETIC_MODEL
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
     from agentshim.core.pricing import PricingTable
 
 PROVIDER_NAME = "claude"
+#: What a ``modelUsage`` key with no name is called: its tokens are real, but no price can match.
+UNNAMED_MODEL = "unknown"
 
 
 @dataclass(frozen=True)
@@ -60,6 +64,17 @@ class ModelCounts:
             canonical=self.canonical,
         )
 
+    def plus(self, other: ModelCounts) -> ModelCounts:
+        """These counts and *other*'s added together, naming the model as this one does."""
+        return ModelCounts(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
+            cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
+            reasoning_tokens=self.reasoning_tokens + other.reasoning_tokens,
+            canonical=self.canonical or other.canonical,
+        )
+
     @property
     def empty(self) -> bool:
         """Whether no token was counted."""
@@ -87,7 +102,12 @@ class TurnCost:
 
 
 def parse_model_usage(raw: object) -> dict[str, ModelCounts] | None:
-    """Read a ``result`` frame's ``modelUsage``; ``None`` when it is absent or malformed."""
+    """Read a ``result`` frame's ``modelUsage``; ``None`` when it is absent or malformed.
+
+    A key with no name (empty or blank) is a CLI fault, not a reason to fail the turn: its
+    tokens are kept under :data:`UNNAMED_MODEL`, which has no price, so the turn is
+    ``UNKNOWN_MODEL`` with no cost as it is for any other model agentshim cannot price.
+    """
     if not isinstance(raw, dict):
         return None
     parsed: dict[str, ModelCounts] = {}
@@ -96,7 +116,7 @@ def parse_model_usage(raw: object) -> dict[str, ModelCounts] | None:
             return None
         fields = cast("Mapping[str, Any]", counts)
         canonical = fields.get("canonicalModel")
-        parsed[model] = ModelCounts(
+        read = ModelCounts(
             input_tokens=_count(fields, "inputTokens"),
             output_tokens=_count(fields, "outputTokens"),
             cache_read_tokens=_count(fields, "cacheReadInputTokens"),
@@ -104,6 +124,8 @@ def parse_model_usage(raw: object) -> dict[str, ModelCounts] | None:
             reasoning_tokens=_count(fields, "thinkingTokens"),
             canonical=canonical if isinstance(canonical, str) else None,
         )
+        name = model if model.strip() else UNNAMED_MODEL
+        parsed[name] = parsed[name].plus(read) if name in parsed else read
     return parsed
 
 
@@ -118,13 +140,15 @@ def priced_turn(
 
     *one_hour_share* is the fraction of cache writes billed at the one-hour
     rate. A model with tokens in the turn and no price makes the whole turn
-    ``UNKNOWN_MODEL`` with no cost: a partial sum would read as complete.
+    ``UNKNOWN_MODEL`` with no cost: a partial sum would read as complete. The
+    CLI's own placeholder for a message it wrote itself bills nothing and has
+    no row.
     """
     total: float | None = 0.0
     rows: list[ModelUsage] = []
     for model, counts in model_usage.items():
         delta = counts.since(baseline.get(model))
-        if delta.empty:
+        if delta.empty or model == SYNTHETIC_MODEL:
             continue
         pricing = price_for(PROVIDER_NAME, model, table)
         if pricing is None and delta.canonical is not None:
@@ -181,9 +205,14 @@ def mark_primary(
 
 
 def report_speed(usage: Mapping[str, Any] | None) -> UsageSpeed | None:
-    """The speed a ``result`` frame's ``usage`` says the turn ran at; ``None`` if it says none."""
+    """The speed a ``usage`` mapping says the request ran at.
+
+    ``None`` when it says none, or names a speed agentshim has no
+    :class:`UsageSpeed` for: the caller then reads it as standard, and the
+    figure is a list price of the standard tier whatever was billed.
+    """
     speed = None if usage is None else usage.get("speed")
-    return {"standard": UsageSpeed.STANDARD, "fast": UsageSpeed.FAST}.get(str(speed))
+    return next((tier for tier in UsageSpeed if tier.value == speed), None)
 
 
 def _tokens(

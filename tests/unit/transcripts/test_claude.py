@@ -22,15 +22,19 @@ from .builders import (
 NAME = "projects/-work-project/sess-1.jsonl"
 
 
-def read(*lines: str, name: str = NAME, newline: str = "\n") -> list[TranscriptRecord]:
+def read(
+    *lines: str, name: str = NAME, newline: str = "\n", include_cwd: bool = False
+) -> list[TranscriptRecord]:
     with tree() as state:
         path = state.write(name, "".join(line + newline for line in lines))
-        return collect(claude_root(state)).records.get(path, [])
+        return collect(claude_root(state), include_cwd=include_cwd).records.get(path, [])
 
 
 class TestRecords:
     def test_a_line_becomes_one_record_with_the_model_session_and_directory(self) -> None:
-        (record,) = read(claude_line(7, input_tokens=3, output=9, cwd="/work/x", session="s-9"))
+        (record,) = read(
+            claude_line(7, input_tokens=3, output=9, cwd="/work/x", session="s-9"), include_cwd=True
+        )
         assert record.model == "claude-opus-5-5"
         assert (record.session_id, record.cwd, record.speed) == (
             "s-9",
@@ -173,7 +177,9 @@ class TestAdvisors:
             "output_tokens": 30,
         }
         other = {"type": "message", "model": "claude-opus-5-5", "input_tokens": 1_000_000}
-        executor, call = read(claude_line(0, speed="fast", iterations=[other, advisor]))
+        executor, call = read(
+            claude_line(0, speed="fast", iterations=[other, advisor]), include_cwd=True
+        )
         assert call.model == "claude-fable-5-1"
         assert call.tokens.uncached_input_tokens == 7
         assert call.tokens.cache_read_input_tokens == 100
@@ -208,7 +214,7 @@ class TestSubagents:
         assert record.session_id == "sess-1"
 
     def test_a_missing_working_directory_is_none(self) -> None:
-        (record,) = read(claude_line(0, cwd=None))
+        (record,) = read(claude_line(0, cwd=None), include_cwd=True)
         assert record.cwd is None
 
 

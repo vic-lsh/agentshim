@@ -293,9 +293,14 @@ class ModelUsage:
         model: The model id as the provider reports it.
         tokens: This turn's tokens for this model. Only the primary model
             carries the turn's ``turns`` count.
-        recorded_usd: The pinned-table price of ``tokens``; ``None`` when the
-            table has no price for the model. This is the figure a turn's
-            recorded cost sums, never the CLI's own.
+        recorded_usd: The pinned-table price of ``tokens`` at the standard
+            tier; ``None`` when the table has no price for the model. This is
+            the figure a turn's recorded cost sums, never the CLI's own. It is
+            not a bill: the pinned table has no speed tiers, so a row whose
+            ``speed`` is fast or ultrafast was billed more than this. For the
+            price at the tier, use :func:`agentshim.price_tokens` with the
+            entry's rates at ``speed``, or add
+            :func:`agentshim.speed_premium_usd`.
         speed: The service speed the turn ran at, on the primary model only;
             ``None`` when the provider did not report one (read as standard).
         primary: Whether this is the model the turn was run with. Exactly one
@@ -332,7 +337,10 @@ class ModelUsage:
 def merge_model_usage(
     first: Sequence[ModelUsage], second: Sequence[ModelUsage]
 ) -> tuple[ModelUsage, ...]:
-    """Sum the per-model usage of two turns of one run into one.
+    """Sum the per-model usage of two separate turns into one.
+
+    This adds turns that each have their own rows. Rows a parser built from a
+    CLI's cumulative counts already cover the whole run and must not be added.
 
     Rows with the same model and speed add up, and a sum is unpriced if either
     part was. The primary row of *first* (else of *second*) stays the only

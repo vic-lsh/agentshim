@@ -43,14 +43,10 @@ class TestRoots:
         (default,) = transcript_roots("claude", {"HOME": "/h"})
         assert str(explicit.path) == "/cfg/projects"
         assert str(default.path) == "/h/.claude/projects"
-        assert not explicit.shared_sessions
 
-    def test_codex_reads_sessions_and_archived_sessions_and_shares_sessions_across_them(
-        self,
-    ) -> None:
+    def test_codex_reads_sessions_and_archived_sessions(self) -> None:
         roots = transcript_roots("codex", {"CODEX_HOME": "/c", "HOME": "/h"})
         assert [str(root.path) for root in roots] == ["/c/sessions", "/c/archived_sessions"]
-        assert all(root.shared_sessions for root in roots)
         home = transcript_roots("codex", {"HOME": "/h"})
         assert str(home[0].path) == "/h/.codex/sessions"
 

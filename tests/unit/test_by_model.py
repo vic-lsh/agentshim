@@ -208,13 +208,15 @@ class TestClaudeSplit:
         assert usage.by_model == ()
         assert usage.cost_source is CostSource.PROVIDER_REPORTED
 
-    def test_a_followon_turn_inside_one_run_adds_into_the_same_rows(self) -> None:
+    def test_a_followon_turn_inside_one_run_reports_the_run_once(self) -> None:
         first = _stream(
             {"claude-opus-5-5": ModelCounts(input_tokens=10, output_tokens=100)},
             init="claude-opus-5-5",
             main="claude-opus-5-5",
             num_turns=2,
         )
+        # modelUsage is cumulative over the process: the second result repeats the first's counts
+        # and adds a subagent's. The run's rows are those, not the two results added up.
         second = _stream(
             {
                 "claude-opus-5-5": ModelCounts(input_tokens=10, output_tokens=100),
@@ -224,16 +226,17 @@ class TestClaudeSplit:
             main="claude-opus-5-5",
             num_turns=3,
         )
-        # The second result's modelUsage is cumulative, so give the parser the first as baseline.
         events: list[AgentEvent] = []
         parser = ClaudeStreamParser(events.append)
         for line in (*first, *second[1:]):
             parser.feed_stdout(line)
-        usage = parser.finish().usage
+        parsed = parser.finish()
+        usage = parsed.usage
         opus = next(row for row in usage.by_model if row.model == "claude-opus-5-5")
-        assert opus.tokens.output_tokens == 200
-        assert opus.tokens.turns == 5
+        assert opus.tokens.output_tokens == 100
+        assert opus.tokens.turns == usage.tokens.turns == 5
         assert sum(row.primary for row in usage.by_model) == 1
+        assert parsed.cost_usd == _in_order(row.recorded_usd for row in usage.by_model)
 
 
 @given(models=model_usages(models=(*KNOWN, UNKNOWN)), data=st.data())

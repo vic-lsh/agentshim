@@ -373,7 +373,8 @@ class TestRead:
         store = FakeRateStore(RateSnapshot(GOOD_DOCUMENTS[0], NOON, NOON))
         read = read_rates(store, now=NOON + dt.timedelta(hours=1))
         assert read.status is RateStatus.FRESH
-        assert read.known_models == 1
+        # The document's model, laid over every model the pinned table prices.
+        assert read.known_models == len(bundled_rates()) + 1
         assert read.table.lookup("m") is not None
         assert not read.refresh_due
 

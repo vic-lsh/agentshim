@@ -218,13 +218,28 @@ class Collected:
 
 
 def collect(
-    root: TranscriptRoot, collected: Collected | None = None, *, budget: int = BIG_BUDGET
+    root: TranscriptRoot,
+    collected: Collected | None = None,
+    *,
+    budget: int = BIG_BUDGET,
+    include_cwd: bool = False,
 ) -> Collected:
-    """Read until nothing is pending, accumulating as a caller would."""
+    """Read until nothing is pending, accumulating as a caller would.
+
+    The positions of every root go in one mapping, as the docs tell a caller to keep them.
+    ``include_cwd`` is passed on only when set, so the default is the library's.
+    """
     state = collected or Collected()
     limit = 10_000
     while True:
-        scan = read_transcript_usage(root, known=state.positions, since=SINCE, byte_budget=budget)
+        if include_cwd:
+            scan = read_transcript_usage(
+                root, known=state.positions, since=SINCE, byte_budget=budget, include_cwd=True
+            )
+        else:
+            scan = read_transcript_usage(
+                root, known=state.positions, since=SINCE, byte_budget=budget
+            )
         state.calls += 1
         state.take(scan.files)
         state.failed |= set(scan.failed)

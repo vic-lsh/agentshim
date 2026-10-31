@@ -93,6 +93,8 @@ PRICING_ENTRIES = tuple(_anthropic(entry) for entry in RATE_ENTRIES)
 #: Flat rates with speed tiers, for estimates; the same generated numbers as ``PRICING_ENTRIES``.
 RATES = RateTable(SNAPSHOT_DATE, {entry.name: entry for entry in RATE_ENTRIES})
 
+#: The ``model`` of a message the CLI wrote itself rather than a model call, which bills nothing.
+SYNTHETIC_MODEL = "<synthetic>"
 #: Names the CLI reports that are not a model with a price: its placeholder for a message that
 #: never reached the API, and the bare family names, which do not say which generation ran.
-UNPRICEABLE_MODELS = frozenset({"<synthetic>", "synthetic", "opus", "sonnet", "haiku", "fable"})
+UNPRICEABLE_MODELS = frozenset({SYNTHETIC_MODEL, "synthetic", "opus", "sonnet", "haiku", "fable"})

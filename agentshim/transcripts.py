@@ -13,6 +13,12 @@ A file is read again from the start (``reset``) when it was rewritten or
 truncated, which is detected by comparing a hash of the 64 bytes before the
 resume point. A file that cannot be read is listed in ``failed`` and never
 counts as empty.
+
+A provider can move a session file between its directories after it was read
+(Codex archives a rollout). The file is then new at its new path, but it holds
+what the caller already has: it is read on from the position of the path it
+came from, found by the format's :attr:`~TranscriptFormat.session_file` name in
+the positions the caller passes back, so nothing is counted twice.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from dataclasses import replace
 from typing import TYPE_CHECKING, BinaryIO, cast
 
 from agentshim.core.home import state_root
@@ -35,7 +42,7 @@ from agentshim.core.transcripts import (
 
 if TYPE_CHECKING:
     import datetime as dt
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Callable, Iterator, Mapping
     from pathlib import Path
 
     from agentshim.core.transcripts import TranscriptParser
@@ -95,18 +102,16 @@ def transcript_roots(
     home = state_root(catalog.plugin(provider).describe(), env)
     if home is None:
         return ()
-    return tuple(
-        TranscriptRoot(provider, home / name, shared_sessions=transcripts.shared_sessions)
-        for name in transcripts.subdirs
-    )
+    return tuple(TranscriptRoot(provider, home / name) for name in transcripts.subdirs)
 
 
-def read_transcript_usage(
+def read_transcript_usage(  # noqa: PLR0913 - one keyword per documented input of a bounded read
     root: TranscriptRoot,
     *,
     known: Mapping[Path, FilePosition],
     since: dt.datetime,
     byte_budget: int,
+    include_cwd: bool = False,
     catalog: ProviderCatalog | None = None,
 ) -> TranscriptScan:
     """Read the transcripts under *root* that may hold usage since *since*.
@@ -114,18 +119,26 @@ def read_transcript_usage(
     Args:
         root: One of :func:`transcript_roots`.
         known: What the caller holds: the position returned for each file the
-            last time it was read. A file with no entry is read from the start.
+            last time it was read, for every root of the provider. A file with
+            no entry is read from the start, unless a file of the same session
+            under another path has one (see the module docstring).
         since: Start of the window. Files last modified more than 36 hours
-            before it are skipped.
+            before it are skipped. A file inside the window is read whole, so
+            its records can be older than *since*: filter on
+            :attr:`TranscriptRecord.timestamp` to count only the window.
         byte_budget: Stop after about this many bytes (at least 1), at a line
             boundary. The first file read always makes progress, so repeating
             the call with the returned positions finishes for any budget.
+        include_cwd: Whether records carry the session's working directory,
+            which is a path on the user's machine. Off by default, so records
+            a caller stores or sends hold no personal path unless it asked.
         catalog: Where to find the provider's format.
 
     Returns:
         What is new. Passing every returned ``position`` back as *known* and
         calling until ``pending`` is zero gives the same records as one read of
-        each file whole, however the file grew or the budget split the work.
+        each file whole, however the file grew, the budget split the work or a
+        session file moved between the provider's directories.
 
     Raises:
         ValueError: *byte_budget* is below 1, *since* is naive, or the root's
@@ -145,7 +158,7 @@ def read_transcript_usage(
     cutoff_ns = int(since.timestamp() * 1_000_000_000) - _MTIME_SLACK_NS
     failed: list[Path] = []
     listed = _list_files(root.path, transcripts, failed)
-    walk = _Walk(transcripts, known, cutoff_ns, byte_budget, failed)
+    walk = _Walk(transcripts, known, cutoff_ns, byte_budget, failed, include_cwd=include_cwd)
     for path in listed:
         walk.visit(path)
     return TranscriptScan(
@@ -157,29 +170,86 @@ def read_transcript_usage(
     )
 
 
+class _Known:
+    """The positions the caller holds, found by path or by the session a path stands for."""
+
+    def __init__(
+        self, known: Mapping[Path, FilePosition], session_file: Callable[[Path], str] | None
+    ) -> None:
+        self._known = known
+        self._session_file = session_file
+        self._paths: dict[str, list[Path]] = {}
+        if session_file is not None:
+            for path in known:
+                self._paths.setdefault(session_file(path), []).append(path)
+
+    def own(self, path: Path) -> FilePosition | None:
+        """The position held for exactly *path*."""
+        return self._known.get(path)
+
+    def _others(self, path: Path) -> list[FilePosition]:
+        """The positions held for other paths with *path*'s session file name."""
+        if self._session_file is None:
+            return []
+        return [
+            self._known[other]
+            for other in self._paths.get(self._session_file(path), ())
+            if other != path and self._known[other].offset > 0
+        ]
+
+    def resumable(self, path: Path) -> list[FilePosition]:
+        """Where a read of *path* may continue, furthest first.
+
+        Its own position, and that of any other path with the same session file name, since the
+        file moved from there. A tie goes to its own.
+        """
+        own = self._known.get(path)
+        ranked = sorted(
+            [(position, 1) for position in self._others(path)]
+            + ([(own, 0)] if own is not None and own.offset > 0 else []),
+            key=lambda held: (-held[0].offset, held[1]),
+        )
+        return [position for position, _ in ranked]
+
+    def covered(self, path: Path, size: int) -> bool:
+        """Whether another path of the session was read as far as *path* reaches.
+
+        A file with the name of a session already read further is an earlier copy of it, so
+        everything in it is counted already.
+        """
+        return any(position.offset >= size for position in self._others(path))
+
+
 class _Walk:
     """One call's pass over the listed files: what each was, and the budget left."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - one call's inputs
         self,
         fmt: TranscriptFormat,
         known: Mapping[Path, FilePosition],
         cutoff_ns: int,
         budget: int,
         failed: list[Path],
+        *,
+        include_cwd: bool,
     ) -> None:
         self._fmt = fmt
-        self._known = known
+        self._known = _Known(known, fmt.session_file)
         self._cutoff_ns = cutoff_ns
         self._remaining = budget
         self._failed = failed
+        self._include_cwd = include_cwd
         self.scans: list[FileScan] = []
         self.unchanged = 0
         self.skipped = 0
         self.pending = 0
 
     def visit(self, path: Path) -> None:
-        """Classify *path*, and read it if it is new and the budget allows."""
+        """Classify *path*, and read it if it is new and the budget allows.
+
+        A file that is an earlier copy of a session read further under another path is
+        ``unchanged``: it holds nothing new.
+        """
         try:
             status = path.stat()
         except OSError:
@@ -189,7 +259,7 @@ class _Walk:
             self.skipped += 1
         elif path.name.endswith(self._fmt.unreadable_suffixes):
             self._failed.append(path)
-        elif _unchanged(self._known.get(path), status):
+        elif _unchanged(self._known.own(path), status) or self._known.covered(path, status.st_size):
             self.unchanged += 1
         elif self._remaining <= 0:
             self.pending += 1
@@ -197,14 +267,22 @@ class _Walk:
             self._read(path, status)
 
     def _read(self, path: Path, status: os.stat_result) -> None:
-        read = _read_file(path, status, self._known.get(path), self._fmt, self._remaining)
+        read = _read_file(path, status, self._known.resumable(path), self._fmt, self._remaining)
         if read is None:
             self._failed.append(path)
             return
         scan, used = read
         self._remaining -= used
-        self.scans.append(scan)
+        self.scans.append(scan if self._include_cwd else _without_cwd(scan))
         self.pending += not scan.position.complete
+
+
+def _without_cwd(scan: FileScan) -> FileScan:
+    return replace(
+        scan,
+        records=tuple(replace(record, cwd=None) for record in scan.records),
+        tail_records=tuple(replace(record, cwd=None) for record in scan.tail_records),
+    )
 
 
 def _catalog_or_default(catalog: ProviderCatalog | None) -> ProviderCatalog:
@@ -289,37 +367,34 @@ def _resume(
     handle: BinaryIO,
     path: Path,
     status: os.stat_result,
-    previous: FilePosition | None,
+    resumable: list[FilePosition],
     fmt: TranscriptFormat,
 ) -> tuple[int, TranscriptParser, bool]:
     """Where to start, with which parser, and whether the known position had to be dropped."""
-    if previous is None or previous.offset == 0:
-        parser = fmt.parser(path, None)
-        assert parser is not None  # noqa: S101 - a parser always starts from nothing
-        return 0, parser, False
-    if previous.offset <= status.st_size and _guard(handle, previous.offset) == (
-        previous.guard_length,
-        previous.guard_hash,
-    ):
-        parser = fmt.parser(path, previous.state)
-        if parser is not None:
-            return previous.offset, parser, False
+    for previous in resumable:
+        if previous.offset <= status.st_size and _guard(handle, previous.offset) == (
+            previous.guard_length,
+            previous.guard_hash,
+        ):
+            parser = fmt.parser(path, previous.state)
+            if parser is not None:
+                return previous.offset, parser, False
     fresh = fmt.parser(path, None)
     assert fresh is not None  # noqa: S101 - a parser always starts from nothing
-    return 0, fresh, True
+    return 0, fresh, bool(resumable)
 
 
 def _read_file(
     path: Path,
     status: os.stat_result,
-    previous: FilePosition | None,
+    resumable: list[FilePosition],
     fmt: TranscriptFormat,
     budget: int,
 ) -> tuple[FileScan, int] | None:
-    """Read one file from the known position, or ``None`` if it cannot be read."""
+    """Read one file from the furthest position that still fits it, or ``None`` if it cannot be read."""
     try:
         with path.open("rb") as handle:
-            start, parser, reset = _resume(handle, path, status, previous, fmt)
+            start, parser, reset = _resume(handle, path, status, resumable, fmt)
             handle.seek(start)
             lines = _Lines(handle, start, budget)
             records: list[TranscriptRecord] = []

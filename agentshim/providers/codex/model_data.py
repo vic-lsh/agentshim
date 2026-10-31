@@ -1,6 +1,7 @@
 """Codex-owned model and price facts."""
 
 import datetime as dt
+from dataclasses import replace
 
 from agentshim.core.models import ModelSpec
 from agentshim.core.pricing import ModelPricing
@@ -9,6 +10,8 @@ OPENAI_MODELS_URL = "https://developers.openai.com/api/docs/models"
 OPENAI_PRICING_URL = "https://developers.openai.com/api/docs/pricing"
 _MODEL_CHECKED = dt.date(2026, 10, 17)
 _PRICE_CHECKED = dt.date(2026, 9, 27)
+#: ``gpt-6.1-sol`` was read from the page on its own date, after the rest of the table.
+_SOL_6_1_CHECKED = dt.date(2026, 10, 30)
 
 
 def _openai_model(
@@ -88,6 +91,10 @@ def _openai(
 
 PRICING_ENTRIES = (
     _openai("gpt-6-astra", 10.00, 1.00, 50.00, cache_write_usd=12.50),
+    replace(
+        _openai("gpt-6.1-sol", 2.00, 0.10, 10.00, cache_write_usd=2.50),
+        checked=_SOL_6_1_CHECKED,
+    ),
     _openai("gpt-6-sol", 2.00, 0.20, 10.00, cache_write_usd=2.50),
     _openai("gpt-6-luna", 0.10, 0.01, 0.50, cache_write_usd=0.125),
     _openai("gpt-5.6-sol", 4.00, 0.40, 20.00, cache_write_usd=5.00),

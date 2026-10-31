@@ -9,12 +9,15 @@ from typing import Any
 import pytest
 from agentshim import (
     ModelPricing,
+    ModelSpec,
     PricingTable,
     TokenUsage,
     cost_usd,
     default_models,
     default_pricing,
+    get_provider,
     price_for,
+    provider_names,
 )
 
 TABLE = default_pricing()
@@ -195,8 +198,71 @@ def test_entries_are_frozen() -> None:
         TABLE.entries[0].input_usd = 0  # type: ignore[misc]
 
 
-def test_every_listed_claude_model_has_a_price() -> None:
-    claude_models = {spec.model for spec in default_models().entries if spec.vendor == "anthropic"}
-    assert claude_models
-    for model in claude_models:
-        assert price_for("claude", model) is not None, model
+#: Models the catalogue lists that the table deliberately leaves unpriced, with why.
+#: A model absent here must have a price, so a new catalogue model cannot ship without one.
+UNPRICED_BY_DESIGN = {
+    "gemini-3-pro-preview": (
+        "Google's pricing page no longer lists it, so no official number can be checked; "
+        "Gemini models are not priced."
+    ),
+}
+
+
+def _unpriced_by_design(model: str) -> bool:
+    return model.rpartition("/")[2] in UNPRICED_BY_DESIGN
+
+
+@pytest.mark.parametrize(
+    "spec", default_models().entries, ids=lambda spec: f"{spec.vendor}/{spec.model}"
+)
+def test_every_catalogue_model_is_priced_or_excluded_by_design(spec: ModelSpec) -> None:
+    priced = price_for(spec.vendor, spec.model) is not None
+    assert priced != _unpriced_by_design(spec.model), (
+        f"{spec.vendor}/{spec.model} is in the model catalogue but "
+        + ("is listed as unpriced and has a price" if priced else "has no price")
+    )
+
+
+@pytest.mark.parametrize("provider", provider_names())
+def test_every_model_a_provider_offers_is_priced_or_excluded_by_design(provider: str) -> None:
+    for model in get_provider(provider).profile.models:
+        priced = price_for(provider, model) is not None
+        assert priced != _unpriced_by_design(model), (provider, model)
+
+
+def test_every_exclusion_names_a_catalogue_model() -> None:
+    catalogued = {spec.model for spec in default_models().entries}
+    assert set(UNPRICED_BY_DESIGN) <= catalogued
+
+
+class TestGpt61Sol:
+    """Regression: the model was in the catalogue with no price, so its turns recorded no cost."""
+
+    def test_it_is_priced_at_the_published_standard_rates(self) -> None:
+        pricing = price_for("codex", "gpt-6.1-sol")
+        assert pricing is not None
+        assert (
+            pricing.input_usd,
+            pricing.cache_read_usd,
+            pricing.cache_write_usd,
+            pricing.output_usd,
+        ) == (2.00, 0.10, 2.50, 10.00)
+        assert not pricing.estimated
+        assert pricing.checked >= dt.date(2026, 10, 30)
+
+    def test_its_cache_read_rate_is_not_gpt_6_sols(self) -> None:
+        newer, older = price_for("codex", "gpt-6.1-sol"), price_for("codex", "gpt-6-sol")
+        assert newer is not None
+        assert older is not None
+        assert newer.cache_read_usd != older.cache_read_usd
+
+    def test_a_turn_costs_each_token_class_once(self) -> None:
+        pricing = price_for("codex", "gpt-6.1-sol")
+        assert pricing is not None
+        usage = TokenUsage(
+            input_tokens=3_000_000,
+            cache_read_input_tokens=1_000_000,
+            cache_write_input_tokens=1_000_000,
+            output_tokens=1_000_000,
+        )
+        assert cost_usd(usage, pricing) == pytest.approx(2.00 + 0.10 + 2.50 + 10.00)

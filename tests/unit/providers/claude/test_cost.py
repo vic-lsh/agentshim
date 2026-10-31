@@ -185,10 +185,10 @@ def test_a_result_that_names_no_model_keeps_the_clis_cost_and_labels_it() -> Non
     assert parsed.usage.cost_source is CostSource.PROVIDER_REPORTED
 
 
-def test_a_result_with_no_cost_at_all_has_no_source() -> None:
+def test_a_result_with_no_cost_at_all_says_it_reported_none() -> None:
     parsed = _run(_result(None, cli_cost=None))[0].finish()
     assert parsed.cost_usd is None
-    assert parsed.usage.cost_source is None
+    assert parsed.usage.cost_source is CostSource.NOT_REPORTED
 
 
 def test_the_source_is_in_the_usage_mapping() -> None:

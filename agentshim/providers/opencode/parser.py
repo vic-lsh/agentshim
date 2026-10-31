@@ -17,7 +17,7 @@ from agentshim.core.events import (
 )
 from agentshim.core.provider import ParsedTurn
 from agentshim.core.stream import ToolTracker, parse_json_object
-from agentshim.core.usage import ProviderUsage, TokenUsage, normalized_usage
+from agentshim.core.usage import CostSource, ProviderUsage, TokenUsage, normalized_usage
 
 from .events import (
     ErrorEvent,
@@ -154,6 +154,8 @@ class OpencodeStreamParser:
             total_cost_usd=self._cost_usd,
             provider=PROVIDER_NAME,
             raw=self._raw_tokens,
+            # The CLI prices the turn; agentshim computes nothing for it.
+            cost_source=None if self._cost_usd is None else CostSource.PROVIDER_REPORTED,
         )
 
     def _session(self, data: Mapping[str, Any]) -> None:

@@ -14,6 +14,7 @@ This module must not import pytest, so it is safe to import anywhere.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -30,6 +31,7 @@ from agentshim.core.events import SteerConsumed, SteerDelivered
 from agentshim.core.permissions import ApprovalPolicy, NativeMode, NativePermissions
 from agentshim.core.turn import TurnRequest
 from agentshim.execution.process import ProcessExited, StderrLine, StdoutLine
+from agentshim.rates import RateSnapshot
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -41,6 +43,7 @@ if TYPE_CHECKING:
     from agentshim.core.turn import TurnResult
     from agentshim.execution.confinement import Confinement
     from agentshim.execution.process import Process, ProcessOutput
+    from agentshim.rates import RateStore
 
 #: Generous bound for output a live process is about to produce. A passing run
 #: never waits this long; it only bounds how long a broken one can hang.
@@ -483,6 +486,31 @@ class TransportContract:
                 continue
             msg = f"open accepted unsupported mode {permissions.mode.value}"
             raise AssertionError(msg)
+
+
+class RateStoreContract:
+    """Behavior every ``RateStore`` has."""
+
+    def make_store(self) -> RateStore:
+        """Return a fresh, empty store."""
+        raise NotImplementedError
+
+    def test_an_empty_store_reads_none(self) -> None:
+        assert self.make_store().read() is None
+
+    def test_a_written_snapshot_reads_back_equal(self) -> None:
+        store = self.make_store()
+        at = datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc)
+        snapshot = RateSnapshot(b'{"m": {}}', at, at + timedelta(minutes=5))
+        store.write(snapshot)
+        assert store.read() == snapshot
+
+    def test_a_write_replaces_the_previous_snapshot(self) -> None:
+        store = self.make_store()
+        at = datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc)
+        store.write(RateSnapshot(b"first", at, at))
+        store.write(RateSnapshot(None, None, at))
+        assert store.read() == RateSnapshot(None, None, at)
 
 
 class CheckpointStoreContract:

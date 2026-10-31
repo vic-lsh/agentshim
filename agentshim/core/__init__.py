@@ -98,7 +98,14 @@ from .mcp import (
 )
 from .models import ModelSpec, ModelTable
 from .permissions import ApprovalPolicy, NativeMode, NativePermissions
-from .plugin import ConnectionOptions, PricingContext, ProviderPlugin, ProviderTestSupport
+from .plugin import (
+    ConnectionOptions,
+    PricingContext,
+    ProviderPlugin,
+    ProviderTestSupport,
+    RateCatalog,
+    RateNaming,
+)
 from .pricing import ModelPricing, PricingTable, cost_usd
 from .profile import (
     ConfigScope,
@@ -119,6 +126,17 @@ from .provider import (
     ParserContext,
     Provider,
     StreamParser,
+)
+from .rates import (
+    CostBreakdown,
+    RateDocumentError,
+    RateEntry,
+    Rates,
+    RateTable,
+    UsageSpeed,
+    cache_savings_usd,
+    price_tokens,
+    speed_premium_usd,
 )
 from .schema import compact_json, dialect_problems, materialize, normalize
 from .session_policy import Continuity, PolicyConfig, RetryPolicy, SessionPolicy, SessionState
@@ -157,6 +175,7 @@ __all__ = [
     "ContinuityError",
     "Conversation",
     "ConversationSpec",
+    "CostBreakdown",
     "CostSource",
     "CredentialKind",
     "CredentialSource",
@@ -205,7 +224,13 @@ __all__ = [
     "ProviderTestSupport",
     "ProviderUsage",
     "RandomIds",
+    "RateCatalog",
+    "RateDocumentError",
+    "RateEntry",
     "RateLimitStatus",
+    "RateNaming",
+    "RateTable",
+    "Rates",
     "RawOutput",
     "ReapError",
     "Reasoning",
@@ -251,6 +276,8 @@ __all__ = [
     "TurnResult",
     "TurnTimeoutError",
     "UsageReport",
+    "UsageSpeed",
+    "cache_savings_usd",
     "compact_json",
     "compose_event_handlers",
     "cost_usd",
@@ -264,4 +291,6 @@ __all__ = [
     "parse_json_object",
     "plan_auth",
     "prepare_config_home",
+    "price_tokens",
+    "speed_premium_usd",
 ]

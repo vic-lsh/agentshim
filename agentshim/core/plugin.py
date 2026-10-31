@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from .pricing import ModelPricing, PricingTable
     from .profile import ProviderProfile
     from .provider import Provider
+    from .rates import RateTable
     from .status import AuthState, ProviderStatus
     from .usage import TokenUsage
 
@@ -169,4 +170,29 @@ class ProviderPlugin(Protocol):
 
     def test_support(self) -> ProviderTestSupport | None:
         """Return consumer-test adapters, if provided."""
+        ...
+
+
+@runtime_checkable
+class RateCatalog(Protocol):
+    """Optional: a plugin that ships rates, with speed tiers, for the models it prices.
+
+    A plugin without it ships none. These are the rates of the pinned table
+    shipped in the wheel, which :func:`agentshim.rates.bundled_rates` collects.
+    """
+
+    def known_rates(self) -> RateTable:
+        """Rates for the models this provider prices."""
+        ...
+
+
+@runtime_checkable
+class RateNaming(Protocol):
+    """Optional: a plugin that knows which flat names a model may be filed under.
+
+    A provider not implementing it gets :func:`agentshim.core.rates.candidate_names`.
+    """
+
+    def rate_names(self, model: str) -> tuple[str, ...]:
+        """Candidate flat names for *model*, most specific first; none if it has no price."""
         ...

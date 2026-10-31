@@ -1,0 +1,60 @@
+{
+  "sample_spec": {"input_cost_per_token": "number", "litellm_provider": "string"},
+  "alpha": {
+    "input_cost_per_token": 1e-06,
+    "output_cost_per_token": 4e-06,
+    "cache_read_input_token_cost": 1e-07,
+    "cache_creation_input_token_cost": 1.25e-06,
+    "cache_creation_input_token_cost_above_1hr": 2e-06,
+    "provider_specific_entry": {"us": 1.1, "fast": 2}
+  },
+  "bare-cache": {
+    "input_cost_per_token": 3e-06,
+    "output_cost_per_token": 6e-06
+  },
+  "priority-tier": {
+    "input_cost_per_token": 2e-06,
+    "output_cost_per_token": 8e-06,
+    "cache_read_input_token_cost": 2e-07,
+    "input_cost_per_token_priority": 4e-06,
+    "output_cost_per_token_priority": 1.6e-05
+  },
+  "ultra-tier": {
+    "input_cost_per_token": 2e-06,
+    "output_cost_per_token": 8e-06,
+    "cache_read_input_token_cost": 2e-07,
+    "cache_creation_input_token_cost": 2.5e-06,
+    "input_cost_per_token_ultrafast": 1.2e-05,
+    "output_cost_per_token_ultrafast": 4.8e-05,
+    "cache_read_input_token_cost_ultrafast": 6e-07
+  },
+  "free": {"input_cost_per_token": 0, "output_cost_per_token": 0},
+  "no-output": {"input_cost_per_token": 1e-06},
+  "negative": {"input_cost_per_token": -1e-06, "output_cost_per_token": 1e-06},
+  "string-rate": {"input_cost_per_token": "1e-06", "output_cost_per_token": 1e-06},
+  "boolean-rate": {"input_cost_per_token": true, "output_cost_per_token": 1e-06},
+  "  Mixed-Case  ": {"input_cost_per_token": 5e-07, "output_cost_per_token": 1e-06},
+  "vendor-a/shared": {"input_cost_per_token": 1e-06, "output_cost_per_token": 2e-06},
+  "vendor-b/shared": {
+    "input_cost_per_token": 1e-06,
+    "output_cost_per_token": 2e-06,
+    "input_cost_per_token_priority": 3e-06,
+    "output_cost_per_token_priority": 6e-06
+  },
+  "vendor-a/conflict": {"input_cost_per_token": 1e-06, "output_cost_per_token": 2e-06},
+  "vendor-b/conflict": {"input_cost_per_token": 1.5e-06, "output_cost_per_token": 2e-06},
+  "vendor-a/fastclash": {
+    "input_cost_per_token": 1e-06,
+    "output_cost_per_token": 2e-06,
+    "input_cost_per_token_priority": 3e-06,
+    "output_cost_per_token_priority": 6e-06
+  },
+  "vendor-b/fastclash": {
+    "input_cost_per_token": 1e-06,
+    "output_cost_per_token": 2e-06,
+    "input_cost_per_token_priority": 4e-06,
+    "output_cost_per_token_priority": 6e-06
+  },
+  "alpha-taken": {"input_cost_per_token": 9e-06, "output_cost_per_token": 9e-06},
+  "vendor-c/alpha": {"input_cost_per_token": 7e-06, "output_cost_per_token": 7e-06}
+}

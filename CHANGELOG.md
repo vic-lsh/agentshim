@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.24.0 (2026-10-30)
+
+Everything here is additive. Recorded cost does not move: every price, `price_for`, `cost_usd`,
+`PricingTable` and `ModelPricing` behave as in 0.23.1, and `tests/fixtures/recorded_costs.json`
+(recorded on 0.23.1) proves the costs equal.
+
+### Added
+
+- Pinned prices are generated from a LiteLLM snapshot instead of kept by hand.
+  `scripts/generate_prices.py` reads `tests/fixtures/litellm/snapshot.json` (trimmed to the priced
+  models, with the day it was read and the SHA-256 of the whole file) and writes
+  `providers/{claude,codex}/prices_generated.py`; a test fails if they differ. All 29 rows already
+  matched LiteLLM, so no price changes. `PricingTable.version` is now `litellm-<snapshot date>`
+  (`litellm-2026-10-30`) and every entry's `checked` is that date. The test that every catalogue
+  model is priced or a documented exclusion stays; `gemini-3-pro-preview` is still unpriced.
+- `RateTable`, `RateEntry` and `Rates`: flat per-model rates for estimates, a separate type from the
+  recorded-cost table (a zero rate is allowed, there are fast and ultrafast tiers, and no function
+  takes both kinds). `parse_litellm` reads LiteLLM's price file, `price_tokens` splits a cost by
+  token class, and `speed_premium_usd` and `cache_savings_usd` give the other report figures.
+  `UsageSpeed` is the service speed.
+- `read_rates` and `refresh_rates` keep a rate document fresh for a caller-supplied `RateSource` and
+  `RateStore` (24 hour TTL, 60 second floor that also holds after a failure; an empty or invalid
+  document never replaces a good one). `bundled_rates` is the pinned table with speed tiers, the
+  fallback when nothing was fetched. `rates_for` maps a provider's model names onto the table.
+  agentshim still has no HTTP client. `FakeRateSource`, `FakeRateStore` and `RateStoreContract` are
+  in `agentshim.testing`.
+- `ProviderUsage.by_model`: a `ModelUsage` row for every model a turn ran, with its tokens, its
+  recorded price (the pinned-table price, never the CLI's), the turn's speed and turn count on one
+  primary row. Claude reads it from `modelUsage`, so Task subagents and advisors are visible
+  (`ProviderUsage.tokens` is still the main conversation only, so budgets do not move);
+  `thinkingTokens` fills reasoning. The Codex app-server transport reports one row at the model and
+  service tier the server started the thread with. `merge_model_usage` adds two turns.
+  `ProviderUsage.to_dict` gains a `by_model` key. `CodexScript(service_tier=...)` scripts the tier.
+- `read_transcript_usage`, `transcript_roots` and `transcript_providers`: token usage from the CLIs'
+  own session files, for work done outside agentshim. Claude (`projects/**.jsonl`) and Codex
+  (`sessions` and `archived_sessions`) are read. The reader keeps no state: the caller passes back a
+  `FilePosition` per file and gets only what is new. It resumes only when the file did not shrink
+  and the 64 bytes before the resume point hash the same, otherwise it rereads (`reset`); stops at a
+  line boundary after a byte budget and reports `pending`; skips files by modification time; lists
+  files it cannot read in `failed`; and reduces a line over 8 MiB to the fields it needs. A Claude
+  message repeated per content block counts once; subagent files take their parent's session.
+  `TranscriptSource`, `RateCatalog` and `RateNaming` are new optional plugin capabilities.
+
 ## 0.23.1 (2026-10-30)
 
 ### Fixed

@@ -208,9 +208,8 @@ class CodexTranscriptParser:
         millis = _millis(stamp)
         if self._copying(millis, last, total, has_total=has_total):
             return None
-        if last is None or not self._is_new_request(millis, last, total, has_total=has_total):
-            return None
-        return self._record(stamp, last)
+        accepted = self._is_new_request(millis, last, total, has_total=has_total)
+        return self._record(stamp, last) if accepted and last is not None else None
 
     def _rebase(self, total: Usage) -> None:
         self._state.last_cumulative = total

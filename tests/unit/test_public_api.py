@@ -26,7 +26,7 @@ def test_testing_module_exports() -> None:
 
 
 def test_version_is_reported() -> None:
-    assert agentshim.__version__ == "0.23.1"
+    assert agentshim.__version__ == "0.24.0"
 
 
 def test_core_and_execution_do_not_import_providers_at_module_level() -> None:
@@ -257,3 +257,74 @@ def test_steering_names_are_public() -> None:
 def test_one_shot_providers_do_not_declare_steering() -> None:
     for name in agentshim.provider_names():
         assert agentshim.get_provider(name).profile.supports_steer is False, name
+
+
+def test_the_rates_by_model_and_transcript_names_are_exported() -> None:
+    for name in (
+        "CostBreakdown",
+        "FilePosition",
+        "FileScan",
+        "LITELLM_ENDPOINTS",
+        "ModelUsage",
+        "RATES_TTL",
+        "REFRESH_FLOOR",
+        "RateCatalog",
+        "RateDocumentError",
+        "RateEndpoint",
+        "RateEntry",
+        "RateFetchError",
+        "RateNaming",
+        "RateRead",
+        "RateSnapshot",
+        "RateSource",
+        "RateStatus",
+        "RateStore",
+        "RateTable",
+        "Rates",
+        "TranscriptFormat",
+        "TranscriptParser",
+        "TranscriptRecord",
+        "TranscriptRoot",
+        "TranscriptScan",
+        "TranscriptSource",
+        "UsageSpeed",
+        "bundled_rates",
+        "cache_savings_usd",
+        "merge_model_usage",
+        "parse_litellm",
+        "parse_timestamp",
+        "price_tokens",
+        "rates_for",
+        "read_rates",
+        "read_transcript_usage",
+        "refresh_rates",
+        "speed_premium_usd",
+        "transcript_providers",
+        "transcript_roots",
+    ):
+        assert name in agentshim.__all__, name
+
+
+def test_the_rate_test_doubles_are_exported() -> None:
+    for name in ("FakeRateSource", "FakeRateStore"):
+        assert name in agentshim.testing.__all__, name
+
+
+def test_recorded_cost_functions_take_a_model_pricing_and_estimates_take_rates() -> None:
+    """The type seam: no signature accepts both kinds of rate.
+
+    ``cost_usd`` and ``price_for`` speak ``ModelPricing``/``PricingTable``;
+    ``price_tokens`` speaks ``Rates``. Pyright enforces it for callers; this holds the
+    declared annotations so a refactor cannot widen one without a failing test.
+    """
+    import inspect  # noqa: PLC0415
+
+    hints = {
+        "cost_usd": inspect.signature(agentshim.cost_usd).parameters["pricing"].annotation,
+        "price_for": inspect.signature(agentshim.price_for).parameters["table"].annotation,
+        "price_tokens": inspect.signature(agentshim.price_tokens).parameters["rates"].annotation,
+    }
+    assert hints["cost_usd"] in ("ModelPricing", agentshim.ModelPricing)
+    assert "PricingTable" in str(hints["price_for"])
+    assert "RateTable" not in str(hints["price_for"])
+    assert hints["price_tokens"] in ("Rates", agentshim.Rates)

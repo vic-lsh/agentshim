@@ -52,8 +52,41 @@ priced by the difference, and its one-hour share of cache writes comes from the 
 model. `None` means no cost was reported.
 
 Known gaps: Claude's `result.usage` covers the main conversation only, so
-tokens spent by a Task subagent are missing from it (they are in the CLI's
-`modelUsage` and `total_cost_usd`). Copilot 1.0.83 prints no token counts.
+tokens spent by a Task subagent are missing from `ProviderUsage.tokens` (they are
+in the CLI's `modelUsage` and `total_cost_usd`). `ProviderUsage.by_model` has
+them; see below. Copilot 1.0.83 prints no token counts.
+
+## Usage by model
+
+`ProviderUsage.by_model` is a tuple of `ModelUsage`, one per model that had
+tokens in the turn, in the order the CLI listed them. It is a superset of
+`tokens`: the rows' tokens add up to everything the turn spent, subagents and
+advisors included, while `tokens` stays the main conversation (callers keep
+feeding it to budgets, so it does not change).
+
+| Field | Meaning |
+| --- | --- |
+| `model` | The id as the provider reports it (`claude-opus-5-5[1m]`, a dated snapshot). Normalize with `rates_for` or `price_for`. |
+| `tokens` | This turn's tokens for the model. Only the primary row carries the turn's `turns` count, so the rows' turns add up to `tokens.turns`. |
+| `recorded_usd` | The pinned-table price of `tokens`, never the CLI's own figure. `None` when the table has no price for the model. Added in order, the rows are the turn's `total_cost_usd` when none is unpriced. |
+| `speed` | The service speed (`UsageSpeed`), on the primary row only. `None` when the provider did not report one; read it as standard. |
+| `primary` | The model the turn ran on. Exactly one row of a turn is. |
+
+- Claude: from `modelUsage`, priced exactly as the turn total is. One unpriced
+  model still makes the turn `UNKNOWN_MODEL` with no total, but the other rows
+  keep their prices. The primary is the model of the main conversation's latest
+  model call, else the model in `system/init`, else the model with the most
+  output. `result.usage.speed` is one value per turn, so it goes to the primary
+  row. `thinkingTokens` fills `reasoning_output_tokens` when the CLI reports it.
+  The one-hour share of cache writes is the turn's, applied to every model's
+  writes, so a subagent's split is approximate.
+- Codex app-server: one row at the model and service tier the server started the
+  thread with. Child threads are not counted, as in `tokens`. The one-shot `exec`
+  path knows no model and reports none.
+- A provider that reports no split, or a turn whose increment is unknown, has
+  `by_model == ()`.
+- `merge_model_usage` adds two turns of one run: rows with the same model and
+  speed add up, and the first turn's primary stays the only primary.
 
 `to_dict()` only ever adds keys. `TokenUsage.from_dict` also reads a mapping
 written before 0.7.0, whose `cached_input_tokens` counted cache writes too on
@@ -112,28 +145,111 @@ missing or malformed one, and `tests/unit/test_pricing.py` checks every
 shipped entry. An entry that is not a published price sets `estimated=True`
 and states its basis in `note`. The shipped table has no estimated entries.
 
-Not modelled: OpenAI's long-context rates, Anthropic's `inference_geo: "us"`
-1.1x multiplier, fast mode and batch discounts.
+Not modelled in the pinned table: OpenAI's long-context rates, Anthropic's
+`inference_geo: "us"` 1.1x multiplier, fast mode and batch discounts. (Fast and
+ultrafast rates are in `RateTable`, for estimates; recorded cost stays standard
+tier, so it understates a fast turn.)
 
 ### Updating the table
 
-1. Open each vendor's official page:
-   - OpenAI: <https://developers.openai.com/api/docs/pricing> (standard tier,
-     short-context column);
-   - Anthropic: <https://platform.claude.com/docs/en/about-claude/pricing>
-     (Model pricing table: base input, 5m cache writes, 1h cache writes,
-     cache hits, output).
-2. Edit `PRICING_ENTRIES` in the relevant provider's `model_data.py`: change the prices
-   that moved, add new models, and set `_PRICE_CHECKED` (or an entry's own
-   `checked`) to today's date for every entry you compared. Keep `source`
-   pointing at the page you read.
-3. Set the composed table's `version` in `agentshim/pricing.py` to today's date; `last_updated` is derived from entries. Change
-   `version` whenever any price changes, so reports stay reproducible.
-4. Where a published price is missing, leave the model out rather than guess.
-   If a caller needs one anyway, add it with `estimated=True` and the basis in
-   `note`.
-5. Run `uv run pytest tests/unit/test_pricing.py` and note the change in
-   `CHANGELOG.md`.
+The Claude and Codex rows are generated, not edited. `scripts/generate_prices.py`
+reads `tests/fixtures/litellm/snapshot.json`, a copy of
+[LiteLLM's price file](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
+trimmed to the models agentshim prices, with the day it was read and the SHA-256
+of the whole file, and writes `providers/claude/prices_generated.py` and
+`providers/codex/prices_generated.py`. A test regenerates them and fails on any
+difference, so a hand edit cannot survive. The network is touched only by the
+first step below, and a run never touches it.
+
+1. Take a new snapshot and regenerate: `python scripts/generate_prices.py --fetch`
+   (or `--from-file PATH` for a saved copy, with `--date`). It stops if LiteLLM
+   has no row for a listed model. Add a new model by adding its LiteLLM key to
+   `VENDORS` in the script; a name that is not listed is never priced, which is
+   how `gemini-3-pro-preview` stays unpriced.
+2. Read the diff of the generated files. Each changed number is a recorded cost
+   that moves for callers who upgrade.
+3. Run `python scripts/record_cost_golden.py` to accept those moves, and say so
+   in the changelog: `tests/fixtures/recorded_costs.json` pins what every pinned
+   rate, every spelling of a model name and the recorded Claude and Codex streams
+   cost. Any difference you did not intend fails
+   `tests/unit/test_recorded_cost_golden.py`.
+4. The table's `version` is `litellm-<snapshot date>` and every entry's `checked`
+   is that date, so a report can say which snapshot it priced with.
+5. Notes and the rule that a missing cache write rate is priced at base input live
+   in each provider's `model_data.py`. Where LiteLLM lists no write rate the
+   entry says so in its `note`.
+6. Run `uv run pytest tests/unit/test_pricing.py tests/unit/test_generate_prices.py`
+   and note the change in `CHANGELOG.md`.
+
+LiteLLM's rows for the pinned models match the vendors' pricing pages on every
+value both have, which is why moving to a generated table changed no price. The
+older OpenAI rows have no cache write rate in LiteLLM and keep the input rate.
+
+## Estimates at list prices
+
+Recorded cost is what a turn cost when it ran, at the pinned table, and it never
+changes afterwards. An *estimate* is what the same tokens would cost at today's
+list prices, for a report. The two are different types on purpose, so a fetched
+rate cannot reach a recorded cost:
+
+| | `PricingTable` | `RateTable` |
+| --- | --- | --- |
+| Purpose | Recorded cost | Estimate |
+| Key | `(vendor, model)` | One flat, lowercase name |
+| Rows | The models agentshim prices, standard tier | Everything in LiteLLM's file, plus bare aliases, with fast and ultrafast tiers |
+| Zero input rate | Refused | Allowed (a free model) |
+| Source | Generated from a snapshot at release | Fetched at run time, or the pinned table |
+| Used by | `price_for`, `cost_usd` | `rates_for`, `price_tokens` |
+
+`price_for` and `cost_usd` take a `ModelPricing` only, and `price_tokens` takes
+`Rates` only.
+
+```python
+from agentshim import (
+    RateStatus, TokenUsage, price_tokens, rates_for, read_rates, refresh_rates,
+)
+
+read = read_rates(store, now=now)            # never touches the network
+if read.refresh_due:
+    read = refresh_rates(store, source, now=now)
+entry = rates_for(read.table, "claude", "claude-opus-5-5[1m]")
+if entry is not None:
+    cost = price_tokens(tokens, entry.standard)      # CostBreakdown by token class
+```
+
+- `parse_litellm(document, checked_on=...)` reads LiteLLM's file. A model needs
+  finite, non-negative input and output rates or it is dropped. A missing cache
+  read or write rate defaults to the input rate. Fast comes from
+  `provider_specific_entry.fast` (a multiple of standard) or the `_priority`
+  columns, ultrafast from `_ultrafast`, and a tier's missing cache rates scale by
+  the standard ratio. One-hour cache writes come from
+  `cache_creation_input_token_cost_above_1hr`. Long-context, batch and flex
+  columns are not read, so estimates for requests past a model's long-context
+  line are low. Bare names (`gpt-5.4` for `openai/gpt-5.4`) are added as aliases
+  when the sources agree; where two reseller rows differ the alias is dropped.
+  The parser raises only `RateDocumentError`, whatever the input.
+- agentshim holds no HTTP client and picks no directory. The caller passes a
+  `RateSource` (`fetch(endpoint) -> bytes`, raising `RateFetchError`) and a
+  `RateStore` (`read()` and `write(snapshot)`). `FakeRateSource`,
+  `FakeRateStore` and `RateStoreContract` are in `agentshim.testing`.
+  `LITELLM_ENDPOINTS` lists the raw file, then GitHub's API for the same file;
+  the second needs the `Accept` header its `RateEndpoint` carries.
+- A fetch is due when the stored document is older than `RATES_TTL` (24 hours),
+  or `force` is set, and no attempt, failed or not, was made within
+  `REFRESH_FLOOR` (60 seconds). A document that does not parse, or parses to no
+  model, counts as a failed fetch and never replaces a good one.
+  `RateStatus` says where `read.table` came from: `FRESH`, `CACHED` (older, or
+  the latest refresh failed) or `BUNDLED` (no usable document: the pinned table
+  shipped in the wheel, with its speed tiers).
+- `rates_for(table, provider, model)` maps the provider's names onto the table's
+  flat names: a bracketed variant is dropped, a dated snapshot falls back to its
+  undated name, and a `vendor/` prefix is tried last. A name that is not a model
+  (Claude's `<synthetic>`, the bare family names `opus`, `sonnet`, `haiku`,
+  `fable`) has no rates. A plugin customizes this with `rate_names`; see
+  [Extending](extending.md).
+- `price_tokens(tokens, rates)` bills every token class once and puts reasoning
+  at the output rate. `speed_premium_usd` and `cache_savings_usd` give the other
+  two figures a report shows.
 
 ### Why agentshim holds prices
 

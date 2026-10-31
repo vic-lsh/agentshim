@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.24.3 (2026-10-31)
+
+`interactive_env` has one time budget, not one per attempt. It captured the interactive shell's
+environment with a 10 second timeout, and a second attempt (plain `env`, for a shell without
+`env -0`) with its own 10 seconds, so a hung shell held the caller for 20 seconds. A caller that
+probes the machine inside a request with a limit of its own (VibeSys's host reads have 25 seconds)
+could not tell what the capture would add to it.
+
+### Changed
+
+- **The two attempts share 10 seconds.** The second attempt gets what the first left, and none
+  when the first used it all: a shell that hung is asked once. A capture that works is as it was.
+  A shell that does not answer in time still falls back to `os.environ`, as before.
+
 ## 0.24.2 (2026-10-31)
 
 A turn's `cost_source` is never left out. A caller that records it (VibeSys journals it) could not

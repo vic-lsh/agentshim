@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from agentshim.core.usage import ProviderUsage, TokenUsage, UsageSpeed, normalized_usage
+from agentshim.core.usage import ProviderUsage, TokenUsage, normalized_usage
 from agentshim.providers.codex.provider import PROFILE
 
 if TYPE_CHECKING:
@@ -32,15 +32,6 @@ _KEYS = (
     "reasoning_output_tokens",
     "total_tokens",
 )
-
-
-def speed_of_tier(service_tier: str | None) -> UsageSpeed:
-    """The speed Codex's ``service_tier`` bills at: ``priority`` is fast; unset, default and flex are standard."""
-    if service_tier in ("priority", "fast"):
-        return UsageSpeed.FAST
-    if service_tier == "ultrafast":
-        return UsageSpeed.ULTRAFAST
-    return UsageSpeed.STANDARD
 
 
 def zero_totals() -> Totals:

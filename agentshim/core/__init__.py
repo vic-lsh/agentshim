@@ -105,6 +105,7 @@ from .plugin import (
     ProviderTestSupport,
     RateCatalog,
     RateNaming,
+    TranscriptSource,
 )
 from .pricing import ModelPricing, PricingTable, cost_usd
 from .profile import (
@@ -142,6 +143,16 @@ from .session_policy import Continuity, PolicyConfig, RetryPolicy, SessionPolicy
 from .skills import SkillSummary, SkillTracker
 from .status import AuthState, ProviderStatus
 from .stream import ToolTracker, parse_json_object
+from .transcripts import (
+    FilePosition,
+    FileScan,
+    TranscriptFormat,
+    TranscriptParser,
+    TranscriptRecord,
+    TranscriptRoot,
+    TranscriptScan,
+    parse_timestamp,
+)
 from .turn import OutputSchema, TurnRequest, TurnResult
 from .usage import (
     CostSource,
@@ -193,6 +204,8 @@ __all__ = [
     "ExternalCredential",
     "FailureKind",
     "FileCredential",
+    "FilePosition",
+    "FileScan",
     "FlagsInstallation",
     "HostAuthGap",
     "HostAuthUnplannableError",
@@ -276,6 +289,12 @@ __all__ = [
     "ToolCall",
     "ToolResult",
     "ToolTracker",
+    "TranscriptFormat",
+    "TranscriptParser",
+    "TranscriptRecord",
+    "TranscriptRoot",
+    "TranscriptScan",
+    "TranscriptSource",
     "Transport",
     "TransportKind",
     "TurnCancelledError",
@@ -299,6 +318,7 @@ __all__ = [
     "normalize",
     "normalized_usage",
     "parse_json_object",
+    "parse_timestamp",
     "plan_auth",
     "prepare_config_home",
     "price_tokens",

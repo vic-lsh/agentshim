@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from agentshim.core.profile import ProviderProfile
     from agentshim.core.provider import Provider
     from agentshim.core.status import ProbeSpec, ProviderStatus
+    from agentshim.core.transcripts import TranscriptFormat
     from agentshim.execution.executor import CommandExecutor
 
 _DATE_SUFFIX = re.compile(r"-\d{8}$")
@@ -54,6 +55,8 @@ class StaticProviderPlugin:
     rates: RateTable = field(default_factory=lambda: RateTable(dt.date.min, {}))
     #: Names the CLI reports that are not a priceable model: placeholders and bare family names.
     unpriceable_models: frozenset[str] = frozenset()
+    #: How to read this CLI's own session files for usage, when agentshim can.
+    transcript_format: TranscriptFormat | None = None
 
     def __post_init__(self) -> None:
         """Reject inconsistent identity and an adapter with no connection mode."""
@@ -172,6 +175,10 @@ class StaticProviderPlugin:
         if any(name.rpartition("/")[2] in self.unpriceable_models for name in names):
             return ()
         return names
+
+    def transcripts(self) -> TranscriptFormat | None:
+        """Return the format of this CLI's session files, if agentshim reads them."""
+        return self.transcript_format
 
     def test_support(self) -> ProviderTestSupport | None:
         """Return this provider's test adapters, if any."""

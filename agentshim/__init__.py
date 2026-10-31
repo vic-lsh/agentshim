@@ -46,6 +46,8 @@ from .core import (
     ExternalCredential,
     FailureKind,
     FileCredential,
+    FilePosition,
+    FileScan,
     FlagsInstallation,
     HostAuthGap,
     HostAuthUnplannableError,
@@ -123,6 +125,12 @@ from .core import (
     ToolCall,
     ToolResult,
     ToolTracker,
+    TranscriptFormat,
+    TranscriptParser,
+    TranscriptRecord,
+    TranscriptRoot,
+    TranscriptScan,
+    TranscriptSource,
     Transport,
     TransportKind,
     TurnCancelledError,
@@ -145,6 +153,7 @@ from .core import (
     normalize,
     normalized_usage,
     parse_json_object,
+    parse_timestamp,
     plan_auth,
     prepare_config_home,
     price_tokens,
@@ -215,6 +224,7 @@ from .rates import (
 )
 from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
+from .transcripts import read_transcript_usage, transcript_providers, transcript_roots
 
 __version__ = "0.23.1"
 
@@ -277,6 +287,8 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "ExternalCredential",
     "FailureKind",
     "FileCredential",
+    "FilePosition",
+    "FileScan",
     "FlagsInstallation",
     "GeminiProvider",
     "HostAuthGap",
@@ -385,6 +397,12 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "ToolCall",
     "ToolResult",
     "ToolTracker",
+    "TranscriptFormat",
+    "TranscriptParser",
+    "TranscriptRecord",
+    "TranscriptRoot",
+    "TranscriptScan",
+    "TranscriptSource",
     "TransformingExecutor",
     "Transport",
     "TransportKind",
@@ -421,6 +439,7 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "normalized_usage",
     "parse_json_object",
     "parse_litellm",
+    "parse_timestamp",
     "plan_auth",
     "prepare_config_home",
     "price_for",
@@ -429,7 +448,10 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "provider_names",
     "rates_for",
     "read_rates",
+    "read_transcript_usage",
     "refresh_rates",
     "speed_premium_usd",
     "stream_provider_names",
+    "transcript_providers",
+    "transcript_roots",
 ]

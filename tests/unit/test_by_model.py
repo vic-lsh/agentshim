@@ -17,7 +17,7 @@ from agentshim import (
 )
 from agentshim.providers.claude import ClaudeStreamParser
 from agentshim.providers.claude.cost import ModelCounts, mark_primary, priced_turn
-from agentshim.providers.codex.app_server.usage import speed_of_tier
+from agentshim.providers.codex.speed import speed_of_tier
 from agentshim.testing import CodexScript, Spend
 from hypothesis import given
 from hypothesis import strategies as st

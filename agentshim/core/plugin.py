@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from .provider import Provider
     from .rates import RateTable
     from .status import AuthState, ProviderStatus
+    from .transcripts import TranscriptFormat
     from .usage import TokenUsage
 
 
@@ -195,4 +196,16 @@ class RateNaming(Protocol):
 
     def rate_names(self, model: str) -> tuple[str, ...]:
         """Candidate flat names for *model*, most specific first; none if it has no price."""
+        ...
+
+
+@runtime_checkable
+class TranscriptSource(Protocol):
+    """Optional: a plugin whose CLI keeps session files agentshim can read for usage.
+
+    A plugin without it, or answering ``None``, has no readable transcripts.
+    """
+
+    def transcripts(self) -> TranscriptFormat | None:
+        """The format of this provider's session files, or ``None`` if it has none readable."""
         ...

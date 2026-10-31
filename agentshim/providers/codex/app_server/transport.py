@@ -56,6 +56,7 @@ from agentshim.execution.host import HostCommandExecutor
 from agentshim.execution.process import SpawnRequest
 from agentshim.pricing import cost_usd, price_for
 from agentshim.providers.codex.provider import scope_overrides, shell_path_config
+from agentshim.providers.codex.speed import speed_of_tier
 
 from .approvals import answer_request
 from .channel import Channel, Deadline, Expired, Gone
@@ -97,7 +98,7 @@ from .protocol import (
     WarningNotification,
 )
 from .rate_limits import rate_limit_statuses
-from .usage import Totals, baseline_from, speed_of_tier, totals_of, turn_usage, zero_totals
+from .usage import Totals, baseline_from, totals_of, turn_usage, zero_totals
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence

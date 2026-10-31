@@ -89,7 +89,9 @@ print(table.version, table.last_updated)
 - `price_for` accepts a provider (`codex` bills through OpenAI, `claude`
   through Anthropic) or a vendor name, a `vendor/model` name (opencode), a
   dated snapshot (`claude-haiku-4-5-20251001`) and a bracketed variant
-  (`claude-opus-5-5[1m]`). Copilot and Gemini are not priced.
+  (`claude-opus-5-5[1m]`). Copilot and Gemini are not priced. Every model the
+  catalogue lists has a price, or is named with its reason in the exclusion list of
+  `tests/unit/test_pricing.py`.
 - Reasoning is billed as output unless an entry sets `reasoning_usd`.
 - A caller pins or extends assumptions with its own table:
   `default_pricing().with_entries([...], version="my-experiment")`, or

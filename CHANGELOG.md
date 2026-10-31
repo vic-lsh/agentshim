@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.23.1 (2026-10-30)
+
+### Fixed
+
+- `gpt-6.1-sol` has a price. The catalogue listed it since 0.18.2 but the price table did not, so
+  `price_for("codex", "gpt-6.1-sol")` returned `None` and its turns recorded no cost. The rates are
+  the standard short-context tier on https://developers.openai.com/api/docs/pricing, read
+  2026-10-30: input 2.00, cache read 0.10, cache write 2.50, output 10.00 USD per million tokens.
+  The cache read rate is half of `gpt-6-sol`'s. The table version is `2026-10-30`.
+
+### Added
+
+- A test that every model the catalogue or a provider profile lists is priced or named, with its
+  reason, in an exclusion list. `gemini-3-pro-preview` is the one exclusion: Google's pricing page
+  no longer lists it, so no official number can be checked, and Gemini models are not priced.
+
 ## 0.23.0 (2026-10-20)
 
 ### Added

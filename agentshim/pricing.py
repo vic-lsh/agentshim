@@ -106,4 +106,4 @@ def default_pricing(*, catalog: ProviderCatalog | None = None) -> PricingTable:
             by_key[entry.key] = entry
     entries = tuple(by_key.values())
     updated = max((entry.checked for entry in entries), default=dt.date(2026, 9, 27))
-    return PricingTable(version="2026-10-19", last_updated=updated, entries=entries)
+    return PricingTable(version="2026-10-30", last_updated=updated, entries=entries)

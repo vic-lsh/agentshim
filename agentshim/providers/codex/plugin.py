@@ -6,11 +6,12 @@ from agentshim.core.plugin import ProviderTestSupport
 from agentshim.providers.static_plugin import StaticProviderPlugin
 
 from .app_server import CodexAppServerTransport
-from .model_data import MODEL_ENTRIES, PRICING_ENTRIES
+from .model_data import MODEL_ENTRIES, PRICING_ENTRIES, RATES
 from .probe import PROBE
 from .provider import PROFILE, CodexProvider
 from .scripted import failure_lines, resume_failure_lines, scripted_lines
 from .testing import installed_mcp_servers, probe_fixture
+from .transcripts import TRANSCRIPTS
 
 PLUGIN = StaticProviderPlugin(
     name="codex",
@@ -21,6 +22,8 @@ PLUGIN = StaticProviderPlugin(
     pricing_vendor="openai",
     model_entries=MODEL_ENTRIES,
     pricing_entries=PRICING_ENTRIES,
+    rates=RATES,
+    transcript_format=TRANSCRIPTS,
     stream_factory=CodexAppServerTransport,
     testing=ProviderTestSupport(
         scripted_lines=scripted_lines,

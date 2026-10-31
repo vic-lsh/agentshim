@@ -19,12 +19,12 @@ output a turn was billed for:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
 _COUNT_FIELDS = (
     "input_tokens",
@@ -262,6 +262,14 @@ def normalized_usage(  # noqa: PLR0913 - one keyword per normalized count
     )
 
 
+class UsageSpeed(str, Enum):
+    """The service speed a request was billed at."""
+
+    STANDARD = "standard"
+    FAST = "fast"
+    ULTRAFAST = "ultrafast"
+
+
 class CostSource(str, Enum):
     """Where a reported cost came from."""
 
@@ -271,6 +279,82 @@ class CostSource(str, Enum):
     PROVIDER_REPORTED = "provider_reported"
     #: The turn used a model agentshim has no price for, so there is no cost.
     UNKNOWN_MODEL = "unknown_model"
+
+
+@dataclass(frozen=True)
+class ModelUsage:
+    """One model's share of a turn's usage.
+
+    A turn can run several models: Claude's Task subagents and advisors run on
+    their own, and ``ProviderUsage.tokens`` leaves them out. The sum of
+    :attr:`tokens` over :attr:`ProviderUsage.by_model` is the whole turn.
+
+    Attributes:
+        model: The model id as the provider reports it.
+        tokens: This turn's tokens for this model. Only the primary model
+            carries the turn's ``turns`` count.
+        recorded_usd: The pinned-table price of ``tokens``; ``None`` when the
+            table has no price for the model. This is the figure a turn's
+            recorded cost sums, never the CLI's own.
+        speed: The service speed the turn ran at, on the primary model only;
+            ``None`` when the provider did not report one (read as standard).
+        primary: Whether this is the model the turn was run with. Exactly one
+            row of a turn is.
+    """
+
+    model: str
+    tokens: TokenUsage
+    recorded_usd: float | None = None
+    speed: UsageSpeed | None = None
+    primary: bool = False
+
+    def __post_init__(self) -> None:
+        """Reject an empty model or a cost that is not a finite, non-negative number."""
+        if not self.model.strip():
+            msg = "model must be a non-empty string"
+            raise ValueError(msg)
+        cost = self.recorded_usd
+        if cost is not None and (isinstance(cost, bool) or not math.isfinite(cost) or cost < 0):
+            msg = f"recorded_usd must be finite and non-negative, got {cost!r}"
+            raise ValueError(msg)
+
+    def to_dict(self) -> dict[str, Any]:
+        """A JSON-serializable mapping of this row."""
+        return {
+            "model": self.model,
+            "tokens": self.tokens.to_dict(),
+            "recorded_usd": self.recorded_usd,
+            "speed": None if self.speed is None else self.speed.value,
+            "primary": self.primary,
+        }
+
+
+def merge_model_usage(
+    first: Sequence[ModelUsage], second: Sequence[ModelUsage]
+) -> tuple[ModelUsage, ...]:
+    """Sum the per-model usage of two turns of one run into one.
+
+    Rows with the same model and speed add up, and a sum is unpriced if either
+    part was. The primary row of *first* (else of *second*) stays the only
+    primary, so a merged run still has exactly one.
+    """
+    rows = (*first, *second)
+    primary = next((row for row in rows if row.primary), None)
+    merged: dict[tuple[str, UsageSpeed | None], ModelUsage] = {}
+    for row in rows:
+        key = (row.model, row.speed)
+        held = merged.get(key)
+        if held is None:
+            merged[key] = row
+            continue
+        costs = (held.recorded_usd, row.recorded_usd)
+        merged[key] = replace(
+            held,
+            tokens=held.tokens + row.tokens,
+            recorded_usd=None if None in costs else sum(cost or 0.0 for cost in costs),
+        )
+    keep = None if primary is None else (primary.model, primary.speed)
+    return tuple(replace(row, primary=key == keep) for key, row in merged.items())
 
 
 @dataclass(frozen=True)
@@ -293,6 +377,9 @@ class ProviderUsage:
     #: Where ``total_cost_usd`` came from; ``None`` when no cost was reported.
     #: ``UNKNOWN_MODEL`` goes with a ``None`` cost: no price is guessed.
     cost_source: CostSource | None = None
+    #: Each model the turn ran, including ones ``tokens`` leaves out (subagents, advisors).
+    #: Empty when the provider reports no split, or the increment is not known.
+    by_model: tuple[ModelUsage, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Flatten the normalized counts, cost, and provider name into one mapping.
@@ -306,4 +393,5 @@ class ProviderUsage:
             "provider": self.provider,
             "increment_known": self.increment_known,
             "cost_source": None if self.cost_source is None else self.cost_source.value,
+            "by_model": [row.to_dict() for row in self.by_model],
         }

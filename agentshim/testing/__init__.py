@@ -73,6 +73,7 @@ from .process import (
     ReplayGates,
     SilentPeer,
 )
+from .rates import FakeRateSource, FakeRateStore
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -428,6 +429,8 @@ __all__ = [
     "FakeOutcome",
     "FakePeer",
     "FakeProcess",
+    "FakeRateSource",
+    "FakeRateStore",
     "FakeRun",
     "FakeTransport",
     "FakeTurn",

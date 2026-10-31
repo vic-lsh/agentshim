@@ -291,9 +291,15 @@ class CodexScript:
         ignore_requested_permissions: bool = False,
         exits_at_end_of_input: bool = True,
         steer_refusal: str | None = None,
+        service_tier: str | None = None,
     ) -> None:
-        """Start with no queued turns, no threads and nothing received."""
+        """Start with no queued turns, no threads and nothing received.
+
+        *service_tier* is the tier the server reports when it starts or
+        resumes a thread (``"priority"`` bills at the fast rate).
+        """
         self.model = model
+        self.service_tier = service_tier
         self.inherited_sandbox = inherited_sandbox
         self.inherited_approval = inherited_approval
         self.ignore_requested_permissions = ignore_requested_permissions
@@ -564,6 +570,7 @@ class CodexAppServerPeer:
                 "approvalsReviewer": "user",
                 "sandbox": _sandbox_wire(sandbox, thread.cwd),
                 "reasoningEffort": None,
+                "serviceTier": self._script.service_tier,
             },
         )
         self._notify(out, "thread/started", {"thread": wire})

@@ -1,17 +1,16 @@
 """Codex-owned model and price facts."""
 
 import datetime as dt
-from dataclasses import replace
 
 from agentshim.core.models import ModelSpec
 from agentshim.core.pricing import ModelPricing
+from agentshim.core.rates import RateEntry, RateTable
+
+from .prices_generated import INFERRED_CACHE_WRITE, RATE_ENTRIES, SNAPSHOT_DATE
 
 OPENAI_MODELS_URL = "https://developers.openai.com/api/docs/models"
 OPENAI_PRICING_URL = "https://developers.openai.com/api/docs/pricing"
 _MODEL_CHECKED = dt.date(2026, 10, 17)
-_PRICE_CHECKED = dt.date(2026, 9, 27)
-#: ``gpt-6.1-sol`` was read from the page on its own date, after the rest of the table.
-_SOL_6_1_CHECKED = dt.date(2026, 10, 30)
 
 
 def _openai_model(
@@ -69,45 +68,21 @@ _OPENAI_NO_WRITE_NOTE = (
 )
 
 
-def _openai(
-    model: str,
-    input_usd: float,
-    cache_read_usd: float,
-    output_usd: float,
-    cache_write_usd: float | None = None,
-) -> ModelPricing:
+def _openai(entry: RateEntry) -> ModelPricing:
+    rates = entry.standard
     return ModelPricing(
         vendor="openai",
-        model=model,
-        input_usd=input_usd,
-        cache_read_usd=cache_read_usd,
-        cache_write_usd=input_usd if cache_write_usd is None else cache_write_usd,
-        output_usd=output_usd,
+        model=entry.name,
+        input_usd=rates.input_usd,
+        cache_read_usd=rates.cache_read_usd,
+        cache_write_usd=rates.cache_write_usd,
+        output_usd=rates.output_usd,
         source=OPENAI_PRICING_URL,
-        checked=_PRICE_CHECKED,
-        note=_OPENAI_NOTE if cache_write_usd is not None else _OPENAI_NO_WRITE_NOTE,
+        checked=SNAPSHOT_DATE,
+        note=_OPENAI_NO_WRITE_NOTE if entry.name in INFERRED_CACHE_WRITE else _OPENAI_NOTE,
     )
 
 
-PRICING_ENTRIES = (
-    _openai("gpt-6-astra", 10.00, 1.00, 50.00, cache_write_usd=12.50),
-    replace(
-        _openai("gpt-6.1-sol", 2.00, 0.10, 10.00, cache_write_usd=2.50),
-        checked=_SOL_6_1_CHECKED,
-    ),
-    _openai("gpt-6-sol", 2.00, 0.20, 10.00, cache_write_usd=2.50),
-    _openai("gpt-6-luna", 0.10, 0.01, 0.50, cache_write_usd=0.125),
-    _openai("gpt-5.6-sol", 4.00, 0.40, 20.00, cache_write_usd=5.00),
-    _openai("gpt-5.6-terra", 2.00, 0.20, 12.00, cache_write_usd=2.50),
-    _openai("gpt-5.6-luna", 0.20, 0.02, 1.20, cache_write_usd=0.25),
-    _openai("gpt-5.5", 5.00, 0.50, 30.00),
-    _openai("gpt-5.4", 2.50, 0.25, 15.00),
-    _openai("gpt-5.4-mini", 0.75, 0.075, 4.50),
-    _openai("gpt-5.4-nano", 0.20, 0.02, 1.25),
-    _openai("gpt-5.3-codex", 1.75, 0.175, 14.00),
-    _openai("gpt-5.2", 1.75, 0.175, 14.00),
-    _openai("gpt-5.1", 1.25, 0.125, 10.00),
-    _openai("gpt-5", 1.25, 0.125, 10.00),
-    _openai("gpt-5-mini", 0.25, 0.025, 2.00),
-    _openai("gpt-5-nano", 0.05, 0.005, 0.40),
-)
+PRICING_ENTRIES = tuple(_openai(entry) for entry in RATE_ENTRIES)
+#: Flat rates with speed tiers, for estimates; the same generated numbers as ``PRICING_ENTRIES``.
+RATES = RateTable(SNAPSHOT_DATE, {entry.name: entry for entry in RATE_ENTRIES})

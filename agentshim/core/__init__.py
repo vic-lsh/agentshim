@@ -98,7 +98,15 @@ from .mcp import (
 )
 from .models import ModelSpec, ModelTable
 from .permissions import ApprovalPolicy, NativeMode, NativePermissions
-from .plugin import ConnectionOptions, PricingContext, ProviderPlugin, ProviderTestSupport
+from .plugin import (
+    ConnectionOptions,
+    PricingContext,
+    ProviderPlugin,
+    ProviderTestSupport,
+    RateCatalog,
+    RateNaming,
+    TranscriptSource,
+)
 from .pricing import ModelPricing, PricingTable, cost_usd
 from .profile import (
     ConfigScope,
@@ -120,13 +128,42 @@ from .provider import (
     Provider,
     StreamParser,
 )
+from .rates import (
+    CostBreakdown,
+    RateDocumentError,
+    RateEntry,
+    Rates,
+    RateTable,
+    cache_savings_usd,
+    price_tokens,
+    speed_premium_usd,
+)
 from .schema import compact_json, dialect_problems, materialize, normalize
 from .session_policy import Continuity, PolicyConfig, RetryPolicy, SessionPolicy, SessionState
 from .skills import SkillSummary, SkillTracker
 from .status import AuthState, ProviderStatus
 from .stream import ToolTracker, parse_json_object
+from .transcripts import (
+    FilePosition,
+    FileScan,
+    TranscriptFormat,
+    TranscriptParser,
+    TranscriptRecord,
+    TranscriptRoot,
+    TranscriptScan,
+    parse_timestamp,
+)
 from .turn import OutputSchema, TurnRequest, TurnResult
-from .usage import CostSource, ProviderUsage, TokenUsage, TokenWeights, normalized_usage
+from .usage import (
+    CostSource,
+    ModelUsage,
+    ProviderUsage,
+    TokenUsage,
+    TokenWeights,
+    UsageSpeed,
+    merge_model_usage,
+    normalized_usage,
+)
 
 __all__ = [
     "AgentEvent",
@@ -157,6 +194,7 @@ __all__ = [
     "ContinuityError",
     "Conversation",
     "ConversationSpec",
+    "CostBreakdown",
     "CostSource",
     "CredentialKind",
     "CredentialSource",
@@ -166,6 +204,8 @@ __all__ = [
     "ExternalCredential",
     "FailureKind",
     "FileCredential",
+    "FilePosition",
+    "FileScan",
     "FlagsInstallation",
     "HostAuthGap",
     "HostAuthUnplannableError",
@@ -183,6 +223,7 @@ __all__ = [
     "ModelPricing",
     "ModelSpec",
     "ModelTable",
+    "ModelUsage",
     "NativeMode",
     "NativePermissions",
     "NoRunningTurnError",
@@ -205,7 +246,13 @@ __all__ = [
     "ProviderTestSupport",
     "ProviderUsage",
     "RandomIds",
+    "RateCatalog",
+    "RateDocumentError",
+    "RateEntry",
     "RateLimitStatus",
+    "RateNaming",
+    "RateTable",
+    "Rates",
     "RawOutput",
     "ReapError",
     "Reasoning",
@@ -242,6 +289,12 @@ __all__ = [
     "ToolCall",
     "ToolResult",
     "ToolTracker",
+    "TranscriptFormat",
+    "TranscriptParser",
+    "TranscriptRecord",
+    "TranscriptRoot",
+    "TranscriptScan",
+    "TranscriptSource",
     "Transport",
     "TransportKind",
     "TurnCancelledError",
@@ -251,6 +304,8 @@ __all__ = [
     "TurnResult",
     "TurnTimeoutError",
     "UsageReport",
+    "UsageSpeed",
+    "cache_savings_usd",
     "compact_json",
     "compose_event_handlers",
     "cost_usd",
@@ -259,9 +314,13 @@ __all__ = [
     "install_config_file",
     "interactive_env",
     "materialize",
+    "merge_model_usage",
     "normalize",
     "normalized_usage",
     "parse_json_object",
+    "parse_timestamp",
     "plan_auth",
     "prepare_config_home",
+    "price_tokens",
+    "speed_premium_usd",
 ]

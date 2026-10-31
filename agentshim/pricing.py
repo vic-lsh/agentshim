@@ -94,7 +94,12 @@ def price_for(
 
 
 def default_pricing(*, catalog: ProviderCatalog | None = None) -> PricingTable:
-    """Compose prices supplied by the selected provider catalog."""
+    """Compose prices supplied by the selected provider catalog.
+
+    The shipped entries are generated from a dated LiteLLM snapshot, and every
+    one was checked on that day, so the version names it (``litellm-2026-10-30``)
+    and changes exactly when the snapshot, and with it any price, does.
+    """
     catalog = _catalog_or_default(catalog)
     by_key: dict[tuple[str, str], ModelPricing] = {}
     for name in catalog.names():
@@ -106,4 +111,6 @@ def default_pricing(*, catalog: ProviderCatalog | None = None) -> PricingTable:
             by_key[entry.key] = entry
     entries = tuple(by_key.values())
     updated = max((entry.checked for entry in entries), default=dt.date(2026, 9, 27))
-    return PricingTable(version="2026-10-30", last_updated=updated, entries=entries)
+    return PricingTable(
+        version=f"litellm-{updated.isoformat()}", last_updated=updated, entries=entries
+    )

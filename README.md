@@ -16,7 +16,10 @@ No required runtime dependencies. Python 3.10+.
 - typed events delivered on the calling thread
 - normalized token accounting (total input, cache reads, cache writes,
   uncached input, output and reasoning) on every provider, plus a static,
-  versioned pricing table (see [Usage and Pricing](docs/pricing.md))
+  versioned pricing table generated from a LiteLLM snapshot (see
+  [Usage and Pricing](docs/pricing.md)), usage by model, list-price estimates
+  from LiteLLM's rates, and usage read from the CLIs' own session files (see
+  [Usage Outside agentshim](docs/transcripts.md))
 - declared capabilities on `ProviderProfile`, so no caller probes a provider
 - injectable `CommandExecutor`s for running the CLI in a container or over a
   remote shell

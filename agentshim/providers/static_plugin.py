@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from agentshim.core.conversation import TransportKind
 from agentshim.core.errors import ProviderCapabilityError
 from agentshim.core.models import ModelTable
 from agentshim.core.pricing import PricingTable
+from agentshim.core.rates import RateTable, candidate_names
 from agentshim.execution.readiness import probe_spec_on
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
     from agentshim.core.profile import ProviderProfile
     from agentshim.core.provider import Provider
     from agentshim.core.status import ProbeSpec, ProviderStatus
+    from agentshim.core.transcripts import TranscriptFormat
     from agentshim.execution.executor import CommandExecutor
 
 _DATE_SUFFIX = re.compile(r"-\d{8}$")
@@ -49,6 +51,12 @@ class StaticProviderPlugin:
     model_aliases: tuple[tuple[str, str], ...] = ()
     model_entries: tuple[ModelSpec, ...] = ()
     pricing_entries: tuple[ModelPricing, ...] = ()
+    #: Flat rates with speed tiers, for estimates; see :mod:`agentshim.core.rates`.
+    rates: RateTable = field(default_factory=lambda: RateTable(dt.date.min, {}))
+    #: Names the CLI reports that are not a priceable model: placeholders and bare family names.
+    unpriceable_models: frozenset[str] = frozenset()
+    #: How to read this CLI's own session files for usage, when agentshim can.
+    transcript_format: TranscriptFormat | None = None
 
     def __post_init__(self) -> None:
         """Reject inconsistent identity and an adapter with no connection mode."""
@@ -156,6 +164,21 @@ class StaticProviderPlugin:
     def known_prices(self) -> tuple[ModelPricing, ...]:
         """Return the enumerated standard-tier rates."""
         return self.pricing_entries
+
+    def known_rates(self) -> RateTable:
+        """Return the enumerated flat rates, with speed tiers."""
+        return self.rates
+
+    def rate_names(self, model: str) -> tuple[str, ...]:
+        """Flat names *model* may be filed under; none for a name that is not a model."""
+        names = candidate_names(model)
+        if any(name.rpartition("/")[2] in self.unpriceable_models for name in names):
+            return ()
+        return names
+
+    def transcripts(self) -> TranscriptFormat | None:
+        """Return the format of this CLI's session files, if agentshim reads them."""
+        return self.transcript_format
 
     def test_support(self) -> ProviderTestSupport | None:
         """Return this provider's test adapters, if any."""

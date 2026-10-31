@@ -15,7 +15,10 @@ to retire a conversation, how to sandbox the host, or how to render events.
   delivered on the calling thread
 - normalized token accounting (total input, cache reads, cache writes,
   uncached input, output and reasoning) on every provider, plus a static,
-  versioned pricing table (see [Usage and Pricing](pricing.md))
+  versioned pricing table generated from a LiteLLM snapshot (see
+  [Usage and Pricing](pricing.md)), usage by model, list-price estimates
+  from LiteLLM's rates, and usage read from the CLIs' own session files (see
+  [Usage Outside agentshim](transcripts.md))
 - declared capabilities on `ProviderProfile`, so no caller probes a provider
   for attributes
 - injectable `CommandExecutor`s for running the CLI in a container or over a

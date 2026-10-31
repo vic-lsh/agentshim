@@ -94,6 +94,23 @@ Normalize usage with `normalized_usage` into the breakdown in
 failed tool on `ToolResult.stderr` with a nonzero `exit_code`, never on
 `stdout`.
 
+## Optional capabilities
+
+A plugin can offer more than the required methods. Each is a separate
+`runtime_checkable` protocol that agentshim looks for with `isinstance`, so a
+plugin without it keeps working and gets the documented default.
+
+| Protocol | Method | Used by | Without it |
+| --- | --- | --- | --- |
+| `RateCatalog` | `known_rates() -> RateTable` | `bundled_rates()`, the pinned table of estimates | The provider ships no rates |
+| `RateNaming` | `rate_names(model) -> tuple[str, ...]` | `rates_for` | The generic rules of `candidate_names` |
+| `TranscriptSource` | `transcripts() -> TranscriptFormat \| None` | `transcript_roots`, `read_transcript_usage` | The provider's transcripts are not read |
+
+`StaticProviderPlugin` implements all three from fields: `rates`,
+`unpriceable_models` and `transcript_format`. See
+[Usage and Pricing](pricing.md#estimates-at-list-prices) and
+[Usage Outside agentshim](transcripts.md).
+
 ## Test doubles
 
 Expose `scripted_lines(...)` in `scripted.py`, returning the provider's real

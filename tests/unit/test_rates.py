@@ -25,6 +25,7 @@ from agentshim import (
     default_pricing,
     parse_litellm,
     price_tokens,
+    rates_for,
     read_rates,
     refresh_rates,
     speed_premium_usd,
@@ -504,3 +505,51 @@ class TestRefreshProperties:
 class TestFakeRateStore(RateStoreContract):
     def make_store(self) -> FakeRateStore:
         return FakeRateStore()
+
+
+class TestRatesFor:
+    TABLE = bundled_rates()
+
+    @pytest.mark.parametrize(
+        ("provider", "model", "expected"),
+        [
+            ("claude", "claude-opus-5-5", "claude-opus-5-5"),
+            ("claude", "claude-opus-5-5[1m]", "claude-opus-5-5"),
+            ("claude", "claude-haiku-4-5-20251001", "claude-haiku-4-5"),
+            ("claude", "  Claude-Sonnet-5 ", "claude-sonnet-5"),
+            ("codex", "GPT-6-Luna", "gpt-6-luna"),
+            ("opencode", "anthropic/claude-sonnet-5", "claude-sonnet-5"),
+            ("opencode", "openai/gpt-5.4", "gpt-5.4"),
+            ("someone-else", "gpt-5", "gpt-5"),
+        ],
+    )
+    def test_a_model_name_finds_its_entry(self, provider: str, model: str, expected: str) -> None:
+        entry = rates_for(self.TABLE, provider, model)
+        assert entry is not None
+        assert entry.name == expected
+
+    @pytest.mark.parametrize(
+        "model", ["<synthetic>", "synthetic", "opus", "Sonnet", "haiku", "fable"]
+    )
+    def test_a_name_that_is_not_a_model_has_no_rates(self, model: str) -> None:
+        assert rates_for(self.TABLE, "claude", model) is None
+
+    @pytest.mark.parametrize("model", ["claude-opus-9-9", "", "gpt-99-imaginary", "anthropic/"])
+    def test_an_unknown_model_has_no_rates_and_borrows_none(self, model: str) -> None:
+        assert rates_for(self.TABLE, "claude", model) is None
+
+    def test_the_most_specific_name_wins(self) -> None:
+        dated = Rates(9.0, 9.0, 9.0, 9.0)
+        plain = Rates(1.0, 1.0, 1.0, 1.0)
+        table = RateTable(
+            DAY, {"m-20251001": RateEntry("m-20251001", dated), "m": RateEntry("m", plain)}
+        )
+        assert rates_for(table, "claude", "m-20251001") == table.lookup("m-20251001")
+        assert rates_for(table, "claude", "m-20251002") == table.lookup("m")
+        assert rates_for(table, "claude", "v/m-20251001") == table.lookup("m-20251001")
+
+    @given(st.sampled_from(sorted(TABLE.entries)))
+    def test_every_pinned_name_finds_itself_whatever_the_provider(self, name: str) -> None:
+        for provider in ("claude", "codex", "opencode", "nobody"):
+            entry = rates_for(self.TABLE, provider, name)
+            assert entry == self.TABLE.lookup(name)

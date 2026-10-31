@@ -21,9 +21,16 @@ from agentshim.core.events import (
 )
 from agentshim.core.provider import ParsedTurn
 from agentshim.core.stream import ToolTracker, parse_json_object
-from agentshim.core.usage import CostSource, ProviderUsage, TokenUsage, normalized_usage
+from agentshim.core.usage import (
+    CostSource,
+    ModelUsage,
+    ProviderUsage,
+    TokenUsage,
+    merge_model_usage,
+    normalized_usage,
+)
 
-from .cost import ModelCounts, priced_turn
+from .cost import ModelCounts, mark_primary, priced_turn, report_speed
 from .events import (
     AssistantMessage,
     ResultFrame,
@@ -188,6 +195,10 @@ class ClaudeStreamParser:
         self._results = 0
         self._cost_usd: float | None = None
         self._cost_source: CostSource | None = None
+        self._by_model: tuple[ModelUsage, ...] = ()
+        #: The model the conversation was started with, and the main thread's latest model call.
+        self._init_model: str | None = None
+        self._main_model: str | None = None
         self._error: str | None = None
         # What the stream said about a failed API request, for classifying it.
         self._api_error: str | None = None
@@ -257,6 +268,8 @@ class ClaudeStreamParser:
 
     def _handle(self, frame: object) -> None:
         if isinstance(frame, SystemInit):
+            if frame.model:
+                self._init_model = frame.model
             if self._session_id is None and frame.session_id:
                 self._session_id = frame.session_id
                 self._emit(SessionStarted(frame.session_id))
@@ -284,6 +297,8 @@ class ClaudeStreamParser:
             and frame.model != SYNTHETIC_MODEL
         ):
             self._context_tokens = context_tokens(frame.usage)
+        if frame.parent_tool_use_id is None and frame.model and frame.model != SYNTHETIC_MODEL:
+            self._main_model = frame.model
         if frame.usage is not None:
             self._emit(
                 UsageReport(
@@ -330,10 +345,12 @@ class ClaudeStreamParser:
         tokens = fold_usage(frame.usage, turns=frame.num_turns or 0)
         self._price(frame, tokens)
         self._structured = self._structured_payload(frame)
+        by_model = self._by_model
         if self._results:
             # A steered message can start a follow-on turn inside this run; its
             # ``result`` reports only its own tokens, so the run sums them.
             tokens = self._usage.tokens + tokens
+            by_model = merge_model_usage(self._usage.by_model, by_model)
         self._results += 1
         self._usage = ProviderUsage(
             tokens=tokens,
@@ -341,6 +358,7 @@ class ClaudeStreamParser:
             provider=PROVIDER_NAME,
             raw=frame.usage,
             cost_source=self._cost_source,
+            by_model=by_model,
         )
         self._emit(UsageReport(self._usage, self._cost_usd))
         if frame.is_error:
@@ -364,12 +382,20 @@ class ClaudeStreamParser:
             )
             self._cost_usd = priced.usd
             self._cost_source = priced.source
+            self._by_model = mark_primary(
+                priced.by_model,
+                (self._main_model, self._init_model),
+                speed=report_speed(frame.usage),
+                turns=tokens.turns,
+            )
         elif frame.total_cost_usd is not None:
             self._cost_usd = frame.total_cost_usd - self._cost_baseline
             self._cost_source = CostSource.PROVIDER_REPORTED
+            self._by_model = ()
         else:
             self._cost_usd = None
             self._cost_source = None
+            self._by_model = ()
 
     def _structured_payload(self, frame: ResultFrame) -> object | None:
         # Only a turn that asked for a schema gets a payload: an unrequested

@@ -16,11 +16,11 @@ import datetime as dt
 import math
 import re
 from dataclasses import dataclass
-from enum import Enum
 from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
 from .errors import AgentShimError
+from .usage import UsageSpeed
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -34,14 +34,6 @@ _BRACKET_SUFFIX = re.compile(r"\[[^\]]*\]$")
 
 class RateDocumentError(AgentShimError):
     """A rate document is not JSON, or holds no model with usable rates."""
-
-
-class UsageSpeed(str, Enum):
-    """The service speed a request was billed at."""
-
-    STANDARD = "standard"
-    FAST = "fast"
-    ULTRAFAST = "ultrafast"
 
 
 @dataclass(frozen=True)

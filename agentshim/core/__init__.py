@@ -133,7 +133,6 @@ from .rates import (
     RateEntry,
     Rates,
     RateTable,
-    UsageSpeed,
     cache_savings_usd,
     price_tokens,
     speed_premium_usd,
@@ -144,7 +143,16 @@ from .skills import SkillSummary, SkillTracker
 from .status import AuthState, ProviderStatus
 from .stream import ToolTracker, parse_json_object
 from .turn import OutputSchema, TurnRequest, TurnResult
-from .usage import CostSource, ProviderUsage, TokenUsage, TokenWeights, normalized_usage
+from .usage import (
+    CostSource,
+    ModelUsage,
+    ProviderUsage,
+    TokenUsage,
+    TokenWeights,
+    UsageSpeed,
+    merge_model_usage,
+    normalized_usage,
+)
 
 __all__ = [
     "AgentEvent",
@@ -202,6 +210,7 @@ __all__ = [
     "ModelPricing",
     "ModelSpec",
     "ModelTable",
+    "ModelUsage",
     "NativeMode",
     "NativePermissions",
     "NoRunningTurnError",
@@ -286,6 +295,7 @@ __all__ = [
     "install_config_file",
     "interactive_env",
     "materialize",
+    "merge_model_usage",
     "normalize",
     "normalized_usage",
     "parse_json_object",

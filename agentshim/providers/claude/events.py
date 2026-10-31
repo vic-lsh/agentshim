@@ -25,6 +25,8 @@ class SystemInit:
     subtype: str | None
     #: The ``skills`` list of an ``init`` frame; ``None`` when absent.
     skills: tuple[str, ...] | None = None
+    #: The model the conversation was started with; ``None`` when the frame omits it.
+    model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -123,6 +125,7 @@ def parse_frame(data: Mapping[str, Any]) -> ClaudeFrame | None:
             session_id=_str_or_none(data.get("session_id")),
             subtype=_str_or_none(data.get("subtype")),
             skills=_str_tuple_or_none(data.get("skills")),
+            model=_str_or_none(data.get("model")),
         )
     if kind == "assistant":
         return _assistant(data)

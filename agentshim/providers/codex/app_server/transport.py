@@ -51,7 +51,7 @@ from agentshim.core.permissions import ApprovalPolicy
 from agentshim.core.schema import dialect_problems
 from agentshim.core.skills import SkillTracker
 from agentshim.core.turn import TurnResult
-from agentshim.core.usage import CostSource
+from agentshim.core.usage import CostSource, ModelUsage, UsageSpeed
 from agentshim.execution.host import HostCommandExecutor
 from agentshim.execution.process import SpawnRequest
 from agentshim.pricing import cost_usd, price_for
@@ -97,7 +97,7 @@ from .protocol import (
     WarningNotification,
 )
 from .rate_limits import rate_limit_statuses
-from .usage import Totals, baseline_from, totals_of, turn_usage, zero_totals
+from .usage import Totals, baseline_from, speed_of_tier, totals_of, turn_usage, zero_totals
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -364,6 +364,9 @@ class _Conversation:
         self._steer_count = 0
         self._thread_id: str | None = None
         self._model = spec.model
+        #: What the server said it started the thread with, and the speed its service tier bills at.
+        self._reported_model: str | None = None
+        self._speed = UsageSpeed.STANDARD
         self._pricing = settings.pricing
         self._baseline: Totals | None = (
             zero_totals() if spec.resume_id is None else baseline_from(spec.previous_usage)
@@ -477,7 +480,13 @@ class _Conversation:
                 deadline,
             )
             started = ThreadStartResponse.from_wire(result)
-            self._adopt(started.thread.id, started.model, started.sandbox, started.approval_policy)
+            self._adopt(
+                started.thread.id,
+                started.model,
+                started.sandbox,
+                started.approval_policy,
+                started.service_tier,
+            )
             return
         result = self._call(
             ThreadResumeParams(
@@ -493,14 +502,27 @@ class _Conversation:
             refusal=resume_id,
         )
         resumed = ThreadResumeResponse.from_wire(result)
-        self._adopt(resumed.thread.id, resumed.model, resumed.sandbox, resumed.approval_policy)
+        self._adopt(
+            resumed.thread.id,
+            resumed.model,
+            resumed.sandbox,
+            resumed.approval_policy,
+            resumed.service_tier,
+        )
 
     def _adopt(
-        self, thread_id: str, model: str, sandbox: SandboxPolicy, approval: AskForApproval
+        self,
+        thread_id: str,
+        model: str,
+        sandbox: SandboxPolicy,
+        approval: AskForApproval,
+        service_tier: str | None,
     ) -> None:
         """Take the thread the server reports, after checking the permissions it applied."""
         check_applied(self._settings.permissions, sandbox, approval)
         self._thread_id = thread_id
+        self._reported_model = model
+        self._speed = speed_of_tier(service_tier)
         if self._pricing is None:
             self._pricing = price_for(APP_SERVER_PROFILE.name, model, self._settings.pricing_table)
 
@@ -932,12 +954,14 @@ class _Conversation:
     def _usage(self, turn: _Turn) -> ProviderUsage:
         usage = turn_usage(turn.total, self._baseline)
         pricing = self._pricing
+        cost = None
         if usage.increment_known and pricing is not None:
-            usage = replace(
-                usage,
-                total_cost_usd=cost_usd(usage.tokens, pricing),
-                cost_source=CostSource.PRICE_TABLE,
-            )
+            cost = cost_usd(usage.tokens, pricing)
+            usage = replace(usage, total_cost_usd=cost, cost_source=CostSource.PRICE_TABLE)
+        model = self._reported_model or self._model
+        if usage.increment_known and model:
+            row = ModelUsage(model, usage.tokens, cost, self._speed, primary=True)
+            usage = replace(usage, by_model=(row,))
         if turn.total is not None:
             self._baseline = turn.total
         return usage

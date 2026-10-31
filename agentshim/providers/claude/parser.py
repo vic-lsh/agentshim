@@ -395,7 +395,7 @@ class ClaudeStreamParser:
             self._by_model = ()
         else:
             self._cost_usd = None
-            self._cost_source = None
+            self._cost_source = CostSource.NOT_REPORTED
             self._by_model = ()
 
     def _structured_payload(self, frame: ResultFrame) -> object | None:

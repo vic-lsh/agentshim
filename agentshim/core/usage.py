@@ -271,7 +271,11 @@ class UsageSpeed(str, Enum):
 
 
 class CostSource(str, Enum):
-    """Where a reported cost came from."""
+    """Where a turn's cost came from, or that it has none to come from.
+
+    Every parsed turn names one: a reader that finds none is reading a usage built before the
+    field existed, never a provider that left it out.
+    """
 
     #: Computed from the turn's token counts and agentshim's price table.
     PRICE_TABLE = "price_table"
@@ -279,6 +283,9 @@ class CostSource(str, Enum):
     PROVIDER_REPORTED = "provider_reported"
     #: The turn used a model agentshim has no price for, so there is no cost.
     UNKNOWN_MODEL = "unknown_model"
+    #: The provider reports no cost and agentshim computes none (a CLI that bills in another
+    #: way, a resumed turn whose increment is unknown), so there is no cost and nothing to price.
+    NOT_REPORTED = "not_reported"
 
 
 @dataclass(frozen=True)
@@ -382,12 +389,18 @@ class ProviderUsage:
     provider: str = ""
     raw: Mapping[str, Any] | None = None
     increment_known: bool = True
-    #: Where ``total_cost_usd`` came from; ``None`` when no cost was reported.
-    #: ``UNKNOWN_MODEL`` goes with a ``None`` cost: no price is guessed.
+    #: Where ``total_cost_usd`` came from. ``UNKNOWN_MODEL`` and ``NOT_REPORTED`` go with a
+    #: ``None`` cost: no price is guessed. Left out with no cost, it is ``NOT_REPORTED``; it is
+    #: ``None`` only on a usage built with a cost and no source, which a parser does not do.
     cost_source: CostSource | None = None
     #: Each model the turn ran, including ones ``tokens`` leaves out (subagents, advisors).
     #: Empty when the provider reports no split, or the increment is not known.
     by_model: tuple[ModelUsage, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Say ``NOT_REPORTED`` for a usage with no cost and no stated source."""
+        if self.cost_source is None and self.total_cost_usd is None:
+            object.__setattr__(self, "cost_source", CostSource.NOT_REPORTED)
 
     def to_dict(self) -> dict[str, Any]:
         """Flatten the normalized counts, cost, and provider name into one mapping.

@@ -7431,7 +7431,7 @@
    "total_cost_usd": 0.023168900000000003
   },
   {
-   "cost_source": null,
+   "cost_source": "not_reported",
    "provider": "codex",
    "stream": "exec_gpt6_luna.jsonl",
    "tokens": {
@@ -7448,7 +7448,7 @@
    "total_cost_usd": null
   },
   {
-   "cost_source": null,
+   "cost_source": "not_reported",
    "provider": "codex",
    "stream": "skill_invoked_gpt6_luna.jsonl",
    "tokens": {

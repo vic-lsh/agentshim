@@ -959,6 +959,9 @@ class _Conversation:
         if usage.increment_known and pricing is not None:
             cost = cost_usd(usage.tokens, pricing)
             usage = replace(usage, total_cost_usd=cost, cost_source=CostSource.PRICE_TABLE)
+        elif usage.increment_known:
+            # Tokens were measured and the model has no price: no cost, and a guess is not made.
+            usage = replace(usage, cost_source=CostSource.UNKNOWN_MODEL)
         model = self._reported_model or self._model
         if usage.increment_known and model and model.strip():
             row = ModelUsage(model, usage.tokens, cost, self._speed, primary=True)

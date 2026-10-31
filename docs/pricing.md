@@ -48,8 +48,12 @@ the CLI's `modelUsage` and agentshim's table (`PRICE_TABLE`), because a CLI olde
 bills the model at a fallback rate. `modelUsage` is cumulative over the process, so each turn is
 priced by the difference, and its one-hour share of cache writes comes from the turn's
 `usage.cache_creation`. A turn whose model has no table price has `total_cost_usd=None` and
-`UNKNOWN_MODEL`. `PROVIDER_REPORTED` is the CLI's own figure, used only when its result named no
-model. `None` means no cost was reported.
+`UNKNOWN_MODEL`. A Codex turn on a model with no price is `UNKNOWN_MODEL` too. `PROVIDER_REPORTED`
+is the CLI's own figure: Claude's, used only when its result named no model, and opencode's, which
+prices its turns itself. `NOT_REPORTED` is a turn with no cost to speak of: a CLI that prints none
+(Gemini, Copilot, Codex's one-shot stream) or a resumed turn whose increment is unknown. Every
+parsed turn names one, so a `cost_source` of `None` is a usage built without one (by hand, or
+before 0.24.2), never a provider that left it out.
 
 Known gaps: Claude's `result.usage` covers the main conversation only, so
 tokens spent by a Task subagent are missing from `ProviderUsage.tokens` (they are

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.24.2 (2026-10-31)
+
+A turn's `cost_source` is never left out. A caller that records it (VibeSys journals it) could not
+tell "the provider reported no basis" from "recorded before the field existed", because three cases
+left it `None` on a new turn.
+
+### Added
+
+- **`CostSource.NOT_REPORTED`**: the turn has no cost because nothing reports one (Gemini, Copilot,
+  Codex's one-shot stream, a Claude result with no cost, a resumed turn whose increment is
+  unknown). `ProviderUsage` says it itself when built with no cost and no source, so a provider
+  cannot leave it out.
+
+### Fixed
+
+- **opencode costs had no source.** The CLI prices its own turns; they are now `PROVIDER_REPORTED`.
+- **A Codex turn on a model with no price had no source.** Its tokens are measured and nothing
+  prices them, so it is now `UNKNOWN_MODEL` (with no cost and one row with no `recorded_usd`),
+  as a Claude turn on an unpriced model is.
+
+Recorded cost does not move: no price, `price_for` or `cost_usd` changed, and
+`tests/fixtures/recorded_costs.json` differs only in `cost_source` (`null` is now `not_reported`)
+for the two Codex exec streams.
+
 ## 0.24.1 (2026-10-31)
 
 Fixes the usage numbers 0.24.0 got wrong. Recorded cost does not move for any single-result turn:

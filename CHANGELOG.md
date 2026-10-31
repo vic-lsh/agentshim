@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.24.4 (2026-10-31)
+
+`interactive_env` gives each attempt its own time again, and no longer keeps a failed capture.
+0.24.3 made the two attempts share 10 seconds, so a first attempt that stalled (a loaded machine
+starting its login shell) left the plain-`env` retry nothing, and a shell that was only slow was
+reported as having no CLIs on its `PATH`. The `os.environ` fallback was also cached like an
+answer, so that wrong report lasted until the process restarted.
+
+### Fixed
+
+- **Each attempt has its own 10 seconds.** `env -0` and the plain `env` retry no longer share a
+  budget: a stalled or late-failing first attempt still leaves the retry all of its time. The
+  worst case of one call is two attempts, 20 seconds, as in 0.24.2; a caller with a shorter limit
+  bounds its call itself.
+- **Only a successful capture is cached.** When both attempts fail the call returns
+  `os.environ`, as before, but nothing is kept: the next call asks the shell again. A broken shell
+  costs each call its attempts; a slow one is answered once it answers.
+
 ## 0.24.3 (2026-10-31)
 
 `interactive_env` has one time budget, not one per attempt. It captured the interactive shell's

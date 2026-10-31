@@ -5,14 +5,14 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
-import time
 
-_INTERACTIVE_ENV_BUDGET_S = 10.0
-"""The most time one capture may take, both attempts together.
+_INTERACTIVE_ENV_ATTEMPT_S = 10.0
+"""The most time one attempt may take; each of the two attempts has all of it.
 
-A caller that probes the machine inside a request with its own limit (a host read with a
-25 second cap) needs the capture's worst case to be one number it can subtract, not twice a
-timeout. A shell that hangs for the whole budget is answered once, with ``os.environ``.
+A shell that stalls, or an ``env -0`` that fails late, must not take the plain-``env`` retry's
+time with it: a slow start (a loaded machine, a heavy rc file) is the case the retry is for.
+The worst case of a capture is therefore two attempts, 20 seconds. A caller whose own limit is
+shorter than that bounds its call itself.
 """
 
 _lock = threading.Lock()
@@ -28,23 +28,27 @@ def interactive_env(*, refresh: bool = False) -> dict[str, str]:
 
     Provider CLIs are usually installed by a shell rc file that a
     non-interactive process never sources, so PATH and credentials are read
-    from ``bash -i``. The subprocess is run once per process and cached: it
-    costs hundreds of milliseconds and the answer does not change. Any
-    failure, including running out of the 10s budget, falls back to
-    ``os.environ``. The budget covers both attempts (``env -0``, then ``env``
-    for a shell without it), so the call never takes longer than 10 seconds.
+    from ``bash -i``. A successful capture is run once per process and
+    cached: it costs hundreds of milliseconds and the answer does not change.
+    Each of the two attempts (``env -0``, then ``env`` for a shell without it)
+    has its own 10s, so a call takes at most 20 seconds. Any failure falls
+    back to ``os.environ`` for that call only: a failed capture is never
+    cached, so the next call asks the shell again instead of keeping a
+    machine's PATH out of the answer for the life of the process.
     """
     with _lock:
         cached = _cache.get(_CACHE_KEY)
         if cached is not None and not refresh:
             return dict(cached)
-        probed = _probe()
-        _cache[_CACHE_KEY] = probed
-        return dict(probed)
+        captured = _probe()
+        if captured is None:
+            return os.environ.copy()
+        _cache[_CACHE_KEY] = captured
+        return dict(captured)
 
 
-def _probe() -> dict[str, str]:
-    """Run ``bash -i -c 'env -0'`` once and parse its output into a mapping.
+def _probe() -> dict[str, str] | None:
+    """Run ``bash -i -c 'env -0'`` and parse its output into a mapping, or ``None`` on failure.
 
     ``env -0`` separates entries with NUL, which is the only separator a
     variable's own value cannot contain: a multi-line value (a private key, a
@@ -53,23 +57,16 @@ def _probe() -> dict[str, str]:
     -0`` is a GNU extension, so a shell whose ``env`` does not have it falls
     back to plain ``env`` and the line-based reading.
     """
-    deadline = time.monotonic() + _INTERACTIVE_ENV_BUDGET_S
-    raw = _run_env("env -0", deadline)
+    raw = _run_env("env -0")
     if raw is None:
-        raw = _run_env("env", deadline)
+        raw = _run_env("env")
     if raw is None:
-        return os.environ.copy()
-    return _parse_env(raw) or os.environ.copy()
-
-
-def _run_env(command: str, deadline: float) -> str | None:
-    """Run *command* in an interactive shell before *deadline* (a ``time.monotonic`` reading).
-
-    ``None`` if it did not work, or if the budget was already spent on the attempt before.
-    """
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
         return None
+    return _parse_env(raw) or None
+
+
+def _run_env(command: str) -> str | None:
+    """Run *command* in an interactive shell, or ``None`` if it did not work in its time."""
     try:
         # start_new_session detaches from the TTY so `bash -i` setting its
         # process group cannot stop us with SIGTTOU/SIGTTIN.
@@ -80,7 +77,7 @@ def _run_env(command: str, deadline: float) -> str | None:
             text=True,
             check=False,
             start_new_session=True,
-            timeout=remaining,
+            timeout=_INTERACTIVE_ENV_ATTEMPT_S,
         )
     except (OSError, subprocess.SubprocessError):
         return None

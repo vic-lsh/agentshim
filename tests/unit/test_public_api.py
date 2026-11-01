@@ -26,7 +26,7 @@ def test_testing_module_exports() -> None:
 
 
 def test_version_is_reported() -> None:
-    assert agentshim.__version__ == "0.24.4"
+    assert agentshim.__version__ == "0.25.0"
 
 
 def test_core_and_execution_do_not_import_providers_at_module_level() -> None:
@@ -328,3 +328,28 @@ def test_recorded_cost_functions_take_a_model_pricing_and_estimates_take_rates()
     assert "PricingTable" in str(hints["price_for"])
     assert "RateTable" not in str(hints["price_for"])
     assert hints["price_tokens"] in ("Rates", agentshim.Rates)
+
+
+def test_the_limits_surface_is_exported() -> None:
+    for name in (
+        "AccountLimits",
+        "LimitWindow",
+        "LimitsReader",
+        "LimitsSession",
+        "LimitsSource",
+        "LimitsUnavailable",
+        "LimitsUnavailableReason",
+        "ResetCredit",
+        "ResetCreditResult",
+        "ResetCredits",
+        "ResetOutcome",
+        "WindowKind",
+        "account_digest",
+        "limit_providers",
+        "limit_window",
+        "read_limits",
+        "use_reset_credit",
+    ):
+        assert name in agentshim.__all__, name
+    for name in ("CodexAccount", "CodexWindow", "claude_account", "claude_usage"):
+        assert name in agentshim.testing.__all__, name

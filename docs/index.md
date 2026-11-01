@@ -19,6 +19,8 @@ to retire a conversation, how to sandbox the host, or how to render events.
   [Usage and Pricing](pricing.md)), usage by model, list-price estimates
   from LiteLLM's rates, and usage read from the CLIs' own session files (see
   [Usage Outside agentshim](transcripts.md))
+- an account's plan limits on request, with no model call: windows, share used, refill
+  times and reset credits for Claude and Codex (see [Account Limits](limits.md))
 - declared capabilities on `ProviderProfile`, so no caller probes a provider
   for attributes
 - injectable `CommandExecutor`s for running the CLI in a container or over a

@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.25.0 (2026-10-31)
+
+Account limits on request. A caller can ask Claude Code or Codex what an account's plan limits are
+right now (windows, share used, refill times, reset credits) without running a turn or a model,
+and can spend a Codex reset credit through a call a read cannot reach. Both wires were verified
+against real CLIs: Claude Code 2.1.304 and 2.1.316, codex-cli 0.160.0. See `docs/limits.md`.
+
+### Added
+
+- **`read_limits(provider)`** returns `AccountLimits`: `LimitWindow`s with a stable `id`, a
+  `kind` (`session`, `weekly`, `monthly`, `other`), a label, `used_fraction`, `resets_at` and
+  `window_minutes`; the plan, a digest of the account (never an email or an id), the usage URL and
+  the reset credits. It never raises for a CLI problem: an answer with `unavailable`
+  (`unsupported`, `api_key`, `probe_failed`) and no windows says why. It takes the arguments
+  `probe_provider` takes, so it runs where a turn would run.
+- **`limit_window(provider, status)`** turns a turn's `RateLimitStatus` into the window a read
+  returns for it, so readings from turns and from reads merge by `id`.
+- **`use_reset_credit(provider, idempotency_key=..., credit_id=None)`** spends one Codex reset
+  credit and reads again. A separate function behind an idempotency key; unknown outcomes raise
+  instead of guessing.
+- **`LimitsReader` and `LimitsSource`**, the plugin contract, and `agentshim.testing` fakes:
+  `claude_account`, `claude_usage` and the stateful `CodexAccount`, which plug into
+  `ClaudeStreamPeers` and `CodexScript`.
+- The Codex protocol allowlist gains `account/rateLimits/read` and
+  `account/rateLimitResetCredit/consume`; the generator accepts a request whose params are
+  optional.
+
 ## 0.24.4 (2026-10-31)
 
 `interactive_env` gives each attempt its own time again, and no longer keeps a failed capture.

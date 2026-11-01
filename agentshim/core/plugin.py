@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .conversation import Transport, TransportKind
     from .errors import FailureKind
     from .ids import IdAllocator
+    from .limits import LimitsReader
     from .models import ModelSpec, ModelTable
     from .pricing import ModelPricing, PricingTable
     from .profile import ProviderProfile
@@ -208,4 +209,16 @@ class TranscriptSource(Protocol):
 
     def transcripts(self) -> TranscriptFormat | None:
         """The format of this provider's session files, or ``None`` if it has none readable."""
+        ...
+
+
+@runtime_checkable
+class LimitsSource(Protocol):
+    """Optional: a plugin whose CLI can say what its account's plan limits are.
+
+    A plugin without it, or answering ``None``, has no readable limits.
+    """
+
+    def limits_reader(self) -> LimitsReader | None:
+        """This provider's limits reader, or ``None`` if it has none."""
         ...

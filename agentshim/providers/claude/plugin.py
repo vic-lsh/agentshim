@@ -5,6 +5,7 @@ from __future__ import annotations
 from agentshim.core.plugin import ProviderTestSupport
 from agentshim.providers.static_plugin import StaticProviderPlugin
 
+from .limits import ClaudeLimitsReader
 from .model_data import MODEL_ENTRIES, PRICING_ENTRIES, RATES, UNPRICEABLE_MODELS
 from .probe import PROBE
 from .provider import PROFILE, ClaudeProvider
@@ -25,6 +26,7 @@ PLUGIN = StaticProviderPlugin(
     rates=RATES,
     unpriceable_models=UNPRICEABLE_MODELS,
     transcript_format=TRANSCRIPTS,
+    limits=ClaudeLimitsReader(),
     stream_factory=ClaudeStreamTransport,
     testing=ProviderTestSupport(
         scripted_lines=scripted_lines,

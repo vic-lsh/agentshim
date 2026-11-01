@@ -6,6 +6,7 @@ from agentshim.core.plugin import ProviderTestSupport
 from agentshim.providers.static_plugin import StaticProviderPlugin
 
 from .app_server import CodexAppServerTransport
+from .limits import CodexLimitsReader
 from .model_data import MODEL_ENTRIES, PRICING_ENTRIES, RATES
 from .probe import PROBE
 from .provider import PROFILE, CodexProvider
@@ -24,6 +25,7 @@ PLUGIN = StaticProviderPlugin(
     pricing_entries=PRICING_ENTRIES,
     rates=RATES,
     transcript_format=TRANSCRIPTS,
+    limits=CodexLimitsReader(),
     stream_factory=CodexAppServerTransport,
     testing=ProviderTestSupport(
         scripted_lines=scripted_lines,

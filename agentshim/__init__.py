@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from .agent import AgentSession, CliAgent
 from .core import (
+    AccountLimits,
     AgentEvent,
     AgentEventHandler,
     AgentShimError,
@@ -55,6 +56,12 @@ from .core import (
     IdAllocator,
     InMemoryCheckpointStore,
     Lifecycle,
+    LimitsReader,
+    LimitsSession,
+    LimitsSource,
+    LimitsUnavailable,
+    LimitsUnavailableReason,
+    LimitWindow,
     LoginSpec,
     McpConfigError,
     McpInstallation,
@@ -93,6 +100,10 @@ from .core import (
     ReapError,
     Reasoning,
     RenewalBudget,
+    ResetCredit,
+    ResetCreditResult,
+    ResetCredits,
+    ResetOutcome,
     RetryPolicy,
     RunFinished,
     RunStarted,
@@ -141,6 +152,8 @@ from .core import (
     TurnTimeoutError,
     UsageReport,
     UsageSpeed,
+    WindowKind,
+    account_digest,
     cache_savings_usd,
     compact_json,
     compose_event_handlers,
@@ -180,6 +193,7 @@ from .execution import (
     TransformingExecutor,
     confine,
 )
+from .limits import limit_providers, limit_window, read_limits, use_reset_credit
 from .models import ModelSpec, ModelTable, context_window, default_models, model_spec
 from .oneshot import OneShotTransport
 from .pricing import ModelPricing, PricingTable, cost_usd, default_pricing, price_for
@@ -226,9 +240,10 @@ from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 from .transcripts import read_transcript_usage, transcript_providers, transcript_roots
 
-__version__ = "0.24.4"
+__version__ = "0.25.0"
 
 __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
+    "AccountLimits",
     "Agent",
     "AgentEvent",
     "AgentEventHandler",
@@ -300,6 +315,12 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "InMemoryCheckpointStore",
     "LITELLM_ENDPOINTS",
     "Lifecycle",
+    "LimitWindow",
+    "LimitsReader",
+    "LimitsSession",
+    "LimitsSource",
+    "LimitsUnavailable",
+    "LimitsUnavailableReason",
     "LoginSpec",
     "McpConfigError",
     "McpInstallation",
@@ -360,6 +381,10 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "ReapError",
     "Reasoning",
     "RenewalBudget",
+    "ResetCredit",
+    "ResetCreditResult",
+    "ResetCredits",
+    "ResetOutcome",
     "RetryPolicy",
     "RunFinished",
     "RunStarted",
@@ -416,7 +441,9 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "TurnTimeoutError",
     "UsageReport",
     "UsageSpeed",
+    "WindowKind",
     "__version__",
+    "account_digest",
     "bundled_rates",
     "cache_savings_usd",
     "compact_json",
@@ -431,6 +458,8 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "host_auth_plan",
     "install_config_file",
     "interactive_env",
+    "limit_providers",
+    "limit_window",
     "map_mcp_servers",
     "materialize",
     "merge_model_usage",
@@ -447,6 +476,7 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "probe_provider",
     "provider_names",
     "rates_for",
+    "read_limits",
     "read_rates",
     "read_transcript_usage",
     "refresh_rates",
@@ -454,4 +484,5 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "stream_provider_names",
     "transcript_providers",
     "transcript_roots",
+    "use_reset_credit",
 ]

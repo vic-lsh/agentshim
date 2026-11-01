@@ -842,6 +842,62 @@
    ],
    "type": "string"
   },
+  "ConsumeAccountRateLimitResetCreditOutcome": {
+   "oneOf": [
+    {
+     "enum": [
+      "reset"
+     ],
+     "type": "string"
+    },
+    {
+     "enum": [
+      "nothingToReset"
+     ],
+     "type": "string"
+    },
+    {
+     "enum": [
+      "noCredit"
+     ],
+     "type": "string"
+    },
+    {
+     "enum": [
+      "alreadyRedeemed"
+     ],
+     "type": "string"
+    }
+   ]
+  },
+  "ConsumeAccountRateLimitResetCreditParams": {
+   "properties": {
+    "creditId": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "idempotencyKey": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "idempotencyKey"
+   ],
+   "type": "object"
+  },
+  "ConsumeAccountRateLimitResetCreditResponse": {
+   "properties": {
+    "outcome": {
+     "$ref": "#/definitions/ConsumeAccountRateLimitResetCreditOutcome"
+    }
+   },
+   "required": [
+    "outcome"
+   ],
+   "type": "object"
+  },
   "CreditsSnapshot": {
    "properties": {
     "balance": {
@@ -1525,6 +1581,64 @@
      "type": "object"
     }
    ]
+  },
+  "GetAccountRateLimitsParams": {
+   "properties": {
+    "excludeResetCreditDetails": {
+     "type": "boolean"
+    },
+    "supportsLunaReserve": {
+     "type": "boolean"
+    }
+   },
+   "type": "object"
+  },
+  "GetAccountRateLimitsResponse": {
+   "properties": {
+    "accountId": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "ordinaryUsageAllowed": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "rateLimitResetCredits": {
+     "anyOf": [
+      {
+       "$ref": "#/definitions/RateLimitResetCreditsSummary"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "rateLimitUpsell": {},
+    "rateLimits": {
+     "allOf": [
+      {
+       "$ref": "#/definitions/RateLimitSnapshot"
+      }
+     ]
+    },
+    "rateLimitsByLimitId": {
+     "additionalProperties": {
+      "$ref": "#/definitions/RateLimitSnapshot"
+     },
+     "type": [
+      "object",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "rateLimits"
+   ],
+   "type": "object"
   },
   "GitInfo": {
    "properties": {
@@ -2479,6 +2593,83 @@
     "workspace_member_credits_depleted",
     "workspace_owner_usage_limit_reached",
     "workspace_member_usage_limit_reached"
+   ],
+   "type": "string"
+  },
+  "RateLimitResetCredit": {
+   "properties": {
+    "description": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "expiresAt": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "grantedAt": {
+     "type": "integer"
+    },
+    "id": {
+     "type": "string"
+    },
+    "resetType": {
+     "$ref": "#/definitions/RateLimitResetType"
+    },
+    "status": {
+     "$ref": "#/definitions/RateLimitResetCreditStatus"
+    },
+    "title": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "grantedAt",
+    "id",
+    "resetType",
+    "status"
+   ],
+   "type": "object"
+  },
+  "RateLimitResetCreditStatus": {
+   "enum": [
+    "available",
+    "redeeming",
+    "redeemed",
+    "unknown"
+   ],
+   "type": "string"
+  },
+  "RateLimitResetCreditsSummary": {
+   "properties": {
+    "availableCount": {
+     "type": "integer"
+    },
+    "credits": {
+     "items": {
+      "$ref": "#/definitions/RateLimitResetCredit"
+     },
+     "type": [
+      "array",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "availableCount"
+   ],
+   "type": "object"
+  },
+  "RateLimitResetType": {
+   "enum": [
+    "codexRateLimits",
+    "unknown"
    ],
    "type": "string"
   },
@@ -5592,6 +5783,16 @@
     "method": "turn/interrupt",
     "params": "TurnInterruptParams",
     "result": "TurnInterruptResponse"
+   },
+   {
+    "method": "account/rateLimits/read",
+    "params": "GetAccountRateLimitsParams",
+    "result": "GetAccountRateLimitsResponse"
+   },
+   {
+    "method": "account/rateLimitResetCredit/consume",
+    "params": "ConsumeAccountRateLimitResetCreditParams",
+    "result": "ConsumeAccountRateLimitResetCreditResponse"
    }
   ],
   "opaque": [

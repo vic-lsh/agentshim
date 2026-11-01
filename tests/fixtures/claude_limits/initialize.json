@@ -1,0 +1,12 @@
+{
+  "subtype": "success",
+  "request_id": "init-1",
+  "response": {
+    "account": {
+      "email": "person@example.com",
+      "subscriptionType": "Claude Team",
+      "apiProvider": "firstParty"
+    },
+    "claude_code_version": "2.1.316"
+  }
+}

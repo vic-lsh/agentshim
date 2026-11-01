@@ -19,6 +19,7 @@ sends it first.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import json
 import math
@@ -29,6 +30,7 @@ from agentshim.core.errors import (
     AgentShimError,
     CliExitError,
     FailureKind,
+    ProcessClosedError,
     ProviderCapabilityError,
     TurnFailedError,
     TurnTimeoutError,
@@ -282,7 +284,9 @@ class _Conversation:
     def request(self, request_id: str, request: Mapping[str, Any]) -> Mapping[str, Any]:
         """Send *request* and return the ``response`` body of its success reply."""
         line = {"type": "control_request", "request_id": request_id, "request": dict(request)}
-        self._process.write(json.dumps(line, separators=(",", ":")) + "\n")
+        # A closed pipe is explained by what the process wrote before it died: read on.
+        with contextlib.suppress(ProcessClosedError):
+            self._process.write(json.dumps(line, separators=(",", ":")) + "\n")
         subtype = request["subtype"]
         while True:
             item = self._process.next_output(0.0)

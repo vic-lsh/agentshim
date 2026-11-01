@@ -1,0 +1,112 @@
+{
+  "subtype": "success",
+  "request_id": "usage-1",
+  "response": {
+    "session": {
+      "total_cost_usd": 0,
+      "total_api_duration_ms": 0,
+      "total_duration_ms": 812,
+      "total_lines_added": 0,
+      "total_lines_removed": 0,
+      "model_usage": {}
+    },
+    "subscription_type": "team",
+    "rate_limits_available": true,
+    "rate_limits": {
+      "five_hour": {
+        "utilization": 10,
+        "resets_at": "2026-11-01T05:29:59.527557+00:00",
+        "limit_dollars": null,
+        "used_dollars": null,
+        "remaining_dollars": null,
+        "locked_reason": null
+      },
+      "seven_day": {
+        "utilization": 36,
+        "resets_at": "2026-11-01T17:59:59.527577+00:00",
+        "limit_dollars": null,
+        "used_dollars": null,
+        "remaining_dollars": null,
+        "locked_reason": null
+      },
+      "seven_day_oauth_apps": null,
+      "seven_day_opus": null,
+      "seven_day_sonnet": null,
+      "extra_usage": {
+        "is_enabled": false,
+        "monthly_limit": null,
+        "used_credits": null,
+        "utilization": null,
+        "currency": null,
+        "disabled_reason": null,
+        "decimal_places": null,
+        "user_disabled": true,
+        "spend_limit_reached": false,
+        "credits_ever_enabled": true,
+        "daily": null,
+        "weekly": null
+      },
+      "limits": [
+        {
+          "kind": "session",
+          "group": "session",
+          "percent": 10,
+          "resets_at": "2026-11-01T05:29:59.527557+00:00",
+          "severity": "normal",
+          "is_active": false,
+          "scope": null
+        },
+        {
+          "kind": "weekly_all",
+          "group": "weekly",
+          "percent": 36,
+          "resets_at": "2026-11-01T17:59:59.527577+00:00",
+          "severity": "normal",
+          "is_active": true,
+          "scope": null
+        },
+        {
+          "kind": "weekly_scoped",
+          "group": "weekly",
+          "percent": 0,
+          "resets_at": "2026-11-01T18:00:00+00:00",
+          "severity": "normal",
+          "is_active": false,
+          "scope": {
+            "model": {
+              "display_name": "Fable",
+              "id": null
+            },
+            "surface": null
+          }
+        }
+      ],
+      "spend": {
+        "used": {
+          "amount_minor": 0,
+          "currency": "USD",
+          "exponent": 2
+        },
+        "limit": null,
+        "percent": 0,
+        "severity": "normal",
+        "enabled": false,
+        "disabled_reason": null,
+        "cap": null,
+        "balance": null,
+        "auto_reload": null,
+        "disclaimer": "Usage credits cover you when you hit your plan limits. [Learn more](https://support.claude.com/articles/12429409)",
+        "can_purchase_credits": false,
+        "can_toggle": false
+      },
+      "model_scoped": [
+        {
+          "display_name": "Fable",
+          "utilization": 0,
+          "resets_at": "2026-11-01T18:00:00+00:00"
+        }
+      ]
+    },
+    "behaviors": null
+  }
+}

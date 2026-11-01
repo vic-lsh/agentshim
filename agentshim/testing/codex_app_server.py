@@ -40,6 +40,8 @@ from agentshim.providers.codex.app_server import (
     parse_client_message,
 )
 from agentshim.providers.codex.app_server.protocol import (
+    ConsumeAccountRateLimitResetCreditParams,
+    GetAccountRateLimitsParams,
     ThreadResumeParams,
     ThreadStartParams,
     TurnInterruptParams,
@@ -54,6 +56,7 @@ if TYPE_CHECKING:
 
     from agentshim.execution.process import SpawnRequest
     from agentshim.providers.codex.app_server.protocol import ClientMessage
+    from agentshim.testing.limits import CodexAccount
     from agentshim.testing.process import PeerOutput
 
 _CONTEXT_WINDOW = 258_400
@@ -292,12 +295,17 @@ class CodexScript:
         exits_at_end_of_input: bool = True,
         steer_refusal: str | None = None,
         service_tier: str | None = None,
+        account: CodexAccount | None = None,
     ) -> None:
         """Start with no queued turns, no threads and nothing received.
 
         *service_tier* is the tier the server reports when it starts or
-        resumes a thread (``"priority"`` bills at the fast rate).
+        resumes a thread (``"priority"`` bills at the fast rate). *account* is
+        the plan behind the server: its limits and reset credits, answered by
+        ``account/rateLimits/read`` and ``account/rateLimitResetCredit/consume``
+        (see ``agentshim.testing.limits``); without it both are unsupported.
         """
+        self.account = account
         self.model = model
         self.service_tier = service_tier
         self.inherited_sandbox = inherited_sandbox
@@ -498,8 +506,31 @@ class CodexAppServerPeer:
             self._interrupt(request.id, params, out)
         elif isinstance(params, TurnSteerParams):
             self._steer(request.id, params, out)
+        elif isinstance(
+            params, (GetAccountRateLimitsParams, ConsumeAccountRateLimitResetCreditParams)
+        ):
+            self._account(request.id, params, out)
         else:
             self._error(out, request.id, _METHOD_NOT_FOUND, f"unsupported {params.METHOD}")
+
+    def _account(
+        self,
+        request_id: object,
+        params: GetAccountRateLimitsParams | ConsumeAccountRateLimitResetCreditParams,
+        out: list[PeerOutput],
+    ) -> None:
+        """Answer the account's limits and reset credits from ``script.account``."""
+        account = self._script.account
+        if account is None:
+            self._error(out, request_id, _METHOD_NOT_FOUND, f"unsupported {params.METHOD}")
+        elif isinstance(params, ConsumeAccountRateLimitResetCreditParams):
+            outcome = account.consume(params.idempotency_key, params.credit_id)
+            self._result(out, request_id, {"outcome": outcome})
+        elif account.read_error is not None:
+            self._error(out, request_id, _INVALID_REQUEST, account.read_error)
+        else:
+            details = not params.exclude_reset_credit_details
+            self._result(out, request_id, account.rate_limits(credit_details=details))
 
     def _on_reply(
         self, message: Response | ErrorResponse, raw: object, out: list[PeerOutput]

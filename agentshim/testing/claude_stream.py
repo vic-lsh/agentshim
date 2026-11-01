@@ -110,19 +110,26 @@ class ClaudeStreamPeers:
     frame offers (``None`` offers no list).
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - each argument is an independent documented option
         self,
         script: Sequence[ClaudePeerTurn] = (),
         *,
         known_sessions: Collection[str] = (),
         skills: Sequence[str] | None = None,
         drops_queued_messages: bool = False,
+        account: Mapping[str, Any] | None = None,
+        usage: Mapping[str, Any] | None = None,
     ) -> None:
         """Bind the script and the conversations that already exist.
 
         With *drops_queued_messages* the CLI forgets a message that arrived
         mid-turn and was not folded in, instead of running it afterwards.
+        *account* is the ``account`` object ``initialize`` reports and *usage* the
+        ``response`` of a ``get_usage`` request (see ``agentshim.testing.limits``);
+        without *usage* the CLI refuses ``get_usage`` as an unsupported request.
         """
+        self.account = None if account is None else dict(account)
+        self.usage = None if usage is None else dict(usage)
         self.drops_queued_messages = drops_queued_messages
         self._script = list(script)
         self.known_sessions: set[str] = set(known_sessions)
@@ -225,7 +232,12 @@ class ClaudeStreamPeer:
         request_id = message.get("request_id")
         subtype = _obj(message.get("request")).get("subtype")
         if subtype == "initialize":
-            return [_stdout(_ok(request_id, {"pid": 1, "session_state": "idle"}))]
+            body: dict[str, Any] = {"pid": 1, "session_state": "idle"}
+            if self._world.account is not None:
+                body["account"] = self._world.account
+            return [_stdout(_ok(request_id, body))]
+        if subtype == "get_usage" and self._world.usage is not None:
+            return [_stdout(_ok(request_id, self._world.usage))]
         if subtype == "interrupt":
             reply = _stdout(_ok(request_id, {"still_queued": []}))
             if self._turn is not None and self._turn.ignores_interrupt:

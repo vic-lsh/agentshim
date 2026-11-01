@@ -86,6 +86,20 @@ from .events import (
 )
 from .home import prepare_config_home
 from .ids import IdAllocator, RandomIds
+from .limits import (
+    AccountLimits,
+    LimitsReader,
+    LimitsSession,
+    LimitsUnavailable,
+    LimitsUnavailableReason,
+    LimitWindow,
+    ResetCredit,
+    ResetCreditResult,
+    ResetCredits,
+    ResetOutcome,
+    WindowKind,
+    account_digest,
+)
 from .mcp import (
     ConfigFileInstallation,
     FlagsInstallation,
@@ -100,6 +114,7 @@ from .models import ModelSpec, ModelTable
 from .permissions import ApprovalPolicy, NativeMode, NativePermissions
 from .plugin import (
     ConnectionOptions,
+    LimitsSource,
     PricingContext,
     ProviderPlugin,
     ProviderTestSupport,
@@ -166,6 +181,7 @@ from .usage import (
 )
 
 __all__ = [
+    "AccountLimits",
     "AgentEvent",
     "AgentEventHandler",
     "AgentShimError",
@@ -213,6 +229,12 @@ __all__ = [
     "IdAllocator",
     "InMemoryCheckpointStore",
     "Lifecycle",
+    "LimitWindow",
+    "LimitsReader",
+    "LimitsSession",
+    "LimitsSource",
+    "LimitsUnavailable",
+    "LimitsUnavailableReason",
     "LoginSpec",
     "McpConfigError",
     "McpInstallation",
@@ -257,6 +279,10 @@ __all__ = [
     "ReapError",
     "Reasoning",
     "RenewalBudget",
+    "ResetCredit",
+    "ResetCreditResult",
+    "ResetCredits",
+    "ResetOutcome",
     "RetryPolicy",
     "RunFinished",
     "RunStarted",
@@ -305,6 +331,8 @@ __all__ = [
     "TurnTimeoutError",
     "UsageReport",
     "UsageSpeed",
+    "WindowKind",
+    "account_digest",
     "cache_savings_usd",
     "compact_json",
     "compose_event_handlers",

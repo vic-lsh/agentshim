@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
     from agentshim.core.conversation import Transport
+    from agentshim.core.limits import LimitsReader
     from agentshim.core.models import ModelSpec
     from agentshim.core.plugin import (
         ConnectionOptions,
@@ -57,6 +58,8 @@ class StaticProviderPlugin:
     unpriceable_models: frozenset[str] = frozenset()
     #: How to read this CLI's own session files for usage, when agentshim can.
     transcript_format: TranscriptFormat | None = None
+    #: How to read this CLI's account limits on request, when it can say.
+    limits: LimitsReader | None = None
 
     def __post_init__(self) -> None:
         """Reject inconsistent identity and an adapter with no connection mode."""
@@ -179,6 +182,10 @@ class StaticProviderPlugin:
     def transcripts(self) -> TranscriptFormat | None:
         """Return the format of this CLI's session files, if agentshim reads them."""
         return self.transcript_format
+
+    def limits_reader(self) -> LimitsReader | None:
+        """Return this CLI's account limits reader, if it has one."""
+        return self.limits
 
     def test_support(self) -> ProviderTestSupport | None:
         """Return this provider's test adapters, if any."""

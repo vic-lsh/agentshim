@@ -242,7 +242,7 @@ from .transcripts import read_transcript_usage, transcript_providers, transcript
 
 __version__ = "0.25.0"
 
-__all__ = [
+__all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "AccountLimits",
     "Agent",
     "AgentEvent",

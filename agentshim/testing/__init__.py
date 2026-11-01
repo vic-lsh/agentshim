@@ -402,6 +402,7 @@ def installed_mcp_servers(
 
 
 __all__ = [
+    "DEFAULT_SPEND",
     "Ask",
     "AskKind",
     "AwaitSteer",
@@ -420,7 +421,6 @@ __all__ = [
     "CodexWindow",
     "Complain",
     "Crash",
-    "DEFAULT_SPEND",
     "EchoPeer",
     "Fail",
     "FakeCheckpointStore",

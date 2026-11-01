@@ -1700,6 +1700,67 @@ class CommandExecutionStatus(str, Enum):
         return decode_enum_tolerant(cls, value, path)
 
 
+class ConsumeAccountRateLimitResetCreditOutcome(str, Enum):
+    """Codex wire enum ``ConsumeAccountRateLimitResetCreditOutcome``."""
+
+    RESET = 'reset'
+    NOTHING_TO_RESET = 'nothingToReset'
+    NO_CREDIT = 'noCredit'
+    ALREADY_REDEEMED = 'alreadyRedeemed'
+
+    @classmethod
+    def from_wire(cls, value: object, path: str = "ConsumeAccountRateLimitResetCreditOutcome") -> ConsumeAccountRateLimitResetCreditOutcome | str:
+        """Decode a wire string."""
+        return decode_enum_tolerant(cls, value, path)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ConsumeAccountRateLimitResetCreditParams:
+    """Codex wire type ``ConsumeAccountRateLimitResetCreditParams``."""
+
+    METHOD: ClassVar[str] = 'account/rateLimitResetCredit/consume'
+
+    credit_id: str | None = None
+    idempotency_key: str
+
+    @classmethod
+    def from_wire(cls, value: object, path: str = "ConsumeAccountRateLimitResetCreditParams") -> ConsumeAccountRateLimitResetCreditParams:
+        """Decode the wire object; extra keys are ignored, a missing or ill-typed field raises."""
+        obj = as_object(value, path)
+        return cls(
+            credit_id=optional(obj, "creditId", path, decode_str),
+            idempotency_key=required(obj, "idempotencyKey", path, decode_str),
+        )
+
+    def to_wire(self) -> dict[str, JsonValue]:
+        """Encode as the JSON object the server expects."""
+        return fields_to_wire({'idempotencyKey': self.idempotency_key}, {'creditId': self.credit_id})
+
+    @staticmethod
+    def parse_result(result: object) -> ConsumeAccountRateLimitResetCreditResponse:
+        """Decode the response to this request."""
+        return ConsumeAccountRateLimitResetCreditResponse.from_wire(result)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ConsumeAccountRateLimitResetCreditResponse:
+    """Codex wire type ``ConsumeAccountRateLimitResetCreditResponse``."""
+
+    outcome: ConsumeAccountRateLimitResetCreditOutcome | str
+
+    @classmethod
+    def from_wire(cls, value: object, path: str = "ConsumeAccountRateLimitResetCreditResponse") -> ConsumeAccountRateLimitResetCreditResponse:
+        """Decode the wire object; extra keys are ignored, a missing or ill-typed field raises."""
+        obj = as_object(value, path)
+        return cls(
+            outcome=required(obj, "outcome", path, ConsumeAccountRateLimitResetCreditOutcome.from_wire),
+        )
+
+    def to_wire(self) -> dict[str, JsonValue]:
+        """Encode as the JSON object the server expects."""
+        return fields_to_wire({'outcome': self.outcome}, {})
+
+
 @dataclass(frozen=True, kw_only=True)
 class DynamicToolCallOutputContentItemInputText:
     """Codex wire type ``DynamicToolCallOutputContentItemInputText``."""
@@ -2387,6 +2448,141 @@ def function_call_output_content_item_from_wire(value: object, path: str = "Func
 
 
 FunctionCallOutputBody = str | tuple[FunctionCallOutputContentItem, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class GetAccountRateLimitsParams:
+    """Codex wire type ``GetAccountRateLimitsParams``."""
+
+    METHOD: ClassVar[str] = 'account/rateLimits/read'
+
+    exclude_reset_credit_details: bool | None = None
+    supports_luna_reserve: bool | None = None
+
+    @classmethod
+    def from_wire(cls, value: object, path: str = "GetAccountRateLimitsParams") -> GetAccountRateLimitsParams:
+        """Decode the wire object; extra keys are ignored, a missing or ill-typed field raises."""
+        obj = as_object(value, path)
+        return cls(
+            exclude_reset_credit_details=optional(obj, "excludeResetCreditDetails", path, decode_bool),
+            supports_luna_reserve=optional(obj, "supportsLunaReserve", path, decode_bool),
+        )
+
+    def to_wire(self) -> dict[str, JsonValue]:
+        """Encode as the JSON object the server expects."""
+        return fields_to_wire({}, {'excludeResetCreditDetails': self.exclude_reset_credit_details, 'supportsLunaReserve': self.supports_luna_reserve})
+
+    @staticmethod
+    def parse_result(result: object) -> GetAccountRateLimitsResponse:
+        """Decode the response to this request."""
+        return GetAccountRateLimitsResponse.from_wire(result)
+
+
+class RateLimitResetType(str, Enum):
+    """Codex wire enum ``RateLimitResetType``."""
+
+    CODEX_RATE_LIMITS = 'codexRateLimits'
+    UNKNOWN = 'unknown'
+
+    @classmethod
+    def from_wire(cls, value: object, path: str = "RateLimitResetType") -> RateLimitResetType | str:
+        """Decode a wire string."""
+        return decode_enum_tolerant(cls, value, path)
+
+
+class RateLimitResetCreditStatus(str, Enum):
+    """Codex wire enum ``RateLimitResetCreditStatus``."""
+
+    AVAILABLE = 'available'
+    REDEEMING = 'redeeming'
+    REDEEMED = 'redeemed'
+    UNKNOWN = 'unknown'
+
+    @classmethod
+    def from_wire(cls, value: object, path: str = "RateLimitResetCreditStatus") -> RateLimitResetCreditStatus | str:
+        """Decode a wire string."""
+        return decode_enum_tolerant(cls, value, path)
+
+
+@dataclass(frozen=True, kw_only=True)
+class RateLimitResetCredit:
+    """Codex wire type ``RateLimitResetCredit``."""
+
+    description: str | None = None
+    expires_at: int | None = None
+    granted_at: int
+    id: str
+    reset_type: RateLimitResetType | str
+    status: RateLimitResetCreditStatus | str
+    title: str | None = None
+
+    @classmethod
+    def from_wire(cls, value: object, path: str = "RateLimitResetCredit") -> RateLimitResetCredit:
+        """Decode the wire object; extra keys are ignored, a missing or ill-typed field raises."""
+        obj = as_object(value, path)
+        return cls(
+            description=optional(obj, "description", path, decode_str),
+            expires_at=optional(obj, "expiresAt", path, decode_int),
+            granted_at=required(obj, "grantedAt", path, decode_int),
+            id=required(obj, "id", path, decode_str),
+            reset_type=required(obj, "resetType", path, RateLimitResetType.from_wire),
+            status=required(obj, "status", path, RateLimitResetCreditStatus.from_wire),
+            title=optional(obj, "title", path, decode_str),
+        )
+
+    def to_wire(self) -> dict[str, JsonValue]:
+        """Encode as the JSON object the server expects."""
+        return fields_to_wire({'grantedAt': self.granted_at, 'id': self.id, 'resetType': self.reset_type, 'status': self.status}, {'description': self.description, 'expiresAt': self.expires_at, 'title': self.title})
+
+
+@dataclass(frozen=True, kw_only=True)
+class RateLimitResetCreditsSummary:
+    """Codex wire type ``RateLimitResetCreditsSummary``."""
+
+    available_count: int
+    credits: tuple[RateLimitResetCredit, ...] | None = None
+
+    @classmethod
+    def from_wire(cls, value: object, path: str = "RateLimitResetCreditsSummary") -> RateLimitResetCreditsSummary:
+        """Decode the wire object; extra keys are ignored, a missing or ill-typed field raises."""
+        obj = as_object(value, path)
+        return cls(
+            available_count=required(obj, "availableCount", path, decode_int),
+            credits=optional(obj, "credits", path, tuple_of(RateLimitResetCredit.from_wire)),
+        )
+
+    def to_wire(self) -> dict[str, JsonValue]:
+        """Encode as the JSON object the server expects."""
+        return fields_to_wire({'availableCount': self.available_count}, {'credits': self.credits})
+
+
+@dataclass(frozen=True, kw_only=True)
+class GetAccountRateLimitsResponse:
+    """Codex wire type ``GetAccountRateLimitsResponse``."""
+
+    account_id: str | None = None
+    ordinary_usage_allowed: bool | None = None
+    rate_limit_reset_credits: RateLimitResetCreditsSummary | None = None
+    rate_limit_upsell: JsonValue | None = None
+    rate_limits: RateLimitSnapshot
+    rate_limits_by_limit_id: dict[str, RateLimitSnapshot] | None = None
+
+    @classmethod
+    def from_wire(cls, value: object, path: str = "GetAccountRateLimitsResponse") -> GetAccountRateLimitsResponse:
+        """Decode the wire object; extra keys are ignored, a missing or ill-typed field raises."""
+        obj = as_object(value, path)
+        return cls(
+            account_id=optional(obj, "accountId", path, decode_str),
+            ordinary_usage_allowed=optional(obj, "ordinaryUsageAllowed", path, decode_bool),
+            rate_limit_reset_credits=optional(obj, "rateLimitResetCredits", path, RateLimitResetCreditsSummary.from_wire),
+            rate_limit_upsell=optional(obj, "rateLimitUpsell", path, decode_json),
+            rate_limits=required(obj, "rateLimits", path, RateLimitSnapshot.from_wire),
+            rate_limits_by_limit_id=optional(obj, "rateLimitsByLimitId", path, dict_of(RateLimitSnapshot.from_wire)),
+        )
+
+    def to_wire(self) -> dict[str, JsonValue]:
+        """Encode as the JSON object the server expects."""
+        return fields_to_wire({'rateLimits': self.rate_limits}, {'accountId': self.account_id, 'ordinaryUsageAllowed': self.ordinary_usage_allowed, 'rateLimitResetCredits': self.rate_limit_reset_credits, 'rateLimitUpsell': self.rate_limit_upsell, 'rateLimitsByLimitId': self.rate_limits_by_limit_id})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -5363,7 +5559,7 @@ class UnknownParams:
 NotificationParams = ErrorNotification | WarningNotification | ThreadStartedNotification | ThreadStatusChangedNotification | ThreadTokenUsageUpdatedNotification | TurnStartedNotification | TurnCompletedNotification | ItemStartedNotification | ItemCompletedNotification | AgentMessageDeltaNotification | ReasoningSummaryTextDeltaNotification | ReasoningSummaryPartAddedNotification | ReasoningTextDeltaNotification | CommandExecutionOutputDeltaNotification | McpServerStatusUpdatedNotification | ServerRequestResolvedNotification | AccountRateLimitsUpdatedNotification | UnknownParams
 ServerRequestParams = CommandExecutionRequestApprovalParams | FileChangeRequestApprovalParams | PermissionsRequestApprovalParams | McpServerElicitationRequestParams | ToolRequestUserInputParams | DynamicToolCallParams | ChatgptAuthTokensRefreshParams | AttestationGenerateParams | ApplyPatchApprovalParams | ExecCommandApprovalParams | UnknownParams
 ServerRequestResult = CommandExecutionRequestApprovalResponse | FileChangeRequestApprovalResponse | PermissionsRequestApprovalResponse | McpServerElicitationRequestResponse | ToolRequestUserInputResponse | DynamicToolCallResponse | ChatgptAuthTokensRefreshResponse | AttestationGenerateResponse | ApplyPatchApprovalResponse | ExecCommandApprovalResponse
-ClientRequestParams = InitializeParams | ThreadStartParams | ThreadResumeParams | ThreadUnsubscribeParams | TurnStartParams | TurnSteerParams | TurnInterruptParams
+ClientRequestParams = InitializeParams | ThreadStartParams | ThreadResumeParams | ThreadUnsubscribeParams | TurnStartParams | TurnSteerParams | TurnInterruptParams | GetAccountRateLimitsParams | ConsumeAccountRateLimitResetCreditParams
 
 _NOTIFICATION_PARAMS: dict[str, Decoder[NotificationParams]] = {
     'error': ErrorNotification.from_wire,
@@ -5406,6 +5602,8 @@ _CLIENT_REQUEST_PARAMS: dict[str, Decoder[ClientRequestParams]] = {
     'turn/start': TurnStartParams.from_wire,
     'turn/steer': TurnSteerParams.from_wire,
     'turn/interrupt': TurnInterruptParams.from_wire,
+    'account/rateLimits/read': GetAccountRateLimitsParams.from_wire,
+    'account/rateLimitResetCredit/consume': ConsumeAccountRateLimitResetCreditParams.from_wire,
 }
 
 CLIENT_NOTIFICATION_METHODS: frozenset[str] = frozenset(

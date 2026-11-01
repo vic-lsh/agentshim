@@ -122,6 +122,23 @@ def allowlist_roots(allow: dict[str, Any]) -> list[str]:
     return names
 
 
+def params_ref(params: dict[str, Any]) -> str | None:
+    """The type a message's ``params`` names, whether the params are required or optional.
+
+    A request whose params are optional exports them as ``anyOf`` the type or
+    ``null`` (``account/rateLimits/read``); the client then always sends the
+    type, with every field left out. ``None`` when ``params`` names no single type.
+    """
+    if "$ref" in params:
+        return params["$ref"]
+    alternatives = params.get("anyOf", [])
+    refs = [alt["$ref"] for alt in alternatives if "$ref" in alt]
+    others = [alt for alt in alternatives if "$ref" not in alt]
+    if len(refs) == 1 and all(alt == {"type": "null"} for alt in others):
+        return refs[0]
+    return None
+
+
 def check_messages(bundle: dict[str, Any], allow: dict[str, Any]) -> None:
     """Fail if the export's method table disagrees with the allowlist."""
     tables = {
@@ -132,7 +149,7 @@ def check_messages(bundle: dict[str, Any], allow: dict[str, Any]) -> None:
     problems: list[str] = []
     for section, union in tables.items():
         exported = {
-            v["properties"]["method"]["enum"][0]: v["properties"].get("params", {}).get("$ref")
+            v["properties"]["method"]["enum"][0]: params_ref(v["properties"].get("params", {}))
             for v in bundle["definitions"][union]["oneOf"]
         }
         for entry in allow[section]:

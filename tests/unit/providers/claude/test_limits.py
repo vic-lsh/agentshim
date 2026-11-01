@@ -8,10 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from hypothesis import given
-from hypothesis import strategies as st
-
 from agentshim import (
+    AccountLimits,
     LimitsUnavailableReason,
     ProviderCapabilityError,
     RateLimitStatus,
@@ -21,13 +19,16 @@ from agentshim import (
     read_limits,
     use_reset_credit,
 )
+from agentshim.execution.process import ProcessExited, StderrLine, StdoutLine
 from agentshim.providers.claude.limits import parse_usage
 from agentshim.providers.claude.rate_limits import parse_rate_limit
 from agentshim.testing import FakeExecutor
 from agentshim.testing.claude_stream import ClaudeStreamPeers
 from agentshim.testing.clock import FakeClock
 from agentshim.testing.limits import claude_account, claude_usage
-from agentshim.testing.process import SilentPeer
+from agentshim.testing.process import PeerOutput, SilentPeer
+from hypothesis import given
+from hypothesis import strategies as st
 
 FIXTURES = Path(__file__).parents[3] / "fixtures" / "claude_limits"
 FIVE_HOUR = "2026-11-01T05:30:00+00:00"
@@ -39,9 +40,26 @@ def _fixture(name: str) -> dict[str, Any]:
     return json.loads((FIXTURES / name).read_text())["response"]
 
 
-def _read(peers: ClaudeStreamPeers, **kwargs: Any) -> tuple[Any, FakeExecutor]:
+class _Says:
+    """A CLI that writes *start* the moment it starts and then ignores everything."""
+
+    def __init__(self, *start: PeerOutput) -> None:
+        self._start = list(start)
+
+    def on_start(self) -> list[PeerOutput]:
+        return list(self._start)
+
+    def on_stdin(self, data: str) -> list[PeerOutput]:
+        del data
+        return []
+
+    def on_stdin_closed(self) -> list[PeerOutput]:
+        return []
+
+
+def _read(peers: ClaudeStreamPeers) -> tuple[AccountLimits, FakeExecutor]:
     executor = FakeExecutor([], peers=peers.build)
-    return read_limits("claude", executor=executor, env=ENV, clock=FakeClock(), **kwargs), executor
+    return read_limits("claude", executor=executor, env=ENV, clock=FakeClock()), executor
 
 
 class TestRecordedReply:
@@ -154,7 +172,7 @@ class TestTheRead:
         peers = ClaudeStreamPeers(
             account=claude_account(), usage=claude_usage(five_hour=(39, FIVE_HOUR))
         )
-        limits, executor = _read(peers)
+        limits, _ = _read(peers)
         assert [w.id for w in limits.windows] == ["five_hour"]
         assert limits.unavailable is None
         (peer,) = peers.peers
@@ -216,38 +234,16 @@ class TestTheRead:
         assert executor.spawns == []
 
     def test_a_cli_that_exits_before_answering_is_a_failed_read_with_its_last_words(self) -> None:
-        from agentshim.execution.process import ProcessExited, StderrLine  # noqa: PLC0415
-
-        class Dies:
-            def on_start(self) -> list[Any]:
-                return [StderrLine("not logged in\n"), ProcessExited(1)]
-
-            def on_stdin(self, data: str) -> list[Any]:
-                return []
-
-            def on_stdin_closed(self) -> list[Any]:
-                return []
-
-        executor = FakeExecutor([], peers=lambda _request: Dies())
+        dies = _Says(StderrLine("not logged in\n"), ProcessExited(1))
+        executor = FakeExecutor([], peers=lambda _request: dies)
         limits = read_limits("claude", executor=executor, env=ENV, clock=FakeClock())
         assert limits.unavailable is not None
         assert "not logged in" in limits.unavailable.detail
 
     @pytest.mark.parametrize("frame", ["assistant", "stream_event", "result"])
     def test_any_sign_of_a_model_turn_stops_the_read(self, frame: str) -> None:
-        from agentshim.execution.process import StdoutLine  # noqa: PLC0415
-
-        class Speaks:
-            def on_start(self) -> list[Any]:
-                return [StdoutLine(json.dumps({"type": frame}) + "\n")]
-
-            def on_stdin(self, data: str) -> list[Any]:
-                return []
-
-            def on_stdin_closed(self) -> list[Any]:
-                return []
-
-        executor = FakeExecutor([], peers=lambda _request: Speaks())
+        speaks = _Says(StdoutLine(json.dumps({"type": frame}) + "\n"))
+        executor = FakeExecutor([], peers=lambda _request: speaks)
         limits = read_limits("claude", executor=executor, env=ENV, clock=FakeClock())
         assert limits.unavailable is not None
         assert "model turn" in limits.unavailable.detail

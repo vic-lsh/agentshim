@@ -23,6 +23,7 @@ nav:
   - Providers: providers.md
   - Usage and Pricing: pricing.md
   - Usage Outside agentshim: transcripts.md
+  - Account Limits: limits.md
   - Models: models.md
   - Extending: extending.md
   - API Reference: api.md

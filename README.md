@@ -20,6 +20,8 @@ No required runtime dependencies. Python 3.10+.
   [Usage and Pricing](docs/pricing.md)), usage by model, list-price estimates
   from LiteLLM's rates, and usage read from the CLIs' own session files (see
   [Usage Outside agentshim](docs/transcripts.md))
+- an account's plan limits on request, with no model call: windows, share used, refill
+  times and reset credits for Claude and Codex (see [Account Limits](docs/limits.md))
 - declared capabilities on `ProviderProfile`, so no caller probes a provider
 - injectable `CommandExecutor`s for running the CLI in a container or over a
   remote shell

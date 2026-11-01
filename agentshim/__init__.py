@@ -240,7 +240,7 @@ from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 from .transcripts import read_transcript_usage, transcript_providers, transcript_roots
 
-__version__ = "0.24.4"
+__version__ = "0.25.0"
 
 __all__ = [
     "DEFAULT_CATALOG",

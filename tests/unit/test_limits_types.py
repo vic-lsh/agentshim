@@ -6,9 +6,6 @@ import datetime as dt
 import math
 
 import pytest
-from hypothesis import given
-from hypothesis import strategies as st
-
 from agentshim import (
     AccountLimits,
     LimitsUnavailableReason,
@@ -23,6 +20,8 @@ from agentshim.core.limits import (
     kind_of_minutes,
     label_of_kind,
 )
+from hypothesis import given
+from hypothesis import strategies as st
 
 UTC = dt.timezone.utc
 

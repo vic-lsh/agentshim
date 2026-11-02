@@ -24,9 +24,22 @@ from .provider import (
 )
 from .sandbox import SANDBOX_ENV, build_settings, workspace_write_settings
 
-#: Claude Code's delegation tool, and the name it had before it was renamed. Denying both keeps
-#: the agent from starting subagents of its own on any CLI version.
-SUBAGENT_TOOLS = ("Agent", "Task")
+#: Claude Code's delegation tools: starting a subagent (``Agent``, and ``Task``, its name before
+#: it was renamed), and reaching other Claude Code sessions on the machine or remote ones
+#: (``SendMessage``, ``ListAgents``, ``SendToProject``, ``SendToProjectContext``,
+#: ``RemoteTrigger``, ``Workflow``). A caller that orchestrates agents itself denies them all, so
+#: an agent can neither delegate around it nor talk to sessions that are not part of its run.
+#: Denying a name a CLI version lacks does nothing.
+SUBAGENT_TOOLS = (
+    "Agent",
+    "Task",
+    "SendMessage",
+    "ListAgents",
+    "SendToProject",
+    "SendToProjectContext",
+    "RemoteTrigger",
+    "Workflow",
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

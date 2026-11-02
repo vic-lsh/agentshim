@@ -146,7 +146,9 @@ metadata fields do not take part in equality, so `AssistantText("x", "id", "agen
   provider's pipe, in order, one line without its newline. Recorded frames replay through
   `ClaudeFramePeer`.
 - **`disable_subagents=True`** starts the provider without its own delegation tools: Claude
-  gets `--disallowedTools Agent,Task`; Codex gets `--disable multi_agent`, which the CLI
+  gets `--disallowedTools` for `Agent`, `Task` and the tools that reach other Claude Code
+  sessions (`SendMessage`, `ListAgents`, `SendToProject`, `SendToProjectContext`,
+  `RemoteTrigger`, `Workflow`); Codex gets `--disable multi_agent`, which the CLI
   refuses when the name is unknown, so a rename fails at startup.
 - **`new_conversation_id`** chooses the id of a new conversation (Claude `--session-id`). Codex
   names threads itself and refuses it. `Session.warm()` opens the conversation before the first

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.26.1 (2026-11-02)
+
+### Fixed
+
+- **`disable_subagents=True`** on Claude also denies the tools that reach other Claude Code
+  sessions (`SendMessage`, `ListAgents`, `SendToProject`, `SendToProjectContext`, `RemoteTrigger`,
+  `Workflow`). Before, an agent whose caller orchestrates it could still message unrelated
+  sessions on the machine.
+
 ## 0.26.0 (2026-11-02)
 
 Streaming and observation, for a caller that renders a conversation as it happens. Every change

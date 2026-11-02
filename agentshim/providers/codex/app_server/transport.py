@@ -44,13 +44,15 @@ from agentshim.core.events import (
     SteerConsumed,
     SteerDelivered,
     SteerRejected,
+    TextDelta,
+    TextKind,
     TurnInterrupted,
     UsageReport,
 )
 from agentshim.core.permissions import ApprovalPolicy
 from agentshim.core.schema import dialect_problems
 from agentshim.core.skills import SkillTracker
-from agentshim.core.turn import TurnResult
+from agentshim.core.turn import TurnRequest, TurnResult
 from agentshim.core.usage import CostSource, ModelUsage, UsageSpeed
 from agentshim.execution.host import HostCommandExecutor
 from agentshim.execution.process import SpawnRequest
@@ -68,7 +70,9 @@ from .profile import APP_SERVER_PROFILE
 from .protocol import (
     INITIALIZED,
     AccountRateLimitsUpdatedNotification,
+    AgentMessageDeltaNotification,
     ClientInfo,
+    CommandExecutionOutputDeltaNotification,
     ErrorNotification,
     ErrorResponse,
     InitializeParams,
@@ -78,6 +82,7 @@ from .protocol import (
     McpServerStatusUpdatedNotification,
     Notification,
     ReasoningSummary,
+    ReasoningSummaryTextDeltaNotification,
     Response,
     ServerRequest,
     ThreadItemAgentMessage,
@@ -109,7 +114,6 @@ if TYPE_CHECKING:
     from agentshim.core.ids import IdAllocator
     from agentshim.core.mcp import McpServer
     from agentshim.core.profile import ProviderProfile
-    from agentshim.core.turn import TurnRequest
     from agentshim.core.usage import ProviderUsage
     from agentshim.execution.executor import CommandExecutor
     from agentshim.execution.process import Process
@@ -127,6 +131,9 @@ if TYPE_CHECKING:
         TurnError,
     )
 
+#: The feature flag behind Codex's own delegation tools (``codex features list``). Turned off
+#: with ``--disable``, which refuses an unknown name, so a rename fails loudly at startup.
+SUBAGENT_FEATURE = "multi_agent"
 #: Error code Codex answers a ``thread/resume`` of a thread it does not have.
 _RESUME_REFUSALS = ("no rollout found", "invalid session id", "invalid thread id")
 #: Seconds the server may take to answer the start-up requests.
@@ -241,6 +248,9 @@ class CodexAppServerTransport:
             if scope not in allowed:
                 msg = f"{profile.name} over app-server does not support scope {scope.value!r}"
                 raise ProviderCapabilityError(msg)
+        if spec.new_conversation_id is not None:
+            msg = "codex names a new thread itself, so a conversation id cannot be chosen"
+            raise ProviderCapabilityError(msg)
         config = thread_config(spec.mcp_servers)
         model = spec.model
         return _Settings(
@@ -260,9 +270,11 @@ class CodexAppServerTransport:
         left is the launcher's ``PATH`` for the commands the agent runs and the
         skill and MCP scopes, rendered by the one-shot provider's own helpers.
         """
+        disable = ["--disable", SUBAGENT_FEATURE] if spec.disable_subagents else []
         return [
             self._binary,
             "app-server",
+            *disable,
             *shell_path_config(self._env),
             *scope_overrides(
                 self._env,
@@ -346,13 +358,20 @@ class _Conversation:
         timeouts: _Timeouts,
     ) -> None:
         self._spawn = spawn
-        self._channel = Channel(spawn(), self._emit)
+        self._channel = Channel(spawn(), self._emit, spec.raw_sink)
         self._clock = clock
         self._spec = spec
         self._settings = settings
         self._timeouts = timeouts
         self._items = ItemEvents()
         self._state = threading.Lock()
+        #: Held while ``poll_idle`` reads and while a turn starts, so the two never both read.
+        self._idle_lock = threading.Lock()
+        #: ``poll_idle`` is reading: notifications about the thread outside a turn are reported.
+        self._idling = False
+        self._idle_turn: _Turn | None = None
+        #: The reasoning summary part each streaming item is on, to join parts with a newline.
+        self._summary_part: dict[str, int] = {}
         self._running = False
         self._closed = False
         self._turn_id: str | None = None
@@ -402,6 +421,35 @@ class _Conversation:
             if not self._running or self._closed:
                 return
         self._ask_for_interrupt()
+
+    def poll_idle(self, emit: Callable[[AgentEvent], None]) -> bool:
+        """Report what the server said while no turn runs, without waiting.
+
+        Items, text deltas and token reports about this thread that arrive outside a turn (a
+        goal or a background task waking the agent) reach *emit*, as do the warnings, rate
+        limits and events a turn would have received late. Returns ``False`` once the process
+        has exited, and ``True`` while a turn is running (that turn is the reader).
+        """
+        with self._idle_lock:
+            with self._state:
+                if self._closed:
+                    return False
+                if self._running:
+                    return True
+            self._sink = emit
+            self._idling = True
+            try:
+                deferred, self._deferred = self._deferred, []
+                for event in deferred:
+                    emit(event)
+                while (message := self._channel.poll()) is not None:
+                    self._handle(message, None)
+            except Gone:
+                return False
+            finally:
+                self._idling = False
+                self._sink = None
+            return True
 
     def steer(self, text: str) -> None:
         """Send ``turn/steer`` for the running turn. Thread-safe.
@@ -579,7 +627,7 @@ class _Conversation:
     # -- turns
 
     def _begin(self) -> None:
-        with self._state:
+        with self._idle_lock, self._state:
             if self._closed:
                 msg = "conversation is closed"
                 raise SessionStateError(msg)
@@ -591,6 +639,7 @@ class _Conversation:
             self._interrupt_asked = False
             self._interrupt_sent = False
             self._steer_items.clear()
+            self._summary_part.clear()
 
     def _end(self) -> None:
         self._reject_unanswered_steers()
@@ -655,7 +704,7 @@ class _Conversation:
         self._channel.drain()
         old = self._channel.process
         process = self._spawn()
-        channel = Channel(process, self._emit)
+        channel = Channel(process, self._emit, self._spec.raw_sink)
         with self._state:
             closed = self._closed
             if not closed:
@@ -769,9 +818,100 @@ class _Conversation:
                 self._emit(status)
         elif turn is not None:
             self._on_turn_notification(params, turn)
+        elif self._idling:
+            self._on_idle_notification(params)
+
+    def _on_idle_notification(self, params: object) -> None:
+        """Report a notification about this thread that arrived outside any turn."""
+        turn = self._idle_turn
+        if turn is None:
+            turn = self._idle_turn = _Turn(TurnRequest(prompt=""), self._clock.monotonic())
+        if isinstance(params, TurnStartedNotification):
+            if params.thread_id == self._thread_id:
+                turn.turn_id = params.turn.id
+                self._emit(Lifecycle("turn_started", params.turn.id))
+        elif isinstance(params, (ItemStartedNotification, ItemCompletedNotification)):
+            self._on_item(params, turn, idle=True)
+        elif isinstance(params, ThreadTokenUsageUpdatedNotification):
+            if params.thread_id == self._thread_id:
+                turn.total = totals_of(params.token_usage.total)
+                turn.context_tokens = params.token_usage.last.total_tokens
+        elif isinstance(params, TurnCompletedNotification):
+            self._on_idle_turn_completed(params, turn)
+        elif isinstance(params, ErrorNotification):
+            if params.thread_id == self._thread_id:
+                prefix = "retrying: " if params.will_retry else ""
+                self._emit(ProviderError(prefix + params.error.message))
+        else:
+            self._on_delta(params)
+
+    def _on_idle_turn_completed(self, params: TurnCompletedNotification, turn: _Turn) -> None:
+        if params.thread_id != self._thread_id:
+            return
+        self._idle_turn = None
+        usage = self._usage(turn)
+        self._emit(Lifecycle("turn_completed", f"status={_text(params.turn.status)}"))
+        self._emit(UsageReport(usage, usage.total_cost_usd))
+
+    def _on_delta(self, params: object, turn: _Turn | None = None) -> None:
+        """Report a streamed fragment as a ``TextDelta``, when the conversation asked for them."""
+        if not self._spec.partial_text:
+            return
+        if isinstance(params, AgentMessageDeltaNotification):
+            kind, text, item_id, thread_id, turn_id = (
+                TextKind.ASSISTANT,
+                params.delta,
+                params.item_id,
+                params.thread_id,
+                params.turn_id,
+            )
+        elif isinstance(params, ReasoningSummaryTextDeltaNotification):
+            kind, item_id, thread_id, turn_id = (
+                TextKind.REASONING,
+                params.item_id,
+                params.thread_id,
+                params.turn_id,
+            )
+            text = self._summary_text(params)
+        elif isinstance(params, CommandExecutionOutputDeltaNotification):
+            kind, text, item_id, thread_id, turn_id = (
+                TextKind.TOOL_OUTPUT,
+                params.delta,
+                params.item_id,
+                params.thread_id,
+                params.turn_id,
+            )
+        else:
+            return
+        if thread_id != self._thread_id or not text:
+            return
+        if turn is not None and not self._is_mine(thread_id, turn_id, turn):
+            return
+        self._emit(TextDelta(text, kind, item_id))
+
+    def _summary_text(self, params: ReasoningSummaryTextDeltaNotification) -> str:
+        """The delta, led by a newline when it starts a new part of the item's summary.
+
+        The completed ``Reasoning`` joins the parts with a newline, so a stream that does the same
+        stays a prefix of it.
+        """
+        previous = self._summary_part.get(params.item_id)
+        self._summary_part[params.item_id] = params.summary_index
+        if previous is not None and previous != params.summary_index:
+            return "\n" + params.delta
+        return params.delta
 
     def _on_turn_notification(self, params: object, turn: _Turn) -> None:
-        if isinstance(params, TurnStartedNotification):
+        if isinstance(
+            params,
+            (
+                AgentMessageDeltaNotification,
+                ReasoningSummaryTextDeltaNotification,
+                CommandExecutionOutputDeltaNotification,
+            ),
+        ):
+            self._on_delta(params, turn)
+        elif isinstance(params, TurnStartedNotification):
             self._on_turn_started(params, turn)
         elif isinstance(params, (ItemStartedNotification, ItemCompletedNotification)):
             self._on_item(params, turn)
@@ -796,9 +936,16 @@ class _Conversation:
             self._emit(Lifecycle("turn_started", params.turn.id))
 
     def _on_item(
-        self, params: ItemStartedNotification | ItemCompletedNotification, turn: _Turn
+        self,
+        params: ItemStartedNotification | ItemCompletedNotification,
+        turn: _Turn,
+        *,
+        idle: bool = False,
     ) -> None:
-        if not self._is_mine(params.thread_id, params.turn_id, turn):
+        if idle:
+            if params.thread_id != self._thread_id:
+                return
+        elif not self._is_mine(params.thread_id, params.turn_id, turn):
             return
         now = self._clock.monotonic()
         self._note_steer_item(params.item)

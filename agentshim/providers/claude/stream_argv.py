@@ -24,6 +24,10 @@ from .provider import (
 )
 from .sandbox import SANDBOX_ENV, build_settings, workspace_write_settings
 
+#: Claude Code's delegation tool, and the name it had before it was renamed. Denying both keeps
+#: the agent from starting subagents of its own on any CLI version.
+SUBAGENT_TOOLS = ("Agent", "Task")
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -50,12 +54,14 @@ class ProcessConfig:
     env: tuple[tuple[str, str], ...] = ()
 
 
-def stream_argv(
+# Each argument is an independent part of the command line; a bundle would only rename them.
+def stream_argv(  # noqa: PLR0913
     binary: str,
     spec: ConversationSpec,
     config: ProcessConfig,
     *,
     resume_id: str | None,
+    new_id: str | None = None,
     hooks: Sequence[ClaudeHook] = (),
 ) -> list[str]:
     """Build the argv of a process speaking ``stream-json`` both ways.
@@ -65,6 +71,9 @@ def stream_argv(
     is kept (no ``--system-prompt`` flag). ``--permission-prompts none`` makes
     the CLI deny anything that would ask; the transport still answers any
     permission request that arrives anyway.
+
+    *new_id* names a conversation the CLI has not created yet (``--session-id``); it is ignored
+    when *resume_id* is given.
     """
     argv = [
         binary,
@@ -85,6 +94,13 @@ def stream_argv(
         # The equals form: a value that starts with a dash must not be parsed
         # as another flag.
         argv.append(f"--resume={resume_id}")
+    elif new_id:
+        argv.append(f"--session-id={new_id}")
+    if spec.partial_text:
+        argv.append("--include-partial-messages")
+    if spec.disable_subagents:
+        # Variadic: it must be followed by another flag, and ``_permission_argv`` starts with one.
+        argv += ["--disallowedTools", ",".join(SUBAGENT_TOOLS)]
     argv += _permission_argv(spec)
     if spec.skill_scope is SkillScope.PROJECT or spec.config_scope is ConfigScope.PROJECT:
         argv += PROJECT_SETTING_SOURCES

@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 from agentshim.core.checkpoints import Checkpoint
 from agentshim.core.clock import StopSignal
-from agentshim.core.conversation import SteerableConversation
+from agentshim.core.conversation import IdleConversation, SteerableConversation
 from agentshim.core.errors import (
     AgentShimError,
     ContinuityError,
@@ -55,6 +55,7 @@ from agentshim.core.session_policy import (
     Succeeded,
     Wait,
     WaitDone,
+    Warmed,
     outcome_of,
 )
 
@@ -320,6 +321,54 @@ class Session:
             msg = f"{profile.name} declares steering but its conversation does not provide it"
             raise ProviderCapabilityError(msg)
         conversation.steer(text)
+
+    def warm(self) -> str | None:
+        """Open the conversation now, before any turn, and return the id the provider gave it.
+
+        Returns the id of the conversation that is already live when there is one. A provider
+        that names a conversation only when its first turn runs gives ``None`` (unless the
+        conversation spec chose the id). Raises what ``Transport.open`` raises. The first turn
+        then finds the conversation open and runs in it. Does nothing, returning ``None``, on a
+        closed session or while a turn is prepared or running.
+        """
+        with self._lock:
+            if self._state.closed or self._state.turn is not None:
+                return None
+            if self._conversation is not None:
+                return self._conversation.conversation_id
+            resume_id = self._state.conversation_id
+        conversation = self._transport.open(self._open_spec(resume_id))
+        with self._lock:
+            if self._state.closed or self._state.turn is not None or self._conversation is not None:
+                keep = False
+            else:
+                self._conversation = conversation
+                self._step(Warmed())
+                keep = True
+        if not keep:
+            conversation.close()
+            return self.conversation_id
+        return conversation.conversation_id
+
+    def poll_idle(self, on_event: AgentEventHandler | None = None) -> bool:
+        """Deliver what the provider did since the last call, outside any turn.
+
+        Events go to the agent's handlers and to *on_event*, as in ``run``. Call it regularly
+        while no turn runs: a turn reads the provider itself, and anything the provider says
+        between turns is otherwise held until the next one. Returns ``False`` when the
+        provider's process has ended or the session is closed (the next turn reopens the
+        conversation by its id), ``True`` otherwise, also with nothing to read, while a
+        turn runs, or when the provider reports nothing between turns
+        (``IdleConversation``). Thread-safe.
+        """
+        with self._lock:
+            conversation = self._conversation
+            closed = self._state.closed
+        if closed:
+            return False
+        if conversation is None or not isinstance(conversation, IdleConversation):
+            return True
+        return conversation.poll_idle(self._emitter(on_event))
 
     def release(self) -> None:
         """Close the live conversation but keep its id, so the next turn resumes it."""

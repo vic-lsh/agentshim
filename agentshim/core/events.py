@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -39,32 +40,77 @@ class SessionStarted:
     session_id: str
 
 
+# ``item_id`` and ``agent`` below are metadata about an event, not part of what it says, so they
+# are left out of equality (``compare=False``): two events that say the same thing stay equal
+# whether or not a provider could name the item or the agent behind them.
+
+
 @dataclass(frozen=True)
 class AssistantText:
-    """Assistant-facing message text."""
+    """Assistant-facing message text.
+
+    ``item_id`` names the message and is the same for every event that concerns it (the
+    ``TextDelta`` events that built it and this one that completes it). ``agent`` is ``None`` for
+    the conversation's own agent, and otherwise names the subagent that wrote it.
+    """
 
     text: str
+    item_id: str | None = field(default=None, compare=False)
+    agent: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
 class Reasoning:
-    """Thinking or reasoning text."""
+    """Thinking or reasoning text; ``item_id`` and ``agent`` as on ``AssistantText``."""
 
     text: str
+    item_id: str | None = field(default=None, compare=False)
+    agent: str | None = field(default=None, compare=False)
+
+
+class TextKind(Enum):
+    """Which kind of text a ``TextDelta`` extends."""
+
+    ASSISTANT = "assistant"
+    REASONING = "reasoning"
+    #: Output of a running tool, for a provider that streams it (Codex commands).
+    TOOL_OUTPUT = "tool_output"
+
+
+@dataclass(frozen=True)
+class TextDelta:
+    """The next fragment of a message, of reasoning or of a tool's output, as the provider streams it.
+
+    Emitted only when the conversation was opened with ``partial_text``. Concatenating the deltas
+    of one ``item_id`` in order gives a prefix of the text the later ``AssistantText`` or
+    ``Reasoning`` with that ``item_id`` reports whole (a ``TOOL_OUTPUT`` one, of the output the
+    ``ToolResult`` with that ``tool_id`` reports); a consumer that has the whole text can drop
+    the deltas. ``item_id`` is ``None`` only when the provider gave the fragment no identity.
+    ``agent`` is as on ``AssistantText``.
+    """
+
+    text: str
+    kind: TextKind = TextKind.ASSISTANT
+    item_id: str | None = None
+    agent: str | None = None
 
 
 @dataclass(frozen=True)
 class ToolCall:
-    """A tool was invoked."""
+    """A tool was invoked.
+
+    ``tool_id`` is the item's stable id. ``agent`` is as on ``AssistantText``.
+    """
 
     tool_id: str | None
     tool: str
     args: Mapping[str, Any] | str | None
+    agent: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
 class ToolResult:
-    """A tool finished."""
+    """A tool finished; ``tool_id`` is that of the ``ToolCall`` it completes."""
 
     tool_id: str | None
     tool: str
@@ -72,6 +118,7 @@ class ToolResult:
     stderr: str
     exit_code: int | None
     duration_s: float | None
+    agent: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -239,6 +286,7 @@ AgentEvent = (
     | SessionStarted
     | AssistantText
     | Reasoning
+    | TextDelta
     | ToolCall
     | ToolResult
     | SkillsDiscovered

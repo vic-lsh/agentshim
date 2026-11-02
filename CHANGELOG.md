@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.26.0 (2026-11-02)
+
+Streaming and observation, for a caller that renders a conversation as it happens. Every change
+is additive: without the new options a session emits what it did in 0.25. See `docs/events.md`.
+
+### Added
+
+- **`item_id` and `agent`** on `AssistantText`, `Reasoning`, `ToolCall` and `ToolResult`: a stable
+  item name and, for Claude, the subagent that produced the event. Neither takes part in equality.
+- **`TextDelta`** and `TextKind`, behind `partial_text=True`, from Claude partial messages and
+  from Codex `item/agentMessage/delta`, `item/reasoning/summaryTextDelta` and
+  `item/commandExecution/outputDelta`.
+- **`raw_sink`**, `RawFrame` and `FrameDirection`: every line crossing the provider's pipe.
+  `ClaudeFramePeer` and `Leave` (an item that never completes) in `agentshim.testing`.
+- **`disable_subagents=True`**: `--disallowedTools Agent,Task` for Claude, `--disable multi_agent`
+  for Codex.
+- **`new_conversation_id`**, **`Session.warm()`**: choose or learn the conversation id before the
+  first turn.
+- **`Session.poll_idle`** and `IdleConversation`: what the provider does between turns.
+
 ## 0.25.0 (2026-10-31)
 
 Account limits on request. A caller can ask Claude Code or Codex what an account's plan limits are

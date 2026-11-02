@@ -49,6 +49,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
 from agentshim.core.clock import SystemClock
+from agentshim.core.conversation import FrameDirection, RawFrame
 from agentshim.core.env import interactive_env
 from agentshim.core.errors import (
     AgentShimError,
@@ -282,10 +283,15 @@ class _StreamConversation:
     def __init__(self, runtime: _Runtime, spec: ConversationSpec) -> None:
         self._rt = runtime
         self._spec = spec
-        self._id: str | None = spec.resume_id
+        self._id: str | None = spec.resume_id or spec.new_conversation_id
+        #: The id was chosen by the caller and the CLI has not created the conversation yet:
+        #: until the first prompt is written it is a ``--session-id``, not a ``--resume``.
+        self._unborn = spec.resume_id is None and spec.new_conversation_id is not None
         self._lock = threading.Lock()
         #: Serializes writes to stdin, which a turn and an interrupt both make.
         self._write_lock = threading.Lock()
+        #: Held while ``poll_idle`` reads and while a turn starts, so the two never both read.
+        self._idle_lock = threading.Lock()
         self._process: Process | None = None
         self._argv: tuple[str, ...] = ()
         self._config = ProcessConfig()
@@ -366,6 +372,60 @@ class _StreamConversation:
             msg = "the claude process is gone, so the message was not delivered"
             raise NoRunningTurnError(msg) from error
 
+    def poll_idle(self, emit: Callable[[AgentEvent], None]) -> bool:
+        """Report what the CLI wrote while no turn runs, without waiting.
+
+        The CLI can start a turn of its own (a background task finished, a queued message), and
+        its frames reach *emit* as the events a turn would produce; a ``result`` frame ends such
+        a turn, its usage reported as ``UsageReport``. Returns ``False`` once the process has
+        exited, and ``True`` while a turn is running (that turn is the reader).
+        """
+        with self._idle_lock:
+            with self._lock:
+                process = self._process
+                if self._closed:
+                    return False
+                if self._running:
+                    return True
+            if process is None:
+                return False
+            return self._drain_to(process, emit)
+
+    def _drain_to(self, process: Process, emit: Callable[[AgentEvent], None]) -> bool:
+        run = self._idle_run(emit)
+        while True:
+            item = self._pull(process)
+            if item is None:
+                return True
+            if isinstance(item, StdoutLine):
+                if self._on_stdout(item.text, run) is not None:
+                    self._settle_idle(run)
+                    run = self._idle_run(emit)
+            elif isinstance(item, StderrLine):
+                self._note_stderr(item.text)
+                run.parser.feed_stderr(item.text)
+            else:
+                self._forget(process)
+                return False
+
+    def _idle_run(self, emit: Callable[[AgentEvent], None]) -> _TurnRun:
+        parser = ClaudeStreamParser(
+            emit,
+            cost_baseline_usd=self._cost_baseline,
+            model_usage_baseline=self._model_usage_baseline,
+            emit_deltas=self._spec.partial_text,
+        )
+        return _TurnRun(parser, emit, None, None)
+
+    def _settle_idle(self, run: _TurnRun) -> None:
+        """Keep the cost baselines a turn of the CLI's own moved, as ``_settle`` does."""
+        parser = run.parser
+        parser.finish()
+        if parser.total_cost_usd is not None:
+            self._cost_baseline = parser.total_cost_usd
+        if parser.model_usage_total is not None:
+            self._model_usage_baseline = parser.model_usage_total
+
     def close(self) -> None:
         """End stdin, wait a bounded time, then terminate and kill. Idempotent."""
         with self._lock:
@@ -379,7 +439,7 @@ class _StreamConversation:
     # -- turn lifecycle
 
     def _begin_turn(self) -> None:
-        with self._lock:
+        with self._idle_lock, self._lock:
             if self._closed:
                 msg = "conversation is closed"
                 raise SessionStateError(msg)
@@ -410,7 +470,7 @@ class _StreamConversation:
 
         clock = self._rt.clock
         started = clock.monotonic()
-        resumed = self._id is not None
+        resumed = self._id is not None and not self._unborn
         self._drain_idle()
         self._ensure_process(config)
         parser = ClaudeStreamParser(
@@ -418,6 +478,7 @@ class _StreamConversation:
             expect_structured=request.output_schema is not None,
             cost_baseline_usd=self._cost_baseline,
             model_usage_baseline=self._model_usage_baseline,
+            emit_deltas=self._spec.partial_text,
         )
         deadline = None if request.timeout is None else started + request.timeout
         run = _TurnRun(parser, relay, request.timeout, deadline)
@@ -491,7 +552,10 @@ class _StreamConversation:
     def _launch(self, config: ProcessConfig) -> None:
         """Spawn a process with *config*, resuming the conversation when it has an id."""
         rt = self._rt
-        argv = stream_argv(rt.binary, self._spec, config, resume_id=self._id, hooks=rt.hooks)
+        resume_id, new_id = (None, self._id) if self._unborn else (self._id, None)
+        argv = stream_argv(
+            rt.binary, self._spec, config, resume_id=resume_id, new_id=new_id, hooks=rt.hooks
+        )
         env = stream_env(rt.env, self._spec, config)
         process = rt.executor.spawn(SpawnRequest(argv=argv, cwd=self._spec.cwd, env=env))
         self._stderr_tail.clear()
@@ -603,7 +667,25 @@ class _StreamConversation:
 
     def _write(self, process: Process, line: dict[str, Any]) -> None:
         with self._write_lock:
-            process.write(json.dumps(line) + "\n")
+            self._write_json(process, line)
+
+    def _write_json(self, process: Process, line: dict[str, Any]) -> None:
+        """Write one JSON line and hand it to the raw sink. The caller holds ``_write_lock``."""
+        text = json.dumps(line)
+        process.write(text + "\n")
+        self._capture(FrameDirection.TO_PROVIDER, text)
+
+    def _capture(self, direction: FrameDirection, text: str) -> None:
+        sink = self._spec.raw_sink
+        if sink is not None:
+            sink(RawFrame(direction, text.rstrip("\n")))
+
+    def _pull(self, process: Process) -> ProcessOutput | None:
+        """The next output item if one is waiting, never blocking; stdout goes to the raw sink."""
+        item = process.next_output(0.0)
+        if isinstance(item, StdoutLine):
+            self._capture(FrameDirection.FROM_PROVIDER, item.text)
+        return item
 
     def _send_prompt(self, prompt: str) -> None:
         """Write the user message; a pipe the process already closed ends the turn."""
@@ -616,6 +698,7 @@ class _StreamConversation:
             raise self._died_error(None, process_gone=str(error)) from error
         with self._lock:
             self._prompt_sent = True
+            self._unborn = False
             seq, pending = self._turn_seq, self._interrupt_requested
         if pending:
             self._send_interrupt(seq)
@@ -630,7 +713,7 @@ class _StreamConversation:
             if process is None or not current:
                 return
             try:
-                process.write(json.dumps(request) + "\n")
+                self._write_json(process, request)
             except ProcessClosedError:
                 return  # the pump sees the exit
 
@@ -656,7 +739,7 @@ class _StreamConversation:
 
     def _poll(self, process: Process) -> ProcessOutput | None:
         """The next output item, or ``None`` after the clock let a little time pass."""
-        item = process.next_output(0.0)
+        item = self._pull(process)
         if item is None:
             self._rt.clock.wait(POLL_S)
         return item
@@ -677,7 +760,7 @@ class _StreamConversation:
         if process is None:
             return
         while True:
-            item = process.next_output(0.0)
+            item = self._pull(process)
             if item is None:
                 return
             if isinstance(item, StderrLine):

@@ -14,6 +14,7 @@ import threading
 from collections import deque
 from typing import TYPE_CHECKING
 
+from agentshim.core.conversation import FrameDirection, RawFrame
 from agentshim.core.errors import FailureKind, ProcessClosedError, TurnFailedError
 from agentshim.core.events import Lifecycle, RawOutput, Stderr
 from agentshim.execution.process import ProcessExited, StderrLine
@@ -101,10 +102,19 @@ class Deadline:
 class Channel:
     """One app-server process and the framing of its JSON lines."""
 
-    def __init__(self, process: Process, emit: Callable[[AgentEvent], None]) -> None:
-        """Wrap *process*; *emit* receives stderr lines and output that is not protocol."""
+    def __init__(
+        self,
+        process: Process,
+        emit: Callable[[AgentEvent], None],
+        capture: Callable[[RawFrame], None] | None = None,
+    ) -> None:
+        """Wrap *process*; *emit* receives stderr lines and output that is not protocol.
+
+        *capture*, when given, receives every protocol line crossing the pipe.
+        """
         self._process = process
         self._emit = emit
+        self._capture = capture
         self._lock = threading.Lock()
         self._next_id = 1
         self._pending: dict[int, str] = {}
@@ -151,11 +161,14 @@ class Channel:
             return self._pending.pop(request_id, None)
 
     def _write_line(self, wire: object) -> None:
+        text = json.dumps(wire, separators=(",", ":"))
         try:
-            self._process.write(json.dumps(wire, separators=(",", ":")) + "\n")
+            self._process.write(text + "\n")
         except ProcessClosedError as error:
             self._unwritable = True
             raise Gone(self.returncode) from error
+        if self._capture is not None:
+            self._capture(RawFrame(FrameDirection.TO_PROVIDER, text))
 
     def read(self, deadline: Deadline) -> ServerMessage:
         """Return the next protocol message from the server.
@@ -237,6 +250,8 @@ class Channel:
         stripped = text.strip()
         if not stripped:
             return None
+        if self._capture is not None:
+            self._capture(RawFrame(FrameDirection.FROM_PROVIDER, stripped))
         try:
             value = json.loads(stripped)
         except ValueError:

@@ -77,6 +77,10 @@ class AssistantMessage:
     #: The ``Task`` call whose subagent wrote this, or ``None`` for the main
     #: conversation.
     parent_tool_use_id: str | None = None
+    #: How many content blocks the frame carried, those ``blocks`` leaves out included. The
+    #: CLI writes each block of one message in a frame of its own, so a block's index in its
+    #: message is the number of blocks the earlier frames of that message carried.
+    block_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -86,6 +90,24 @@ class ToolResultBlock:
     tool_id: str | None
     output: str
     is_error: bool
+    #: The ``Task`` call whose subagent ran the tool, or ``None`` for the main conversation.
+    parent_tool_use_id: str | None = None
+
+
+@dataclass(frozen=True)
+class StreamDelta:
+    """A ``stream_event`` frame (``--include-partial-messages``) the parser can use.
+
+    ``kind`` is ``message_start`` (``message_id`` set), or ``text`` / ``thinking`` for a
+    ``content_block_delta`` carrying ``text`` into the block at ``index`` of the message the
+    last ``message_start`` named.
+    """
+
+    kind: str
+    message_id: str | None = None
+    index: int = 0
+    text: str = ""
+    parent_tool_use_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -114,7 +136,9 @@ class ResultFrame:
     permission_denials: tuple[Mapping[str, Any], ...] = ()
 
 
-ClaudeFrame = SystemInit | AssistantMessage | ToolResultBlock | ResultFrame | RateLimitFrame
+ClaudeFrame = (
+    SystemInit | AssistantMessage | ToolResultBlock | StreamDelta | ResultFrame | RateLimitFrame
+)
 
 
 def parse_frame(data: Mapping[str, Any]) -> ClaudeFrame | None:
@@ -127,29 +151,65 @@ def parse_frame(data: Mapping[str, Any]) -> ClaudeFrame | None:
             skills=_str_tuple_or_none(data.get("skills")),
             model=_str_or_none(data.get("model")),
         )
-    if kind == "assistant":
-        return _assistant(data)
-    if kind == "user":
-        return _tool_result(data)
+    message_frames = {"assistant": _assistant, "user": _tool_result, "stream_event": _stream_delta}
+    if isinstance(kind, str) and kind in message_frames:
+        return message_frames[kind](data)
     if kind == "rate_limit_event":
         return parse_rate_limit(data)
     if kind == "result":
-        return ResultFrame(
-            text=_text(data.get("result")),
-            structured_output=data.get("structured_output"),
-            num_turns=_int_or_none(data.get("num_turns")),
-            usage=_mapping_or_none(data.get("usage")),
-            total_cost_usd=_float_or_none(data.get("total_cost_usd")),
-            model_usage=parse_model_usage(data.get("modelUsage")),
-            duration_ms=_int_or_none(data.get("duration_ms")),
-            is_error=bool(data.get("is_error")),
-            subtype=_str_or_none(data.get("subtype")),
-            api_error_status=_int_or_none(data.get("api_error_status")),
-            errors=_str_tuple_or_none(data.get("errors")) or (),
-            terminal_reason=_str_or_none(data.get("terminal_reason")),
-            permission_denials=_mapping_tuple(data.get("permission_denials")),
-        )
+        return _result_frame(data)
     return None
+
+
+def _result_frame(data: Mapping[str, Any]) -> ResultFrame:
+    return ResultFrame(
+        text=_text(data.get("result")),
+        structured_output=data.get("structured_output"),
+        num_turns=_int_or_none(data.get("num_turns")),
+        usage=_mapping_or_none(data.get("usage")),
+        total_cost_usd=_float_or_none(data.get("total_cost_usd")),
+        model_usage=parse_model_usage(data.get("modelUsage")),
+        duration_ms=_int_or_none(data.get("duration_ms")),
+        is_error=bool(data.get("is_error")),
+        subtype=_str_or_none(data.get("subtype")),
+        api_error_status=_int_or_none(data.get("api_error_status")),
+        errors=_str_tuple_or_none(data.get("errors")) or (),
+        terminal_reason=_str_or_none(data.get("terminal_reason")),
+        permission_denials=_mapping_tuple(data.get("permission_denials")),
+    )
+
+
+def _stream_delta(data: Mapping[str, Any]) -> StreamDelta | None:
+    raw = data.get("event")
+    if not isinstance(raw, dict):
+        return None
+    event = cast("dict[str, Any]", raw)
+    parent = _str_or_none(data.get("parent_tool_use_id"))
+    kind = event.get("type")
+    if kind == "message_start":
+        message = event.get("message")
+        message_id = (
+            _str_or_none(cast("dict[str, Any]", message).get("id"))
+            if isinstance(message, dict)
+            else None
+        )
+        return StreamDelta("message_start", message_id=message_id, parent_tool_use_id=parent)
+    if kind == "content_block_delta":
+        return _block_delta(event, parent)
+    return None
+
+
+def _block_delta(event: Mapping[str, Any], parent: str | None) -> StreamDelta | None:
+    delta = event.get("delta")
+    index = _int_or_none(event.get("index"))
+    if not isinstance(delta, dict) or index is None:
+        return None
+    body = cast("dict[str, Any]", delta)
+    kind = {"text_delta": "text", "thinking_delta": "thinking"}.get(str(body.get("type")))
+    if kind is None:
+        return None
+    text = _text(body.get("text" if kind == "text" else "thinking"))
+    return StreamDelta(kind, index=index, text=text, parent_tool_use_id=parent)
 
 
 def _assistant(data: Mapping[str, Any]) -> AssistantMessage | None:
@@ -159,7 +219,9 @@ def _assistant(data: Mapping[str, Any]) -> AssistantMessage | None:
     payload = cast("dict[str, Any]", message)
     raw_blocks = payload.get("content")
     blocks: list[ContentBlock] = []
+    block_count = 0
     if isinstance(raw_blocks, list):
+        block_count = len(cast("list[Any]", raw_blocks))
         for raw in cast("list[Any]", raw_blocks):
             block = _content_block(raw)
             if block is not None:
@@ -175,6 +237,7 @@ def _assistant(data: Mapping[str, Any]) -> AssistantMessage | None:
         message_id=_str_or_none(payload.get("id")),
         model=_str_or_none(payload.get("model")),
         parent_tool_use_id=_str_or_none(data.get("parent_tool_use_id")),
+        block_count=block_count,
     )
 
 
@@ -214,6 +277,7 @@ def _tool_result(data: Mapping[str, Any]) -> ToolResultBlock | None:
             tool_id=_str_or_none(block.get("tool_use_id")),
             output=_tool_output(block.get("content")),
             is_error=bool(block.get("is_error")),
+            parent_tool_use_id=_str_or_none(data.get("parent_tool_use_id")),
         )
     return None
 

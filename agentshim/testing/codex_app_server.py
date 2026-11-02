@@ -118,6 +118,17 @@ class CallMcp:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class Leave:
+    """The agent starts a shell command that never reports completion.
+
+    The turn goes on and ends with the item still ``inProgress``: Codex does not always send
+    ``item/completed`` for an item an interrupt or an error cut short.
+    """
+
+    command: str
+
+
 class AskKind(Enum):
     """The server-to-client requests ``Ask`` can make."""
 
@@ -224,6 +235,7 @@ CodexStep = (
     | Spend
     | ReportRateLimits
     | Retrying
+    | Leave
     | Fail
     | Hang
     | AwaitSteer
@@ -734,6 +746,7 @@ class CodexAppServerPeer:
             Spend: self._spend,
             ReportRateLimits: self._report_rate_limits,
             Retrying: self._retrying,
+            Leave: self._leave,
             Fail: self._fail,
             Hang: self._hang,
             AwaitSteer: self._await_steer,
@@ -750,7 +763,33 @@ class CodexAppServerPeer:
             "content": [],
         }
         self._item(out, run, "item/started", item)
+        # Real Codex streams the summary in parts; a second part would begin a new summaryIndex.
+        self._notify(
+            out,
+            "item/reasoning/summaryTextDelta",
+            {
+                "threadId": run.thread.thread_id,
+                "turnId": run.turn_id,
+                "itemId": item["id"],
+                "summaryIndex": 0,
+                "delta": step.text,
+            },
+        )
         self._item(out, run, "item/completed", item)
+
+    def _leave(self, run: _Run, step: Leave, out: list[PeerOutput]) -> None:
+        item: dict[str, object] = {
+            "type": "commandExecution",
+            "id": self._script.counter("item"),
+            "command": step.command,
+            "cwd": run.thread.cwd,
+            "commandActions": [],
+            "source": "agent",
+            "status": "inProgress",
+            "aggregatedOutput": None,
+            "exitCode": None,
+        }
+        self._item(out, run, "item/started", item)
 
     def _retrying(self, run: _Run, step: Retrying, out: list[PeerOutput]) -> None:
         self._error_notification(out, run, step.message, will_retry=True)
@@ -861,6 +900,17 @@ class CodexAppServerPeer:
         ran: bool,
     ) -> None:
         if ran:
+            if step.output:
+                self._notify(
+                    out,
+                    "item/commandExecution/outputDelta",
+                    {
+                        "threadId": run.thread.thread_id,
+                        "turnId": run.turn_id,
+                        "itemId": item["id"],
+                        "delta": step.output,
+                    },
+                )
             done = {
                 **item,
                 "status": "completed",

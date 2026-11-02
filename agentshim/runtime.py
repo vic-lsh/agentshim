@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
     from agentshim.core.checkpoints import CheckpointStore
     from agentshim.core.clock import Clock
-    from agentshim.core.conversation import Transport
+    from agentshim.core.conversation import RawFrame, Transport
     from agentshim.core.events import AgentEventHandler
     from agentshim.core.ids import IdAllocator
     from agentshim.core.mcp import McpServer
@@ -197,6 +197,10 @@ class Agent:
         skill_scope: SkillScope = SkillScope.ALL,
         mcp_scope: McpScope = McpScope.ALL,
         config_scope: ConfigScope = ConfigScope.ALL,
+        partial_text: bool = False,
+        disable_subagents: bool = False,
+        raw_sink: Callable[[RawFrame], None] | None = None,
+        new_conversation_id: str | None = None,
     ) -> Session:
         """Open a session working in *cwd* (a host path).
 
@@ -207,6 +211,12 @@ class Agent:
         a checkpoint. ``idle_release_after`` seconds of inactivity release the
         live conversation before the next turn. The scope arguments are
         transitional, for the one-shot transport only.
+
+        The last four are for a ``TransportKind.STREAM`` transport and are refused by the
+        one-shot one: ``partial_text`` streams ``TextDelta`` events, ``disable_subagents``
+        starts the provider without its own delegation tools, ``raw_sink`` receives every line
+        crossing the provider's pipe, and ``new_conversation_id`` chooses the id of a new
+        conversation where the provider allows it (see ``ConversationSpec``).
         """
         agent_path = self._confinement.agent_path if self._confinement is not None else None
         spec = ConversationSpec(
@@ -225,6 +235,10 @@ class Agent:
             skill_scope=skill_scope,
             mcp_scope=mcp_scope,
             config_scope=config_scope,
+            partial_text=partial_text,
+            disable_subagents=disable_subagents,
+            raw_sink=raw_sink,
+            new_conversation_id=new_conversation_id,
         )
         profile = self.profile
         return Session(

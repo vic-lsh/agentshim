@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 from agentshim.core.checkpoints import Checkpoint
 from agentshim.core.clock import StopSignal
-from agentshim.core.conversation import SteerableConversation
+from agentshim.core.conversation import IdleConversation, SteerableConversation
 from agentshim.core.errors import (
     AgentShimError,
     ContinuityError,
@@ -55,6 +55,7 @@ from agentshim.core.session_policy import (
     Succeeded,
     Wait,
     WaitDone,
+    Warmed,
     outcome_of,
 )
 
@@ -67,6 +68,7 @@ if TYPE_CHECKING:
     from agentshim.core.events import AgentEvent, AgentEventHandler
     from agentshim.core.ids import IdAllocator
     from agentshim.core.mcp import McpServer
+    from agentshim.core.profile import ProviderProfile
     from agentshim.core.session_policy import Command, Continuity, Event, SessionState
     from agentshim.core.turn import TurnRequest, TurnResult
     from agentshim.core.usage import ProviderUsage
@@ -175,7 +177,10 @@ class Session:
         self._state: SessionState = self._policy.initial_state()
         self._conversation: Conversation | None = None
         self._ticket: TurnTicket | None = None
+        self._running: TurnTicket | None = None
         self._stop: StopSignal | None = None
+        #: Ids of prepared turns whose interrupt came before they ran.
+        self._interrupted_early: set[str] = set()
         self._usage: dict[str, ProviderUsage] = {}
         resume_id = spec.resume_id
         usage = previous_usage if previous_usage is not None else spec.previous_usage
@@ -186,6 +191,11 @@ class Session:
         if resume_id is not None and usage is not None:
             self._usage[resume_id] = usage
         self._step(Start(resume_id))
+
+    @property
+    def profile(self) -> ProviderProfile:
+        """What the provider behind this session can do (steering, resuming, ...)."""
+        return self._transport.profile
 
     @property
     def conversation_id(self) -> str | None:
@@ -241,6 +251,8 @@ class Session:
                 strict=expect_conversation is not None,
                 pinned=pin,
             )
+            if self._ticket is not None:
+                self._interrupted_early.discard(self._ticket.turn_id)
             self._ticket = ticket
         self._perform_effects(commands)
         return ticket
@@ -270,21 +282,39 @@ class Session:
                 msg = f"turn ticket {ticket.turn_id!r} is stale or was already run"
                 raise SessionStateError(msg)
             self._ticket = None
+            self._running = ticket
             self._stop = stop
+            if ticket.turn_id in self._interrupted_early:
+                self._interrupted_early.discard(ticket.turn_id)
+                stop.set()
             commands = self._step(RunBegan(now))
         try:
             return self._drive(ticket, on_event, stop, commands)
         finally:
             with self._lock:
                 self._stop = None
+                self._running = None
 
-    def interrupt(self) -> None:
+    def interrupt(self, ticket: TurnTicket | None = None) -> None:
         """End the running turn, keeping the conversation. Thread-safe.
 
         Also ends a retry wait. With no turn running it does nothing and leaves
         the next turn alone.
+
+        With *ticket*, interrupts exactly that turn and never another: a turn
+        prepared and not yet run is cancelled the moment it would start (its
+        ``run`` raises ``TurnCancelledError`` and the provider is never
+        asked); a running turn is interrupted as without a ticket; a turn
+        that already ended, or that a later ``prepare_turn`` superseded, is
+        left alone, so a late interrupt cannot land on the turn after it.
         """
         with self._lock:
+            if ticket is not None:
+                if ticket is self._ticket:
+                    self._interrupted_early.add(ticket.turn_id)
+                    return
+                if ticket is not self._running:
+                    return
             stop = self._stop
             conversation = self._conversation
         if stop is None:
@@ -293,8 +323,12 @@ class Session:
         if conversation is not None:
             conversation.interrupt()
 
-    def steer(self, text: str) -> None:
+    def steer(self, text: str, ticket: TurnTicket | None = None) -> None:
         """Send *text* into the turn that is running now. Thread-safe.
+
+        With *ticket*, the message goes only to that turn: if it is not the turn running now
+        (it ended, or has not started) this raises ``NoRunningTurnError``, so a late steer
+        cannot land in the turn after it.
 
         The provider folds the message into the running turn instead of
         waiting for the next one. It does not queue: the message goes out now
@@ -311,7 +345,7 @@ class Session:
             msg = f"{profile.name} cannot take a message while a turn runs"
             raise ProviderCapabilityError(msg)
         with self._lock:
-            running = self._stop is not None
+            running = self._stop is not None and (ticket is None or ticket is self._running)
             conversation = self._conversation
         if not running or conversation is None:
             msg = "no turn is running in this session"
@@ -320,6 +354,54 @@ class Session:
             msg = f"{profile.name} declares steering but its conversation does not provide it"
             raise ProviderCapabilityError(msg)
         conversation.steer(text)
+
+    def warm(self) -> str | None:
+        """Open the conversation now, before any turn, and return the id the provider gave it.
+
+        Returns the id of the conversation that is already live when there is one. A provider
+        that names a conversation only when its first turn runs gives ``None`` (unless the
+        conversation spec chose the id). Raises what ``Transport.open`` raises. The first turn
+        then finds the conversation open and runs in it. Does nothing, returning ``None``, on a
+        closed session or while a turn is prepared or running.
+        """
+        with self._lock:
+            if self._state.closed or self._state.turn is not None:
+                return None
+            if self._conversation is not None:
+                return self._conversation.conversation_id
+            resume_id = self._state.conversation_id
+        conversation = self._transport.open(self._open_spec(resume_id))
+        with self._lock:
+            if self._state.closed or self._state.turn is not None or self._conversation is not None:
+                keep = False
+            else:
+                self._conversation = conversation
+                self._step(Warmed())
+                keep = True
+        if not keep:
+            conversation.close()
+            return self.conversation_id
+        return conversation.conversation_id
+
+    def poll_idle(self, on_event: AgentEventHandler | None = None) -> bool:
+        """Deliver what the provider did since the last call, outside any turn.
+
+        Events go to the agent's handlers and to *on_event*, as in ``run``. Call it regularly
+        while no turn runs: a turn reads the provider itself, and anything the provider says
+        between turns is otherwise held until the next one. Returns ``False`` when the
+        provider's process has ended or the session is closed (the next turn reopens the
+        conversation by its id), ``True`` otherwise, also with nothing to read, while a
+        turn runs, or when the provider reports nothing between turns
+        (``IdleConversation``). Thread-safe.
+        """
+        with self._lock:
+            conversation = self._conversation
+            closed = self._state.closed
+        if closed:
+            return False
+        if conversation is None or not isinstance(conversation, IdleConversation):
+            return True
+        return conversation.poll_idle(self._emitter(on_event))
 
     def release(self) -> None:
         """Close the live conversation but keep its id, so the next turn resumes it."""

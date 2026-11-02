@@ -15,6 +15,8 @@ from agentshim.core.events import (
     SkillInvoked,
     SkillsDiscovered,
     Stderr,
+    TextDelta,
+    TextKind,
     ToolCall,
     ToolResult,
     UsageReport,
@@ -33,6 +35,7 @@ from .cost import ModelCounts, mark_primary, priced_turn, report_speed
 from .events import (
     AssistantMessage,
     ResultFrame,
+    StreamDelta,
     SystemInit,
     TextBlock,
     ThinkingBlock,
@@ -114,6 +117,11 @@ def context_tokens(usage: Mapping[str, Any]) -> int:
     )
 
 
+def _block_id(message_id: str | None, index: int) -> str | None:
+    """The stable id of content block *index* of a message, or ``None`` for an unnamed message."""
+    return None if message_id is None else f"{message_id}:{index}"
+
+
 def _int(value: object) -> int:
     if isinstance(value, bool):
         return 0
@@ -149,7 +157,8 @@ def skill_invocation(
 class ClaudeStreamParser:
     """Stateful parser for one Claude Code run."""
 
-    def __init__(
+    # Each keyword is an independent documented option of the public constructor.
+    def __init__(  # noqa: PLR0913
         self,
         emit: Callable[[AgentEvent], None],
         *,
@@ -157,6 +166,7 @@ class ClaudeStreamParser:
         cost_baseline_usd: float = 0.0,
         model_usage_baseline: Mapping[str, ModelCounts] | None = None,
         pricing: PricingTable | None = None,
+        emit_deltas: bool = False,
     ) -> None:
         """Start a parser for one run.
 
@@ -173,6 +183,12 @@ class ClaudeStreamParser:
         cumulative too: pass the previous turn's ``model_usage_total`` as
         *model_usage_baseline*. Only a result without ``modelUsage`` falls
         back to the CLI's figure.
+
+        With *emit_deltas* the partial-message frames the CLI writes under
+        ``--include-partial-messages`` become ``TextDelta`` events. A message
+        or reasoning block is named ``<message id>:<index>``, in the deltas and
+        in the ``AssistantText`` or ``Reasoning`` that completes it, so the two
+        can be joined; a subagent's events carry the ``Task`` call as ``agent``.
         """
         self._cost_baseline = cost_baseline_usd
         self._model_usage_baseline: Mapping[str, ModelCounts] = model_usage_baseline or {}
@@ -181,6 +197,11 @@ class ClaudeStreamParser:
         #: The cumulative per-model counts the last result reported.
         self.model_usage_total: Mapping[str, ModelCounts] | None = None
         self._emit = emit
+        self._emit_deltas = emit_deltas
+        #: The message each streaming agent (``None`` is the main one) is writing now.
+        self._streaming: dict[str | None, str] = {}
+        #: Content blocks already seen per message id, so the next frame's block has an index.
+        self._blocks_seen: dict[str, int] = {}
         self._expect_structured = expect_structured
         self._tools = ToolTracker()
         self._text: list[str] = []
@@ -273,13 +294,19 @@ class ClaudeStreamParser:
                 self._emit(SkillsDiscovered(frame.skills))
         elif isinstance(frame, AssistantMessage):
             self._assistant(frame)
-        elif isinstance(frame, ToolResultBlock):
+        elif isinstance(frame, ResultFrame):
+            self._result(frame)
+        else:
+            self._handle_side_frame(frame)
+
+    def _handle_side_frame(self, frame: object) -> None:
+        if isinstance(frame, ToolResultBlock):
             self._tool_result(frame)
+        elif isinstance(frame, StreamDelta):
+            self._stream_delta(frame)
         elif isinstance(frame, RateLimitFrame):
             for status in frame.statuses:
                 self._emit(status)
-        elif isinstance(frame, ResultFrame):
-            self._result(frame)
 
     def _assistant(self, frame: AssistantMessage) -> None:
         if frame.error is not None:
@@ -307,18 +334,40 @@ class ClaudeStreamParser:
                     None,
                 )
             )
-        for block in frame.blocks:
+        first = self._take_block_indexes(frame)
+        agent = frame.parent_tool_use_id
+        for position, block in enumerate(frame.blocks):
+            item_id = _block_id(frame.message_id, first + position)
             if isinstance(block, TextBlock):
                 self._text.append(block.text)
-                self._emit(AssistantText(block.text))
+                self._emit(AssistantText(block.text, item_id, agent))
             elif isinstance(block, ThinkingBlock):
-                self._emit(Reasoning(block.text))
+                self._emit(Reasoning(block.text, item_id, agent))
             else:
                 self._tools.start(block.tool_id, block.tool)
-                self._emit(ToolCall(block.tool_id, block.tool, block.args))
+                self._emit(ToolCall(block.tool_id, block.tool, block.args, agent))
                 skill = skill_invocation(block.tool_id, block.tool, block.args)
                 if skill is not None:
                     self._emit(skill)
+
+    def _take_block_indexes(self, frame: AssistantMessage) -> int:
+        """The index in its message of the first block of *frame*; counts the frame's blocks."""
+        if frame.message_id is None:
+            return 0
+        first = self._blocks_seen.get(frame.message_id, 0)
+        self._blocks_seen[frame.message_id] = first + max(frame.block_count, len(frame.blocks))
+        return first
+
+    def _stream_delta(self, frame: StreamDelta) -> None:
+        if frame.kind == "message_start":
+            if frame.message_id is not None:
+                self._streaming[frame.parent_tool_use_id] = frame.message_id
+            return
+        if not self._emit_deltas or not frame.text:
+            return
+        kind = TextKind.REASONING if frame.kind == "thinking" else TextKind.ASSISTANT
+        item_id = _block_id(self._streaming.get(frame.parent_tool_use_id), frame.index)
+        self._emit(TextDelta(frame.text, kind, item_id, frame.parent_tool_use_id))
 
     def _tool_result(self, frame: ToolResultBlock) -> None:
         name = self._tools.name(frame.tool_id)
@@ -332,6 +381,7 @@ class ClaudeStreamParser:
                 stderr=frame.output if frame.is_error else "",
                 exit_code=1 if frame.is_error else None,
                 duration_s=self._tools.duration(frame.tool_id),
+                agent=frame.parent_tool_use_id,
             )
         )
 

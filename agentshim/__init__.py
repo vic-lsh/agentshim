@@ -50,10 +50,12 @@ from .core import (
     FilePosition,
     FileScan,
     FlagsInstallation,
+    FrameDirection,
     HostAuthGap,
     HostAuthUnplannableError,
     HttpMcpServer,
     IdAllocator,
+    IdleConversation,
     InMemoryCheckpointStore,
     Lifecycle,
     LimitsReader,
@@ -96,6 +98,7 @@ from .core import (
     RateNaming,
     Rates,
     RateTable,
+    RawFrame,
     RawOutput,
     ReapError,
     Reasoning,
@@ -131,6 +134,8 @@ from .core import (
     StopSignal,
     StreamParser,
     SystemClock,
+    TextDelta,
+    TextKind,
     TokenUsage,
     TokenWeights,
     ToolCall,
@@ -240,7 +245,7 @@ from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 from .transcripts import read_transcript_usage, transcript_providers, transcript_roots
 
-__version__ = "0.25.0"
+__version__ = "0.26.0"
 
 __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "AccountLimits",
@@ -305,6 +310,7 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "FilePosition",
     "FileScan",
     "FlagsInstallation",
+    "FrameDirection",
     "GeminiProvider",
     "HostAuthGap",
     "HostAuthUnplannableError",
@@ -312,6 +318,7 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "HostProcess",
     "HttpMcpServer",
     "IdAllocator",
+    "IdleConversation",
     "InMemoryCheckpointStore",
     "LITELLM_ENDPOINTS",
     "Lifecycle",
@@ -377,6 +384,7 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "RateStore",
     "RateTable",
     "Rates",
+    "RawFrame",
     "RawOutput",
     "ReapError",
     "Reasoning",
@@ -417,6 +425,8 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "StopSignal",
     "StreamParser",
     "SystemClock",
+    "TextDelta",
+    "TextKind",
     "TokenUsage",
     "TokenWeights",
     "ToolCall",

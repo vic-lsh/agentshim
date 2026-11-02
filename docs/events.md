@@ -8,10 +8,11 @@ union.
 | `RunStarted` | `argv` | the CLI process is about to start |
 | `RunFinished` | `exit_code` | the CLI process exited |
 | `SessionStarted` | `session_id` | the provider named the conversation |
-| `AssistantText` | `text` | assistant-facing message text |
-| `Reasoning` | `text` | thinking or reasoning text |
-| `ToolCall` | `tool_id`, `tool`, `args` | a tool was invoked |
-| `ToolResult` | `tool_id`, `tool`, `stdout`, `stderr`, `exit_code`, `duration_s` | a tool finished |
+| `AssistantText` | `text`, `item_id`, `agent` | assistant-facing message text |
+| `Reasoning` | `text`, `item_id`, `agent` | thinking or reasoning text |
+| `TextDelta` | `text`, `kind`, `item_id`, `agent` | a fragment of an item still being written (stream transport, opt in) |
+| `ToolCall` | `tool_id`, `tool`, `args`, `agent` | a tool was invoked |
+| `ToolResult` | `tool_id`, `tool`, `stdout`, `stderr`, `exit_code`, `duration_s`, `agent` | a tool finished |
 | `SkillsDiscovered` | `names` | the provider listed the skills it offers |
 | `SkillInvoked` | `name`, `source_path`, `tool_id` | the agent loaded a skill |
 | `UsageReport` | `usage`, `cost_usd` | provider accounting |
@@ -122,6 +123,38 @@ newest per `(limit, window)`.
 | Claude (stream transport and one-shot) | `rate_limit_event` | once per `unifiedWindows` entry; `exhausted` follows `status` for the window named by `rateLimitType` |
 | Codex (app-server transport) | `account/rateLimits/updated` | once per reported `primary` / `secondary` window, also between turns; `exhausted` is true when `rateLimitReachedType` or `spendControlReached` is set |
 | Others | none | never |
+## Observing a conversation
+
+These are additive, for a caller that renders a conversation as it happens. They are
+metadata and opt-ins: `Session.run` returns the same turn with or without them, and the
+metadata fields do not take part in equality, so `AssistantText("x", "id", "agent")` equals
+`AssistantText("x")`.
+
+- **`item_id`** names the item an event belongs to, stably, so a replay names it the same.
+  Claude: `"<message id>:<content block index>"` for text and reasoning, and the `tool_use`
+  id for tools. Codex: the thread item id. `None` where the provider gives nothing to name.
+- **`agent`** names the subagent that produced the event: the `tool_use` id of the call that
+  started it (Claude's `parent_tool_use_id`). `None` is the lead. Codex does not attribute:
+  its child threads' notifications are dropped.
+- **`TextDelta`** (`partial_text=True` on `Agent.session`) streams the fragments of an item
+  before its `AssistantText`, `Reasoning` or `ToolResult` arrives. For one `item_id` the
+  deltas, joined, are a prefix of the text the completed event carries. Claude adds
+  `--include-partial-messages`; Codex reads `item/agentMessage/delta`,
+  `item/reasoning/summaryTextDelta` and `item/commandExecution/outputDelta`. A one-shot
+  transport refuses the option.
+- **`raw_sink`** receives a `RawFrame(direction, text)` for every line crossing the
+  provider's pipe, in order, one line without its newline. Recorded frames replay through
+  `ClaudeFramePeer`.
+- **`disable_subagents=True`** starts the provider without its own delegation tools: Claude
+  gets `--disallowedTools Agent,Task`; Codex gets `--disable multi_agent`, which the CLI
+  refuses when the name is unknown, so a rename fails at startup.
+- **`new_conversation_id`** chooses the id of a new conversation (Claude `--session-id`). Codex
+  names threads itself and refuses it. `Session.warm()` opens the conversation before the first
+  turn and returns its id (Codex's from `thread/start`).
+- **`Session.poll_idle(on_event)`** delivers what the provider said between turns, which a
+  turn would otherwise read late or discard, and returns `False` once the provider's process
+  has ended. Call it while no turn runs; it never blocks.
+
 ## Steering
 
 `Session.steer` reports through three events, emitted on the thread running the

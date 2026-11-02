@@ -26,6 +26,28 @@ if TYPE_CHECKING:
     from .usage import ProviderUsage
 
 
+class FrameDirection(Enum):
+    """Which way a raw frame went, from agentshim's side of the pipe."""
+
+    #: Written by the provider.
+    FROM_PROVIDER = "from_provider"
+    #: Written by agentshim.
+    TO_PROVIDER = "to_provider"
+
+
+@dataclass(frozen=True)
+class RawFrame:
+    """One line exchanged with a provider process, exactly as it crossed the pipe.
+
+    ``text`` has no trailing newline. Frames reach ``ConversationSpec.raw_sink`` in the order
+    agentshim wrote or read them, which is enough to replay a conversation against a scripted
+    peer.
+    """
+
+    direction: FrameDirection
+    text: str
+
+
 class TransportKind(Enum):
     """Which way an ``Agent`` reaches a provider by name."""
 
@@ -60,6 +82,20 @@ class ConversationSpec:
     skill_scope: SkillScope = SkillScope.ALL
     mcp_scope: McpScope = McpScope.ALL
     config_scope: ConfigScope = ConfigScope.ALL
+    #: Stream the model's text as ``TextDelta`` events while it is written. Only a long-lived
+    #: (``TransportKind.STREAM``) conversation can; others raise ``ProviderCapabilityError``.
+    partial_text: bool = False
+    #: Start the agent with its native subagents (the provider's own delegation tools) turned
+    #: off, so every agent in a tree is one the caller started. Stream transports only.
+    disable_subagents: bool = False
+    #: Receives every line crossing the provider's pipe, in either direction (stream transports
+    #: only). Called on the thread that read or wrote the line; it must not block.
+    raw_sink: Callable[[RawFrame], None] | None = None
+    #: The id a new conversation takes, for a provider that lets the caller choose it, so the
+    #: id is known before the first turn. Ignored when ``resume_id`` is set. A provider that
+    #: cannot honour it raises ``ProviderCapabilityError``; one that always names the id at
+    #: open (Codex) rejects a value, because it could not keep to it.
+    new_conversation_id: str | None = None
 
 
 class Conversation(Protocol):
@@ -113,6 +149,25 @@ class SteerableConversation(Conversation, Protocol):
         is on its way; the outcome is reported as ``SteerDelivered``,
         ``SteerConsumed`` and ``SteerRejected`` events, on the thread running
         the turn.
+        """
+        ...
+
+
+@runtime_checkable
+class IdleConversation(Conversation, Protocol):
+    """A conversation that reports what happens while no turn runs.
+
+    A provider process can do things between turns: finish a background task and start a turn of
+    its own, report a rate limit, exit. ``turn`` reads the pipe only while a turn is running, so
+    those would be held until the next turn (or lost). ``poll_idle`` reads them now.
+    """
+
+    def poll_idle(self, emit: Callable[[AgentEvent], None]) -> bool:
+        """Deliver what the provider has already said, without waiting; thread-safe.
+
+        Does nothing and returns ``True`` while a turn is running (the turn is reading). Returns
+        ``False`` when the provider process has ended, so the conversation can no longer be
+        used without being reopened by its id.
         """
         ...
 

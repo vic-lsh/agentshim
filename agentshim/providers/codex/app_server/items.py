@@ -75,10 +75,10 @@ class ItemEvents:
     def completed(self, item: ThreadItem, now: float) -> list[AgentEvent]:
         """Events for an item that has just finished."""
         if isinstance(item, ThreadItemAgentMessage):
-            return [AssistantText(item.text)] if item.text.strip() else []
+            return [AssistantText(item.text, item.id)] if item.text.strip() else []
         if isinstance(item, ThreadItemReasoning):
             text = "\n".join(item.summary or item.content)
-            return [Reasoning(text)] if text.strip() else []
+            return [Reasoning(text, item.id)] if text.strip() else []
         if isinstance(item, ThreadItemCommandExecution):
             failed = _failed(item.status) or bool(item.exit_code)
             return [

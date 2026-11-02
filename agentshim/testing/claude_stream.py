@@ -548,6 +548,54 @@ class ClaudeRecordedPeer:
         return []
 
 
+class ClaudeFramePeer:
+    """A fake ``claude`` that writes hand-written frames, one batch per user message.
+
+    Each entry of *turns* is what the CLI writes after a user message: JSON frames (mappings),
+    ``GateMarker`` points a test holds back with ``ReplayGates``, and ``ProcessExited``. The
+    answer to ``initialize`` is automatic. A batch that ends in a gate followed by more frames
+    is how a test makes the CLI speak while no turn is running. Once the entries are spent a
+    message gets no answer. Everything received on stdin is kept in ``received``.
+    """
+
+    def __init__(self, turns: Sequence[Sequence[Mapping[str, Any] | PeerOutput]]) -> None:
+        """Take the batches, one per user message."""
+        self._turns = [list(turn) for turn in turns]
+        self._next = 0
+        #: Every JSON message received on stdin.
+        self.received: list[dict[str, Any]] = []
+
+    def on_start(self) -> Sequence[PeerOutput]:
+        """Write nothing until initialized."""
+        return ()
+
+    def on_stdin(self, data: str) -> Sequence[PeerOutput]:
+        """Answer ``initialize`` and write the next batch per user message."""
+        out: list[PeerOutput] = []
+        for raw in data.splitlines():
+            if raw.strip():
+                out.extend(self._react(json.loads(raw)))
+        return out
+
+    def on_stdin_closed(self) -> Sequence[PeerOutput]:
+        """Exit cleanly at end of input."""
+        return [ProcessExited(0)]
+
+    def _react(self, message: Mapping[str, Any]) -> list[PeerOutput]:
+        self.received.append(dict(message))
+        kind = message.get("type")
+        request = _obj(message.get("request"))
+        if kind == "control_request" and request.get("subtype") == "initialize":
+            return [_stdout(_ok(message.get("request_id"), {"commands": [], "agents": []}))]
+        if kind != "user" or self._next >= len(self._turns):
+            return []
+        batch = self._turns[self._next]
+        self._next += 1
+        return [
+            _stdout(item) if isinstance(item, dict) else cast("PeerOutput", item) for item in batch
+        ]
+
+
 # -- wire helpers
 
 

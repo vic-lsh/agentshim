@@ -106,6 +106,19 @@ class OneShotTransport:
         if spec.mcp_servers and profile.mcp is McpMechanism.NONE:
             msg = f"{profile.name} does not support MCP servers"
             raise ProviderCapabilityError(msg)
+        unsupported = [
+            name
+            for name, asked in (
+                ("partial_text", spec.partial_text),
+                ("disable_subagents", spec.disable_subagents),
+                ("raw_sink", spec.raw_sink is not None),
+                ("new_conversation_id", spec.new_conversation_id is not None),
+            )
+            if asked
+        ]
+        if unsupported:
+            msg = f"the one-shot transport cannot honour {', '.join(unsupported)}: use a stream transport"
+            raise ProviderCapabilityError(msg)
         router = _Router()
         agent = self._agent.derive(model=spec.model, event_handler=router)
         session = agent.start_session(

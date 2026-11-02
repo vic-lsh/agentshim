@@ -228,6 +228,15 @@ class Opened:
 
 
 @dataclass(frozen=True)
+class Warmed:
+    """A conversation was opened with no turn to run in it (``Session.warm``).
+
+    The session then holds a live conversation whose id is not yet the one the next turn
+    continues: the first turn is still a cold start, only without paying for the open.
+    """
+
+
+@dataclass(frozen=True)
 class Succeeded:
     """An attempt finished and produced a result."""
 
@@ -268,7 +277,17 @@ class Close:
 
 
 Event = (
-    Start | Adopt | Prepare | RunBegan | Opened | Succeeded | Failed | WaitDone | Release | Close
+    Start
+    | Adopt
+    | Prepare
+    | RunBegan
+    | Opened
+    | Warmed
+    | Succeeded
+    | Failed
+    | WaitDone
+    | Release
+    | Close
 )
 
 
@@ -376,6 +395,7 @@ class SessionPolicy:
             Prepare: self._on_prepare,
             RunBegan: self._on_run_began,
             Opened: self._on_opened,
+            Warmed: self._on_warmed,
             Succeeded: self._on_succeeded,
             Failed: self._on_failed,
             WaitDone: self._on_wait_done,
@@ -472,6 +492,12 @@ class SessionPolicy:
             return replace(state, turn=turn), (Execute(),)
         turn = replace(turn, phase=Phase.OPENING, resumed=resumed)
         return replace(state, turn=turn), (Open(state.conversation_id),)
+
+    def _on_warmed(self, state: SessionState, event: Warmed) -> Step:
+        del event
+        if state.closed or state.turn is not None or state.live:
+            return state, ()
+        return replace(state, live=True), ()
 
     def _on_opened(self, state: SessionState, event: Opened) -> Step:
         del event

@@ -33,6 +33,11 @@ is called. `run(ticket)` executes it. A ticket runs once, and only the most
 recent ticket runs; a stale or reused one raises `SessionStateError`.
 `interrupt()` is thread-safe: it ends the running turn (the result has
 `interrupted=True` and the conversation is kept) and also ends a retry wait.
+With no turn running it does nothing. `interrupt(ticket)` names the turn to end: a prepared turn
+interrupted before `run` is cancelled without asking the provider (`run` raises
+`TurnCancelledError`), and an interrupt for a turn that already ended or was superseded does
+nothing, so it never lands on the turn after it. A caller that interrupts from another thread than
+the one running turns should pass the ticket.
 
 Waiting and time go through the injected `Clock` (`clock.wait(seconds, stop)`),
 never `time.sleep`, so tests with `FakeClock` and `SequentialIds` run with no

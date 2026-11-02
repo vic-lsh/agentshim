@@ -19,6 +19,7 @@ is additive: without the new options a session emits what it did in 0.25. See `d
 - **`new_conversation_id`**, **`Session.warm()`**: choose or learn the conversation id before the
   first turn.
 - **`Session.poll_idle`** and `IdleConversation`: what the provider does between turns.
+- **`Session.profile`**: what the provider behind a session can do.
 
 ## 0.25.0 (2026-10-31)
 

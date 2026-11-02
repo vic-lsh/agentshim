@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     from agentshim.core.events import AgentEvent, AgentEventHandler
     from agentshim.core.ids import IdAllocator
     from agentshim.core.mcp import McpServer
+    from agentshim.core.profile import ProviderProfile
     from agentshim.core.session_policy import Command, Continuity, Event, SessionState
     from agentshim.core.turn import TurnRequest, TurnResult
     from agentshim.core.usage import ProviderUsage
@@ -187,6 +188,11 @@ class Session:
         if resume_id is not None and usage is not None:
             self._usage[resume_id] = usage
         self._step(Start(resume_id))
+
+    @property
+    def profile(self) -> ProviderProfile:
+        """What the provider behind this session can do (steering, resuming, ...)."""
+        return self._transport.profile
 
     @property
     def conversation_id(self) -> str | None:

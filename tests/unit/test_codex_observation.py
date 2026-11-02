@@ -172,3 +172,9 @@ def test_polling_between_turns_with_nothing_to_read_keeps_reporting_alive() -> N
     assert events.events == []
     session.close()
     assert session.poll_idle(events) is False
+
+
+def test_a_session_says_what_its_provider_can_do() -> None:
+    session = _World(CodexScript().turn(Say("hi"))).session()
+    assert session.profile.supports_steer is True
+    assert session.profile.supports_resume is True

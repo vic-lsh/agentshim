@@ -20,6 +20,10 @@ is additive: without the new options a session emits what it did in 0.25. See `d
   first turn.
 - **`Session.poll_idle`** and `IdleConversation`: what the provider does between turns.
 - **`Session.profile`**: what the provider behind a session can do.
+- **`Session.interrupt(ticket)`**: interrupt exactly one turn. A prepared turn that is interrupted
+  before it runs is cancelled without asking the provider; an interrupt for a turn that already
+  ended, or was superseded, does nothing, so it cannot land on the next turn. `Session.steer(text,
+  ticket)` likewise refuses a turn that is not the one running.
 
 ## 0.25.0 (2026-10-31)
 

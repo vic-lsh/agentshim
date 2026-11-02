@@ -177,7 +177,10 @@ class Session:
         self._state: SessionState = self._policy.initial_state()
         self._conversation: Conversation | None = None
         self._ticket: TurnTicket | None = None
+        self._running: TurnTicket | None = None
         self._stop: StopSignal | None = None
+        #: Ids of prepared turns whose interrupt came before they ran.
+        self._interrupted_early: set[str] = set()
         self._usage: dict[str, ProviderUsage] = {}
         resume_id = spec.resume_id
         usage = previous_usage if previous_usage is not None else spec.previous_usage
@@ -248,6 +251,8 @@ class Session:
                 strict=expect_conversation is not None,
                 pinned=pin,
             )
+            if self._ticket is not None:
+                self._interrupted_early.discard(self._ticket.turn_id)
             self._ticket = ticket
         self._perform_effects(commands)
         return ticket
@@ -277,21 +282,39 @@ class Session:
                 msg = f"turn ticket {ticket.turn_id!r} is stale or was already run"
                 raise SessionStateError(msg)
             self._ticket = None
+            self._running = ticket
             self._stop = stop
+            if ticket.turn_id in self._interrupted_early:
+                self._interrupted_early.discard(ticket.turn_id)
+                stop.set()
             commands = self._step(RunBegan(now))
         try:
             return self._drive(ticket, on_event, stop, commands)
         finally:
             with self._lock:
                 self._stop = None
+                self._running = None
 
-    def interrupt(self) -> None:
+    def interrupt(self, ticket: TurnTicket | None = None) -> None:
         """End the running turn, keeping the conversation. Thread-safe.
 
         Also ends a retry wait. With no turn running it does nothing and leaves
         the next turn alone.
+
+        With *ticket*, interrupts exactly that turn and never another: a turn
+        prepared and not yet run is cancelled the moment it would start (its
+        ``run`` raises ``TurnCancelledError`` and the provider is never
+        asked); a running turn is interrupted as without a ticket; a turn
+        that already ended, or that a later ``prepare_turn`` superseded, is
+        left alone, so a late interrupt cannot land on the turn after it.
         """
         with self._lock:
+            if ticket is not None:
+                if ticket is self._ticket:
+                    self._interrupted_early.add(ticket.turn_id)
+                    return
+                if ticket is not self._running:
+                    return
             stop = self._stop
             conversation = self._conversation
         if stop is None:
@@ -300,8 +323,12 @@ class Session:
         if conversation is not None:
             conversation.interrupt()
 
-    def steer(self, text: str) -> None:
+    def steer(self, text: str, ticket: TurnTicket | None = None) -> None:
         """Send *text* into the turn that is running now. Thread-safe.
+
+        With *ticket*, the message goes only to that turn: if it is not the turn running now
+        (it ended, or has not started) this raises ``NoRunningTurnError``, so a late steer
+        cannot land in the turn after it.
 
         The provider folds the message into the running turn instead of
         waiting for the next one. It does not queue: the message goes out now
@@ -318,7 +345,7 @@ class Session:
             msg = f"{profile.name} cannot take a message while a turn runs"
             raise ProviderCapabilityError(msg)
         with self._lock:
-            running = self._stop is not None
+            running = self._stop is not None and (ticket is None or ticket is self._running)
             conversation = self._conversation
         if not running or conversation is None:
             msg = "no turn is running in this session"

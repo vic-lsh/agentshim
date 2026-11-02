@@ -35,6 +35,7 @@ from agentshim import (
     TurnFailedError,
     TurnInterrupted,
     TurnRequest,
+    TurnTicket,
 )
 from agentshim.core.checkpoints import Checkpoint
 from agentshim.testing import (
@@ -609,6 +610,72 @@ class TestInterrupt:
             _run(session)
         assert inner.conversations[0].turns == []
 
+    def test_a_ticket_interrupted_before_it_runs_is_cancelled_without_asking_the_provider(
+        self,
+    ) -> None:
+        transport = _transport()
+        session = _session(transport)
+        ticket = session.prepare_turn(TurnRequest(prompt="a"))
+        session.interrupt(ticket)
+        with pytest.raises(TurnCancelledError):
+            session.run(ticket)
+        assert all(not conversation.turns for conversation in transport.conversations)
+        assert _run(session).result.interrupted is False
+
+    def test_an_interrupt_for_a_turn_that_ended_does_not_reach_the_next_one(self) -> None:
+        session = _session(_transport())
+        first = session.prepare_turn(TurnRequest(prompt="a"))
+        session.run(first)
+        second = session.prepare_turn(TurnRequest(prompt="b"))
+        session.interrupt(first)
+        assert session.run(second).result.interrupted is False
+
+    def test_an_interrupt_for_a_superseded_ticket_does_not_reach_the_turn_that_replaced_it(
+        self,
+    ) -> None:
+        session = _session(_transport())
+        first = session.prepare_turn(TurnRequest(prompt="a"))
+        session.interrupt(first)
+        second = session.prepare_turn(TurnRequest(prompt="b"))
+        assert session.run(second).result.interrupted is False
+
+    def test_a_ticket_interrupt_during_its_turn_interrupts_it(self) -> None:
+        holder: list[tuple[Session, TurnTicket]] = []
+
+        def interrupt() -> None:
+            session, ticket = holder[0]
+            session.interrupt(ticket)
+
+        session = _session(_transport(FakeTurn(during=interrupt)))
+        ticket = session.prepare_turn(TurnRequest(prompt="a"))
+        holder.append((session, ticket))
+        assert session.run(ticket).result.interrupted is True
+
+    @given(st.lists(st.tuples(st.booleans(), st.lists(st.integers(0, 6), max_size=3)), max_size=6))
+    def test_a_ticket_interrupt_ends_that_turn_and_no_other(
+        self, plan: list[tuple[bool, list[int]]]
+    ) -> None:
+        """Each turn is cancelled iff its own ticket was interrupted while it was waiting.
+
+        ``plan`` is, per turn, whether to interrupt its ticket before it runs and which earlier
+        tickets (by index, if they exist) to interrupt as stale ones.
+        """
+        session = _session(_transport())
+        tickets: list[TurnTicket] = []
+        for wanted, stale in plan:
+            ticket = session.prepare_turn(TurnRequest(prompt="go"))
+            for index in stale:
+                if index < len(tickets):
+                    session.interrupt(tickets[index])
+            if wanted:
+                session.interrupt(ticket)
+            tickets.append(ticket)
+            if wanted:
+                with pytest.raises(TurnCancelledError):
+                    session.run(ticket)
+            else:
+                assert session.run(ticket).result.interrupted is False
+
     def test_close_interrupts_and_closes_the_conversation(self) -> None:
         transport = _transport()
         session = _session(transport)
@@ -732,6 +799,39 @@ class TestSteer:
         _run(session)
         with pytest.raises(NoRunningTurnError):
             session.steer("late")
+
+    def test_a_steer_for_a_ticket_reaches_the_turn_that_ticket_runs(self) -> None:
+        box: list[tuple[Session, TurnTicket]] = []
+        transport = FakeTransport(
+            [FakeTurn(during=lambda: box[0][0].steer("now", box[0][1]))],
+            profile=fake_profile(supports_steer=True),
+        )
+        session = _agent(transport).session("/work")
+        ticket = session.prepare_turn(TurnRequest(prompt="go"))
+        box.append((session, ticket))
+        session.run(ticket)
+        assert transport.conversations[0].steers == ["now"]
+
+    def test_a_steer_for_a_turn_that_ended_does_not_reach_the_next_turn(self) -> None:
+        box: list[tuple[Session, TurnTicket]] = []
+        refusals: list[NoRunningTurnError] = []
+
+        def late() -> None:
+            try:
+                box[0][0].steer("late", box[0][1])
+            except NoRunningTurnError as error:
+                refusals.append(error)
+
+        transport = FakeTransport(
+            [FakeTurn(), FakeTurn(during=late)], profile=fake_profile(supports_steer=True)
+        )
+        session = _agent(transport).session("/work")
+        first = session.prepare_turn(TurnRequest(prompt="one"))
+        box.append((session, first))
+        session.run(first)
+        _run(session)
+        assert len(refusals) == 1
+        assert transport.conversations[0].steers == []
 
     def test_an_unsupported_provider_is_rejected_even_without_a_turn(self) -> None:
         session = _agent(self._transport(steerable=False)).session("/work")

@@ -295,7 +295,8 @@ class TestLaunchOptions:
         world.run(_spec(disable_subagents=True))
         argv = world.argvs[0]
         at = argv.index("--disallowedTools")
-        assert argv[at + 1] == "Agent,Task"
+        denied = argv[at + 1].split(",")
+        assert {"Agent", "Task", "SendMessage", "ListAgents"} <= set(denied)
         assert argv[at + 2].startswith("--")
 
     def test_no_denial_is_sent_by_default(self) -> None:

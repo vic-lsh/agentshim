@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.27.0 (2026-11-03)
+
+### Added
+
+- **`SessionPlugins(home, refs)` and `PluginRef(marketplace, name)`** select local marketplace
+  plugins per session on Claude Code and Codex, for both one-shot and streaming transports.
+  The native installers populate a fresh, caller-owned configuration home; credentials remain
+  linked to their original files. The session loads the selected plugins plus CLI built-ins
+  without the operator's plugins, skills or configuration, independently of its scope options.
+  Omitting the option preserves existing behavior; an empty selection isolates without plugins.
+- **`ProviderProfile.supports_plugins`** reports support, derived from the provider's native
+  `plugin_install_command`. Unsupported providers refuse the option. Failed installations
+  remove their home and never start an agent. Codex refuses plugins with bundled MCP servers
+  under `McpScope.SESSION` rather than silently weakening the scope.
+
 ## 0.26.1 (2026-11-02)
 
 ### Fixed

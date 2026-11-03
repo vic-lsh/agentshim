@@ -247,7 +247,7 @@ from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 from .transcripts import read_transcript_usage, transcript_providers, transcript_roots
 
-__version__ = "0.26.1"
+__version__ = "0.27.0"
 
 __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "AccountLimits",

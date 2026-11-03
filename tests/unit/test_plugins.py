@@ -275,3 +275,17 @@ def test_plugin_identifiers_cannot_be_cli_options_or_qualified_selectors(name: s
     else:
         with pytest.raises(ValueError, match="invalid plugin name"):
             PluginRef(Path("/marketplace"), name)
+
+
+def test_claude_project_plugin_selection_cannot_expand_the_session(tmp_path: Path) -> None:
+    ref = _marketplace(tmp_path / "marketplace")
+    workspace = tmp_path / "project"
+    settings = workspace / ".claude/settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({"enabledPlugins": {"operator@other": True}}))
+    executor = FakeExecutor(scripted_turn("claude", text="ok"))
+    agent = CliAgent("claude", executor=executor, env={"HOME": str(tmp_path / "user")})
+    agent.run("hello", cwd=str(workspace), plugins=SessionPlugins(tmp_path / "session", (ref,)))
+    argv = executor.requests[-1].argv
+    inline = json.loads(argv[argv.index("--settings") + 1])
+    assert inline["enabledPlugins"] == {"operator@other": False, "example@example-market": True}

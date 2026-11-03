@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING
 
 from agentshim.core.permissions import NativeMode
 from agentshim.core.profile import ConfigScope, McpScope, SkillScope
-from agentshim.providers.plugins import plugin_keys
 
+from .plugins import plugin_settings
 from .provider import (
     MCP_SERVER_KEY,
     NO_AUTO_MEMORY_SETTINGS,
@@ -172,7 +172,7 @@ def _settings(spec: ConversationSpec, hooks: Sequence[ClaudeHook]) -> dict[str, 
     if spec.config_scope is ConfigScope.PROJECT or spec.plugins is not None:
         settings.update(NO_AUTO_MEMORY_SETTINGS)
     if spec.plugins is not None:
-        settings["enabledPlugins"] = dict.fromkeys(plugin_keys(spec.plugins), True)
+        settings["enabledPlugins"] = plugin_settings(spec.plugins, spec.cwd)
     return settings
 
 

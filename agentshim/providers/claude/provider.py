@@ -26,9 +26,9 @@ from agentshim.core.profile import (
     SkillScope,
     SkillSignal,
 )
-from agentshim.providers.plugins import plugin_keys
 
 from .parser import ClaudeStreamParser
+from .plugins import plugin_settings
 from .sandbox import SANDBOX_ENV, SandboxConfig, build_settings, resolve_sandbox
 from .tools import ClaudeToolPolicy, resolve_tools
 from .user_hooks import ClaudeHook, resolve_hooks
@@ -232,7 +232,7 @@ class ClaudeProvider:
         if ctx.config_scope is ConfigScope.PROJECT or ctx.plugins is not None:
             settings.update(NO_AUTO_MEMORY_SETTINGS)
         if ctx.plugins is not None:
-            settings["enabledPlugins"] = dict.fromkeys(plugin_keys(ctx.plugins), True)
+            settings["enabledPlugins"] = plugin_settings(ctx.plugins, ctx.cwd)
         return settings
 
     def new_parser(

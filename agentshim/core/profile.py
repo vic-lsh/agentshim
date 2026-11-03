@@ -218,11 +218,12 @@ class ProviderProfile:
     #: When a session should retire a conversation of this provider; ``None``
     #: means never.
     renewal: RenewalBudget | None = None
+    #: Native install subcommand for the shared local-marketplace format.
+    #: Empty means isolated session plugins are unsupported.
+    plugin_install_command: tuple[str, ...] = ()
     #: Whether a conversation on this provider takes ``steer(text)`` while a
     #: turn runs. A provider that does not (every one-shot transport) rejects
     #: it with ``ProviderCapabilityError`` instead of delaying the message.
-    supports_plugins: bool = False
-    #: Whether this transport can isolate and load ``SessionPlugins``.
     supports_steer: bool = False
     #: The credentials the CLI can log in with, in the CLI's own precedence
     #: order (0.16.0+). ``plan_auth`` walks them to choose the one credential
@@ -248,6 +249,11 @@ class ProviderProfile:
     #: when it has none (Gemini CLI signs in on its first interactive run).
     #: Signed-in state is read by the provider's ``ProbeSpec``.
     login: LoginSpec | None = None
+
+    @property
+    def supports_plugins(self) -> bool:
+        """Whether this transport can isolate and load ``SessionPlugins``."""
+        return bool(self.plugin_install_command)
 
     @property
     def default_model(self) -> str | None:

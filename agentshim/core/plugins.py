@@ -25,8 +25,10 @@ class PluginRef:
         if not self.marketplace.is_absolute():
             msg = "plugin marketplace must be an absolute path"
             raise ValueError(msg)
-        if not self.name or any(
-            c not in "abcdefghijklmnopqrstuvwxyz0123456789-_" for c in self.name
+        if (
+            not self.name
+            or not self.name[0].isalnum()
+            or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-_" for c in self.name)
         ):
             msg = f"invalid plugin name: {self.name!r}"
             raise ValueError(msg)

@@ -28,6 +28,7 @@ from agentshim.core.profile import (
     SkillScope,
     SkillSignal,
 )
+from agentshim.providers.plugins import check_plugin_mcp, plugin_keys
 
 from ._toml import toml_array, toml_str, unescape_toml
 from .mcp_scope import session_scope_overrides
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
     from agentshim.core.errors import AgentShimError, CliExitError
     from agentshim.core.events import AgentEvent
     from agentshim.core.mcp import McpServer
+    from agentshim.core.plugins import SessionPlugins
     from agentshim.core.provider import ArgvContext, McpInstallation
 
 #: The CLI release the container recipe installs, matching the host pin.
@@ -109,6 +111,7 @@ PROFILE = ProviderProfile(
     # ``exec --json`` lists no skills; a load is inferred from a shell read
     # of a ``SKILL.md`` (``skills.py``).
     skill_invocation=SkillSignal.INFERRED,
+    plugin_install_command=("plugin", "add"),
     skill_scopes=frozenset({SkillScope.ALL, SkillScope.PROJECT}),
     mcp_scopes=frozenset({McpScope.ALL, McpScope.SESSION}),
     config_scopes=frozenset({ConfigScope.ALL, ConfigScope.PROJECT}),
@@ -190,6 +193,8 @@ class CodexProvider:
         from stdin, and it has to sit right after the thread id. Plain
         ``codex exec`` treats stdin as the default, so it needs no sentinel.
         """
+        if ctx.plugins is not None and ctx.mcp_scope is McpScope.SESSION:
+            check_plugin_mcp(ctx.plugins)
         argv = [ctx.binary_path, "exec"]
         if ctx.resume_session_id:
             argv += ["resume", ctx.resume_session_id, "-"]
@@ -198,10 +203,12 @@ class CodexProvider:
         if ctx.model:
             argv += ["--model", ctx.model]
         argv += shell_path_config(ctx.env)
-        if ctx.config_scope is ConfigScope.PROJECT:
+        if ctx.config_scope is ConfigScope.PROJECT or ctx.plugins is not None:
             _check_config_home(ctx)
             argv += PROJECT_CONFIG_FLAGS
         argv += _scope_overrides(ctx)
+        if ctx.plugins is not None:
+            argv += plugin_overrides(ctx.plugins)
         if ctx.reasoning_effort:
             argv += ["--config", f"model_reasoning_effort={toml_str(ctx.reasoning_effort)}"]
         argv += ["--config", 'model_reasoning_summary="detailed"']
@@ -371,7 +378,7 @@ def _scope_overrides(ctx: ArgvContext) -> list[str]:
     return scope_overrides(
         ctx.env,
         ctx.cwd,
-        skill_scope=ctx.skill_scope,
+        skill_scope=SkillScope.PROJECT if ctx.plugins is not None else ctx.skill_scope,
         mcp_scope=ctx.mcp_scope,
         given_keys={server.name.replace("-", "_") for server in ctx.mcp_servers},
     )
@@ -582,3 +589,21 @@ def _config_overrides(argv: Sequence[str]) -> list[tuple[str, str]]:
             if sep:
                 pairs.append((key, value))
     return pairs
+
+
+def plugin_overrides(plugins: SessionPlugins) -> list[str]:
+    """Enable only the installed selection, even when a scope disables plugins.
+
+    Project config isolation ignores the installer's user config. Supply its
+    marketplace bindings and exact plugin map explicitly on the command line.
+    """
+    keys = plugin_keys(plugins)
+    entries = ", ".join(f"{toml_str(key)} = {{enabled = true}}" for key in keys)
+    flags = ["--config", "features.plugins=true", "--config", f"plugins={{{entries}}}"]
+    for ref, key in zip(plugins.refs, keys, strict=True):
+        marketplace = key.split("@", 1)[1]
+        flags += [
+            "--config",
+            f'marketplaces.{toml_str(marketplace)}={{source_type = "local", source = {toml_str(str(ref.marketplace))}}}',
+        ]
+    return flags

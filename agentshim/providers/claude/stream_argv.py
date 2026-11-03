@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from agentshim.core.permissions import NativeMode
 from agentshim.core.profile import ConfigScope, McpScope, SkillScope
+from agentshim.providers.plugins import plugin_keys
 
 from .provider import (
     MCP_SERVER_KEY,
@@ -115,7 +116,9 @@ def stream_argv(  # noqa: PLR0913
         # Variadic: it must be followed by another flag, and ``_permission_argv`` starts with one.
         argv += ["--disallowedTools", ",".join(SUBAGENT_TOOLS)]
     argv += _permission_argv(spec)
-    if spec.skill_scope is SkillScope.PROJECT or spec.config_scope is ConfigScope.PROJECT:
+    if spec.skill_scope is SkillScope.PROJECT or (
+        spec.config_scope is ConfigScope.PROJECT or spec.plugins is not None
+    ):
         argv += PROJECT_SETTING_SOURCES
     if config.reasoning_effort:
         argv += ["--effort", config.reasoning_effort]
@@ -166,8 +169,10 @@ def _settings(spec: ConversationSpec, hooks: Sequence[ClaudeHook]) -> dict[str, 
         )
     else:
         settings = dict(build_settings(None, hooks=hooks))
-    if spec.config_scope is ConfigScope.PROJECT:
+    if spec.config_scope is ConfigScope.PROJECT or spec.plugins is not None:
         settings.update(NO_AUTO_MEMORY_SETTINGS)
+    if spec.plugins is not None:
+        settings["enabledPlugins"] = dict.fromkeys(plugin_keys(spec.plugins), True)
     return settings
 
 

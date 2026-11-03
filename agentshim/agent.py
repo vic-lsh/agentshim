@@ -39,6 +39,7 @@ from agentshim.core.turn import TurnRequest, TurnResult, coerce_request
 from agentshim.execution.executor import CommandRequest
 from agentshim.execution.host import HostCommandExecutor
 from agentshim.providers import DEFAULT_CATALOG, ProviderCatalog, get_provider
+from agentshim.providers.plugins import prepare_plugins
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -342,6 +343,14 @@ class AgentSession:
         installation: McpInstallation | None = None
         try:
             self._check_capabilities(req)
+            if self.plugins is not None:
+                env = prepare_plugins(
+                    agent.profile,
+                    self.plugins,
+                    env,
+                    agent.executor,
+                    agent.binary_path,
+                )
             schema_inline, schema_path = self._resolve_schema(req.output_schema)
             workspace = req.mcp_workspace
             if workspace is None and cwd is not None:

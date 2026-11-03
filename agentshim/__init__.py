@@ -81,6 +81,7 @@ from .core import (
     OutputSchemaStyle,
     ParsedTurn,
     ParserContext,
+    PluginRef,
     PolicyConfig,
     PricingContext,
     ProcessClosedError,
@@ -112,6 +113,7 @@ from .core import (
     RunStarted,
     SchemaDialect,
     SchemaDialectError,
+    SessionPlugins,
     SessionPolicy,
     SessionResumeError,
     SessionStarted,
@@ -177,7 +179,6 @@ from .core import (
     price_tokens,
     speed_premium_usd,
 )
-from .core.plugins import PluginRef, SessionPlugins
 from .execution import (
     CallbackCommandStreamSink,
     CommandExecutor,

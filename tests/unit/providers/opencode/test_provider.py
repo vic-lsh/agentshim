@@ -45,6 +45,7 @@ class TestProfile:
             "state_root_env",
             "config_home_files",
             "resume_state_paths",
+            "plugin_install_command",
             "renewal",
             "endpoint",
             "credential_sources",

@@ -221,6 +221,8 @@ class ProviderProfile:
     #: Whether a conversation on this provider takes ``steer(text)`` while a
     #: turn runs. A provider that does not (every one-shot transport) rejects
     #: it with ``ProviderCapabilityError`` instead of delaying the message.
+    supports_plugins: bool = False
+    #: Whether this transport can isolate and load ``SessionPlugins``.
     supports_steer: bool = False
     #: The credentials the CLI can log in with, in the CLI's own precedence
     #: order (0.16.0+). ``plan_auth`` walks them to choose the one credential

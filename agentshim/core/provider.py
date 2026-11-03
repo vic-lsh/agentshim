@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .errors import AgentShimError, CliExitError
     from .events import AgentEvent
     from .mcp import McpServer
+    from .plugins import SessionPlugins
     from .profile import ProviderProfile
 
 
@@ -52,6 +53,7 @@ class ArgvContext:
     #: Which of the user's own CLI configuration the CLI may load; the
     #: session has already checked that the provider's profile supports it.
     config_scope: ConfigScope = ConfigScope.ALL
+    plugins: SessionPlugins | None = None
 
 
 @dataclass(frozen=True)

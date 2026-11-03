@@ -177,6 +177,7 @@ from .core import (
     price_tokens,
     speed_premium_usd,
 )
+from .core.plugins import PluginRef, SessionPlugins
 from .execution import (
     CallbackCommandStreamSink,
     CommandExecutor,
@@ -351,6 +352,7 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "OutputSchemaStyle",
     "ParsedTurn",
     "ParserContext",
+    "PluginRef",
     "PolicyConfig",
     "PricingContext",
     "PricingTable",
@@ -400,6 +402,7 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "SchemaDialect",
     "SchemaDialectError",
     "Session",
+    "SessionPlugins",
     "SessionPolicy",
     "SessionResumeError",
     "SessionStarted",

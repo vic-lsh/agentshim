@@ -127,6 +127,7 @@ from .plugin import (
     RateNaming,
     TranscriptSource,
 )
+from .plugins import PluginRef, SessionPlugins
 from .pricing import ModelPricing, PricingTable, cost_usd
 from .profile import (
     ConfigScope,
@@ -262,6 +263,7 @@ __all__ = [
     "OutputSchemaStyle",
     "ParsedTurn",
     "ParserContext",
+    "PluginRef",
     "PolicyConfig",
     "PricingContext",
     "PricingTable",
@@ -296,6 +298,7 @@ __all__ = [
     "RunStarted",
     "SchemaDialect",
     "SchemaDialectError",
+    "SessionPlugins",
     "SessionPolicy",
     "SessionResumeError",
     "SessionStarted",

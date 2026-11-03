@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from agentshim.core.clock import SystemClock
 from agentshim.core.conversation import ConversationSpec, TransportKind
 from agentshim.core.env import interactive_env
+from agentshim.core.errors import ProviderCapabilityError
 from agentshim.core.ids import RandomIds
 from agentshim.core.profile import ConfigScope, McpScope, SkillScope
 from agentshim.core.session_policy import PolicyConfig, RetryPolicy
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from agentshim.core.ids import IdAllocator
     from agentshim.core.mcp import McpServer
     from agentshim.core.permissions import ApprovalPolicy, NativePermissions
+    from agentshim.core.plugins import SessionPlugins
     from agentshim.core.profile import ProviderProfile
     from agentshim.core.status import ProviderStatus
     from agentshim.core.usage import ProviderUsage
@@ -197,6 +199,7 @@ class Agent:
         skill_scope: SkillScope = SkillScope.ALL,
         mcp_scope: McpScope = McpScope.ALL,
         config_scope: ConfigScope = ConfigScope.ALL,
+        plugins: SessionPlugins | None = None,
         partial_text: bool = False,
         disable_subagents: bool = False,
         raw_sink: Callable[[RawFrame], None] | None = None,
@@ -235,12 +238,16 @@ class Agent:
             skill_scope=skill_scope,
             mcp_scope=mcp_scope,
             config_scope=config_scope,
+            plugins=plugins,
             partial_text=partial_text,
             disable_subagents=disable_subagents,
             raw_sink=raw_sink,
             new_conversation_id=new_conversation_id,
         )
         profile = self.profile
+        if plugins is not None and not profile.supports_plugins:
+            msg = f"{profile.name} does not support session plugins"
+            raise ProviderCapabilityError(msg)
         return Session(
             self._transport,
             spec,

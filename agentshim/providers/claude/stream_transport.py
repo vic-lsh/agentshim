@@ -81,6 +81,7 @@ from agentshim.core.stream import parse_json_object
 from agentshim.core.turn import TurnResult
 from agentshim.execution.host import HostCommandExecutor
 from agentshim.execution.process import ProcessExited, SpawnRequest, StderrLine, StdoutLine
+from agentshim.providers.plugins import prepare_plugins
 
 from .events import ResultFrame, parse_frame
 from .failures import classify_failure
@@ -215,7 +216,15 @@ class ClaudeStreamTransport:
         ``CliExitError``) when the process dies before it is ready.
         """
         _check_spec(spec)
-        conversation = _StreamConversation(self._runtime, spec)
+        runtime = self._runtime
+        if spec.plugins is not None:
+            runtime = replace(
+                runtime,
+                env=prepare_plugins(
+                    self.profile, spec.plugins, runtime.env, runtime.executor, runtime.binary
+                ),
+            )
+        conversation = _StreamConversation(runtime, spec)
         try:
             conversation.start()
         except BaseException:

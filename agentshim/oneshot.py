@@ -128,6 +128,7 @@ class OneShotTransport:
             skill_scope=spec.skill_scope,
             mcp_scope=spec.mcp_scope,
             config_scope=spec.config_scope,
+            plugins=spec.plugins,
         )
         return _OneShotConversation(session, router, spec)
 

@@ -50,6 +50,7 @@ from agentshim.core.events import (
     UsageReport,
 )
 from agentshim.core.permissions import ApprovalPolicy
+from agentshim.core.profile import McpScope, SkillScope
 from agentshim.core.schema import dialect_problems
 from agentshim.core.skills import SkillTracker
 from agentshim.core.turn import TurnRequest, TurnResult
@@ -57,8 +58,13 @@ from agentshim.core.usage import CostSource, ModelUsage, UsageSpeed
 from agentshim.execution.host import HostCommandExecutor
 from agentshim.execution.process import SpawnRequest
 from agentshim.pricing import cost_usd, price_for
-from agentshim.providers.codex.provider import scope_overrides, shell_path_config
+from agentshim.providers.codex.provider import (
+    plugin_overrides,
+    scope_overrides,
+    shell_path_config,
+)
 from agentshim.providers.codex.speed import speed_of_tier
+from agentshim.providers.plugins import check_plugin_mcp, prepare_plugins
 
 from .approvals import answer_request
 from .channel import Channel, Deadline, Expired, Gone
@@ -218,7 +224,17 @@ class CodexAppServerTransport:
             TurnTimeoutError: The handshake took longer than ``startup_timeout``.
         """
         settings = self._settings_for(spec)
-        request = SpawnRequest(argv=self._argv(spec, settings), cwd=spec.cwd, env=dict(self._env))
+        env = dict(self._env)
+        if spec.plugins is not None:
+            env = prepare_plugins(
+                self.profile,
+                spec.plugins,
+                env,
+                self._executor,
+                self._binary,
+            )
+        argv = self._argv(spec, settings, env)
+        request = SpawnRequest(argv=argv, cwd=spec.cwd, env=env)
 
         def spawn() -> Process:
             try:
@@ -237,6 +253,8 @@ class CodexAppServerTransport:
 
     def _settings_for(self, spec: ConversationSpec) -> _Settings:
         profile = self.profile
+        if spec.plugins is not None and spec.mcp_scope is McpScope.SESSION:
+            check_plugin_mcp(spec.plugins)
         if spec.permissions.mode not in profile.native_permission_modes:
             msg = f"{profile.name} cannot enforce native permission mode {spec.permissions.mode.value!r}"
             raise ProviderCapabilityError(msg)
@@ -263,7 +281,9 @@ class CodexAppServerTransport:
             version=_client_version(),
         )
 
-    def _argv(self, spec: ConversationSpec, settings: _Settings) -> list[str]:
+    def _argv(
+        self, spec: ConversationSpec, settings: _Settings, env: Mapping[str, str]
+    ) -> list[str]:
         """``codex app-server`` plus the ``-c`` overrides that keep the user's setup out.
 
         Sandbox, approvals and model travel in the requests, not here. What is
@@ -275,14 +295,16 @@ class CodexAppServerTransport:
             self._binary,
             "app-server",
             *disable,
-            *shell_path_config(self._env),
+            *(["--disable", "memories"] if spec.plugins is not None else ()),
+            *shell_path_config(env),
             *scope_overrides(
-                self._env,
+                env,
                 spec.cwd,
-                skill_scope=spec.skill_scope,
+                skill_scope=SkillScope.PROJECT if spec.plugins is not None else spec.skill_scope,
                 mcp_scope=spec.mcp_scope,
                 given_keys=settings.mcp_keys,
             ),
+            *(plugin_overrides(spec.plugins) if spec.plugins is not None else ()),
         ]
 
     def _timeouts(self) -> _Timeouts:

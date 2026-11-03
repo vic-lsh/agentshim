@@ -249,6 +249,7 @@ profile.skill_scopes               # frozenset[SkillScope] a session may request
 profile.mcp_scopes                 # frozenset[McpScope] a session may request
 profile.config_scopes              # frozenset[ConfigScope] a session may request
 profile.config_home_files          # state-root files a ConfigScope.PROJECT home carries over
+profile.supports_plugins           # isolated, explicit session plugin selection
 profile.container_install          # shell commands installing the CLI
 ```
 
@@ -341,6 +342,61 @@ the skill and MCP scopes. Verified against Claude Code 2.1.288 and Codex
   another. `build_argv` refuses the scope when `CODEX_HOME` is unset,
   relative, or the user's own `~/.codex`. `--ignore-user-config` also means a
   workspace `.codex/config.toml` is not loaded; pass settings as turn flags.
+
+### Explicit session plugins
+
+Claude Code and Codex accept a local marketplace plugin selection through
+`plugins=SessionPlugins(home, refs)` on `Agent.session`, `CliAgent.start_session`
+and `CliAgent.run`. `ConversationSpec.plugins` carries the same option for
+transports used directly. Both the one-shot and streaming transports support it.
+
+```python
+from pathlib import Path
+from agentshim import PluginRef, SessionPlugins
+
+plugins = SessionPlugins(
+    home=Path("/run/session-home"),
+    refs=(PluginRef(marketplace=Path("/checkouts/marketplace"), name="example"),),
+)
+session = agent.session(cwd="/workspace", plugins=plugins)
+```
+
+The home must not exist on first use. The caller owns it: retain it unchanged
+for resume and remove it after the session is no longer needed. Do not share
+it between concurrent sessions. A completed installation record permits reuse
+with the same provider and references; another selection or an unowned existing
+home is refused. Paths must be absolute, and the marketplace must contain
+`.claude-plugin/marketplace.json`. The home, checkout and credential-link
+targets must be visible to the executor at the same absolute paths as on the
+host. Installation commands have a 60-second timeout each, run before the first
+agent process, and are not retried. An installation failure removes the new
+home and raises; no agent starts with a partial selection.
+
+The session loads exactly the named plugins plus the CLI's built-ins, excluding
+the operator's plugins, skills and configuration regardless of skill/config
+scope. Workspace instructions and skills still apply. Scope support remains
+as declared by the transport's profile. `SessionPlugins(home)` selects no
+plugins while keeping this isolation; omitting `plugins` preserves existing
+scope behavior. A provider with `profile.supports_plugins == False` raises
+`ProviderCapabilityError`, even for an empty selection.
+
+- Claude uses its native marketplace-add and plugin-install commands in a
+  dedicated `CLAUDE_CONFIG_DIR`. PROJECT setting sources exclude the user's
+  settings and skills; inline `enabledPlugins` enables the selected plugins
+  from the new home's registry. This supports marketplace entries with
+  `strict: false` and component lists without a source `plugin.json`, which a
+  raw `--plugin-dir` cannot load. Auto memory stays disabled.
+- Codex uses its native marketplace-add and plugin-add commands in a dedicated
+  `CODEX_HOME`. Explicit marketplace and plugin-map overrides enable the
+  selection after scope overrides, while personal skills remain disabled.
+  `exec` ignores user config; app-server reads only the generated config in
+  the fresh home. Memories are disabled in both. With `McpScope.SESSION`,
+  Codex accepts only inspectable local plugins without bundled MCP servers;
+  other plugins are refused because enabling them could bypass that scope.
+- Both reuse `prepare_config_home`'s credential-link mechanism; personal
+  configuration files are never copied. Environment credentials still apply.
+  Authentication configured only through personal settings must instead be
+  passed explicitly, as with `ConfigScope.PROJECT`.
 
 The prompt is never in argv on any provider: it always goes on stdin, so an
 agent's own `pkill -f` cannot match the CLI by prompt text.

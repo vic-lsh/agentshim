@@ -83,6 +83,7 @@ _MAY_BE_EMPTY = frozenset(
         "auth_env_vars",
         "config_home_files",
         "resume_state_paths",
+        "plugin_install_command",
         "credential_sources",
     }
 )

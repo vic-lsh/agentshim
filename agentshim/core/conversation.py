@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from .events import AgentEvent
     from .mcp import McpServer
     from .permissions import ApprovalPolicy, NativePermissions
+    from .plugins import SessionPlugins
     from .profile import ProviderProfile
     from .turn import TurnRequest, TurnResult
     from .usage import ProviderUsage
@@ -82,6 +83,7 @@ class ConversationSpec:
     skill_scope: SkillScope = SkillScope.ALL
     mcp_scope: McpScope = McpScope.ALL
     config_scope: ConfigScope = ConfigScope.ALL
+    plugins: SessionPlugins | None = None
     #: Stream the model's text as ``TextDelta`` events while it is written. Only a long-lived
     #: (``TransportKind.STREAM``) conversation can; others raise ``ProviderCapabilityError``.
     partial_text: bool = False

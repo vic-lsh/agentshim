@@ -28,6 +28,7 @@ from agentshim.core.profile import (
 )
 
 from .parser import ClaudeStreamParser
+from .plugins import plugin_settings
 from .sandbox import SANDBOX_ENV, SandboxConfig, build_settings, resolve_sandbox
 from .tools import ClaudeToolPolicy, resolve_tools
 from .user_hooks import ClaudeHook, resolve_hooks
@@ -108,6 +109,7 @@ PROFILE = ProviderProfile(
     # ``system/init`` lists ``skills``; the ``Skill`` tool call names one.
     skill_discovery=SkillSignal.STRUCTURED,
     skill_invocation=SkillSignal.STRUCTURED,
+    plugin_install_command=("plugin", "install"),
     skill_scopes=frozenset({SkillScope.ALL, SkillScope.PROJECT}),
     mcp_scopes=frozenset({McpScope.ALL, McpScope.SESSION}),
     config_scopes=frozenset({ConfigScope.ALL, ConfigScope.PROJECT}),
@@ -207,7 +209,7 @@ class ClaudeProvider:
         else:
             argv += self.tools.argv(structured_output=ctx.schema_inline is not None)
         argv += ["--output-format", "stream-json", "--verbose"]
-        isolate_config = ctx.config_scope is ConfigScope.PROJECT
+        isolate_config = ctx.config_scope is ConfigScope.PROJECT or ctx.plugins is not None
         if ctx.skill_scope is SkillScope.PROJECT or isolate_config:
             argv += PROJECT_SETTING_SOURCES
         if ctx.model:
@@ -216,9 +218,7 @@ class ClaudeProvider:
             argv += ["--effort", ctx.reasoning_effort]
         if ctx.schema_inline:
             argv += ["--json-schema", ctx.schema_inline]
-        settings = build_settings(self.sandbox, hooks=self.hooks)
-        if isolate_config:
-            settings.update(NO_AUTO_MEMORY_SETTINGS)
+        settings = self._turn_settings(ctx)
         if settings:
             argv += ["--settings", json.dumps(settings)]
         if ctx.mcp_scope is McpScope.SESSION:
@@ -226,6 +226,14 @@ class ClaudeProvider:
         argv += list(ctx.mcp_argv)
         argv += list(ctx.extra_args)
         return argv
+
+    def _turn_settings(self, ctx: ArgvContext) -> dict[str, object]:
+        settings = build_settings(self.sandbox, hooks=self.hooks)
+        if ctx.config_scope is ConfigScope.PROJECT or ctx.plugins is not None:
+            settings.update(NO_AUTO_MEMORY_SETTINGS)
+        if ctx.plugins is not None:
+            settings["enabledPlugins"] = plugin_settings(ctx.plugins, ctx.cwd)
+        return settings
 
     def new_parser(
         self,

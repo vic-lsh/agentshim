@@ -39,11 +39,13 @@ from agentshim.core.turn import TurnRequest, TurnResult, coerce_request
 from agentshim.execution.executor import CommandRequest
 from agentshim.execution.host import HostCommandExecutor
 from agentshim.providers import DEFAULT_CATALOG, ProviderCatalog, get_provider
+from agentshim.providers.plugins import prepare_plugins
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from agentshim.core.events import AgentEvent, AgentEventHandler
+    from agentshim.core.plugins import SessionPlugins
     from agentshim.core.profile import ProviderProfile
     from agentshim.core.provider import McpInstallation, ParsedTurn, Provider, StreamParser
     from agentshim.core.turn import OutputSchema
@@ -142,6 +144,7 @@ class CliAgent:
         skill_scope: SkillScope = SkillScope.ALL,
         mcp_scope: McpScope = McpScope.ALL,
         config_scope: ConfigScope = ConfigScope.ALL,
+        plugins: SessionPlugins | None = None,
     ) -> AgentSession:
         """Open a conversation whose turns resume one another.
 
@@ -159,6 +162,7 @@ class CliAgent:
             skill_scope=skill_scope,
             mcp_scope=mcp_scope,
             config_scope=config_scope,
+            plugins=plugins,
         )
 
     def run(  # noqa: PLR0913 - one keyword per independent session option
@@ -170,6 +174,7 @@ class CliAgent:
         skill_scope: SkillScope = SkillScope.ALL,
         mcp_scope: McpScope = McpScope.ALL,
         config_scope: ConfigScope = ConfigScope.ALL,
+        plugins: SessionPlugins | None = None,
     ) -> TurnResult:
         """Run one turn in a throwaway session."""
         session = self.start_session(
@@ -178,6 +183,7 @@ class CliAgent:
             skill_scope=skill_scope,
             mcp_scope=mcp_scope,
             config_scope=config_scope,
+            plugins=plugins,
         )
         return session.turn(request)
 
@@ -200,6 +206,7 @@ class AgentSession:
         skill_scope: SkillScope = SkillScope.ALL,
         mcp_scope: McpScope = McpScope.ALL,
         config_scope: ConfigScope = ConfigScope.ALL,
+        plugins: SessionPlugins | None = None,
     ) -> None:
         """Bind a conversation to one agent, with per-turn defaults.
 
@@ -231,6 +238,10 @@ class AgentSession:
         if config_scope not in agent.profile.config_scopes:
             msg = f"{agent.profile.name} cannot limit user configuration to scope {config_scope.value!r}"
             raise ProviderCapabilityError(msg)
+        if plugins is not None and not agent.profile.supports_plugins:
+            msg = f"{agent.profile.name} does not support session plugins"
+            raise ProviderCapabilityError(msg)
+        self.plugins = plugins
         self.skill_scope = skill_scope
         self.config_scope = config_scope
         self.mcp_scope = mcp_scope
@@ -332,6 +343,14 @@ class AgentSession:
         installation: McpInstallation | None = None
         try:
             self._check_capabilities(req)
+            if self.plugins is not None:
+                env = prepare_plugins(
+                    agent.profile,
+                    self.plugins,
+                    env,
+                    agent.executor,
+                    agent.binary_path,
+                )
             schema_inline, schema_path = self._resolve_schema(req.output_schema)
             workspace = req.mcp_workspace
             if workspace is None and cwd is not None:
@@ -352,6 +371,7 @@ class AgentSession:
                     skill_scope=self.skill_scope,
                     mcp_scope=self.mcp_scope,
                     config_scope=self.config_scope,
+                    plugins=self.plugins,
                     mcp_servers=tuple(req.mcp_servers),
                 )
             )

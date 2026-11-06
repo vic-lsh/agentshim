@@ -18,7 +18,12 @@ from agentshim import (
     CommandHandle,
     CommandRequest,
     HostCommandExecutor,
+    ProcessExited,
+    SpawnRequest,
+    StdoutLine,
 )
+
+HANG_GUARD_SECONDS = 30
 
 
 class RecordingSink:
@@ -313,3 +318,66 @@ class TestBinaryLookup:
         script.write_text("#!/bin/sh\ncat > /dev/null\n")
         script.chmod(0o755)
         HostCommandExecutor().check_binary(str(script), os.environ.copy(), timeout=10)
+
+
+class TestPrivateFiles:
+    """A secret reaches the process as a file it can read, and is on no command line or disk."""
+
+    @staticmethod
+    def _spawn(argv: list[str], files: dict[str, str]) -> tuple[list[str], int | None]:
+        process = HostCommandExecutor().spawn(
+            SpawnRequest(argv=argv, cwd=None, env=dict(os.environ), private_files=files)
+        )
+        lines: list[str] = []
+        while True:
+            item = process.next_output(HANG_GUARD_SECONDS)
+            assert item is not None, "the process hung"
+            if isinstance(item, StdoutLine):
+                lines.append(item.text.rstrip("\n"))
+            if isinstance(item, ProcessExited):
+                return lines, item.returncode
+
+    def test_the_process_reads_it_through_the_argument(self) -> None:
+        program = "import sys; print(open(sys.argv[1]).read()); print(sys.argv[1])"
+        lines, code = self._spawn(
+            [sys.executable, "-c", program, "<secret>"], {"<secret>": "the-secret"}
+        )
+        assert code == 0
+        assert lines[0] == "the-secret"
+        assert lines[1].startswith("/dev/fd/")
+
+    def test_content_larger_than_a_pipe_arrives_whole(self) -> None:
+        content = "x" * (1024 * 1024)
+        program = "import sys; print(len(open(sys.argv[1]).read()))"
+        lines, code = self._spawn([sys.executable, "-c", program, "<big>"], {"<big>": content})
+        assert (lines, code) == ([str(len(content))], 0)
+
+    def test_a_process_that_never_reads_it_still_ends(self) -> None:
+        lines, code = self._spawn(
+            [sys.executable, "-c", "print('left')", "<big>"], {"<big>": "x" * (1024 * 1024)}
+        )
+        assert (lines, code) == (["left"], 0)
+
+    def test_a_child_of_the_process_finds_it_drained(self) -> None:
+        program = (
+            "import subprocess, sys;"
+            "path = sys.argv[1];"
+            "print(open(path).read());"
+            "print(repr(subprocess.run(['cat', path], close_fds=False, capture_output=True).stdout))"
+        )
+        lines, code = self._spawn([sys.executable, "-c", program, "<s>"], {"<s>": "the-secret"})
+        assert code == 0
+        assert lines == ["the-secret", "b''"]
+
+    def test_a_process_that_cannot_start_leaves_no_descriptor_open(self) -> None:
+        before = {p.name for p in Path("/proc/self/fd").iterdir()}
+        with pytest.raises(OSError, match="nowhere"):
+            HostCommandExecutor().spawn(
+                SpawnRequest(
+                    argv=["/nowhere/at/all", "<s>"],
+                    cwd=None,
+                    env={},
+                    private_files={"<s>": "the-secret"},
+                )
+            )
+        assert {p.name for p in Path("/proc/self/fd").iterdir()} <= before

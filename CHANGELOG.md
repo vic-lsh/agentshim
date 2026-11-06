@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.27.2 (2026-11-06)
+
+### Fixed
+
+- **A Claude Code streaming session's MCP config is no longer on its command line**, where every
+  local user could read the secrets in a server's `env`. It reaches the process through an inherited
+  pipe named by a `/dev/fd` path, and is written to no file. `SpawnRequest.private_files` carries
+  it: `argv` holds a placeholder, `HostCommandExecutor` makes the pipe, and `inlined_argv()` is the
+  command line as it was, which `TransformingExecutor` uses because a descriptor does not follow a
+  command across `docker exec`. A wrapped command's config is therefore still on the wrapper's
+  command line. Error messages quote the placeholder, not the config.
+- **`plugin_keys` raises `PluginInstallError`** for a marketplace manifest that is missing,
+  unreadable, invalid, or does not name the plugin, and for a duplicate. These were plain
+  `ValueError` or `OSError`, so a caller could not tell them from any other failure to start.
+  `PluginInstallError` is a `ValueError`; a caller that caught `OSError` here must catch it instead.
+
 ## 0.27.1 (2026-11-06)
 
 ### Added

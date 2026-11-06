@@ -30,12 +30,19 @@ _INSTALL_TIMEOUT = 60.0
 
 
 def plugin_keys(plugins: SessionPlugins) -> tuple[str, ...]:
-    """Validate local marketplace selectors and return native qualified names."""
+    """Validate local marketplace selectors and return native qualified names.
+
+    Raises ``PluginInstallError`` when a marketplace cannot be read or does not name the plugin.
+    """
     keys: list[str] = []
     roots: dict[str, Path] = {}
     for ref in plugins.refs:
         manifest = ref.marketplace / ".claude-plugin" / "marketplace.json"
-        data = parse_json_object(manifest.read_text(encoding="utf-8"))
+        try:
+            data = parse_json_object(manifest.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError) as exc:
+            msg = f"cannot read plugin marketplace manifest: {manifest}: {exc}"
+            raise PluginInstallError(msg) from exc
         name = None if data is None else data.get("name")
         entries = None if data is None else data.get("plugins")
         if (
@@ -46,18 +53,18 @@ def plugin_keys(plugins: SessionPlugins) -> tuple[str, ...]:
             or not isinstance(entries, list)
         ):
             msg = f"invalid plugin marketplace manifest: {manifest}"
-            raise ValueError(msg)
+            raise PluginInstallError(msg)
         if not any(_names_plugin(p, ref.name) for p in cast("list[object]", entries)):
             msg = f"plugin {ref.name!r} is absent from {manifest}"
-            raise ValueError(msg)
+            raise PluginInstallError(msg)
         if name in roots and roots[name] != ref.marketplace:
             msg = f"marketplace name {name!r} refers to multiple checkouts"
-            raise ValueError(msg)
+            raise PluginInstallError(msg)
         roots[name] = ref.marketplace
         key = f"{ref.name}@{name}"
         if key in keys:
             msg = f"duplicate session plugin: {key}"
-            raise ValueError(msg)
+            raise PluginInstallError(msg)
         keys.append(key)
     return tuple(keys)
 

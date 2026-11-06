@@ -14,9 +14,10 @@ from agentshim import (
     CommandRequest,
     HostCommandExecutor,
     NullSink,
+    SpawnRequest,
     TransformingExecutor,
 )
-from agentshim.testing import FakeExecutor, FakeRun
+from agentshim.testing import CodexScript, FakeExecutor, FakeRun
 
 
 def _wrap(request: CommandRequest) -> CommandRequest:
@@ -125,3 +126,20 @@ class TestCheckBinary:
 
         assert result.returncode == 0
         assert marker.read_text() == "ran"
+
+
+def test_private_files_are_inlined_because_a_descriptor_does_not_follow_a_wrapper() -> None:
+    seen: list[list[str]] = []
+    inner = FakeExecutor([], peers=CodexScript().peer)
+
+    def wrap(request: CommandRequest) -> CommandRequest:
+        seen.append(list(request.argv))
+        return replace(request, argv=["docker", "exec", "c", *request.argv])
+
+    TransformingExecutor(inner, wrap).spawn(
+        SpawnRequest(
+            argv=["claude", "--mcp-config", "<c>"], cwd=None, env={}, private_files={"<c>": "{}"}
+        )
+    )
+    assert seen == [["claude", "--mcp-config", "{}"]]
+    assert inner.spawns[0].private_files == {}

@@ -10,7 +10,7 @@ consumed and in what interleaving.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -22,11 +22,22 @@ class SpawnRequest:
     """One long-lived process to start.
 
     ``cwd`` of ``None`` means the executor's own working directory.
+
+    A process's command line is readable by every local user, so an argument that holds a secret
+    goes in ``private_files``: ``argv`` has a placeholder (a whole element) where the path of a file
+    goes, and the value here is what the process reads from that file. Nothing is written to disk.
+    ``HostCommandExecutor`` gives the process an inherited pipe. An executor that cannot, because
+    its process is on the far side of a command it runs, uses ``inlined_argv``.
     """
 
     argv: Sequence[str]
     cwd: str | None
     env: Mapping[str, str]
+    private_files: Mapping[str, str] = field(default_factory=dict[str, str])
+
+    def inlined_argv(self) -> list[str]:
+        """``argv`` with each placeholder replaced by the file's content, for the provider to parse."""
+        return [self.private_files.get(argument, argument) for argument in self.argv]
 
 
 @dataclass(frozen=True)

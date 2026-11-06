@@ -92,7 +92,7 @@ from .events import ResultFrame, parse_frame
 from .failures import classify_failure
 from .parser import ClaudeStreamParser
 from .provider import PROFILE
-from .stream_argv import ProcessConfig, stream_argv, stream_env
+from .stream_argv import ProcessConfig, stream_argv, stream_env, stream_private_files
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -628,7 +628,11 @@ class _StreamConversation:
             rt.binary, self._spec, config, resume_id=resume_id, new_id=new_id, hooks=rt.hooks
         )
         env = stream_env(rt.env, self._spec, config)
-        process = rt.executor.spawn(SpawnRequest(argv=argv, cwd=self._spec.cwd, env=env))
+        process = rt.executor.spawn(
+            SpawnRequest(
+                argv=argv, cwd=self._spec.cwd, env=env, private_files=stream_private_files(config)
+            )
+        )
         self._stderr_tail.clear()
         try:
             self._handshake(process, argv)

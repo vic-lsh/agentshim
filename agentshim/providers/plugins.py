@@ -153,6 +153,9 @@ def check_plugin_mcp(plugins: SessionPlugins) -> None:
     Codex has no switch to disable just a plugin's MCP component. Local,
     skill-only plugins are compatible; an uninspectable source is refused.
     """
+    plugin_keys(
+        plugins
+    )  # a marketplace that cannot be used is refused as that, not as a stray read.
     from_data = [
         (
             ref,

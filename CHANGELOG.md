@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.27.3 (2026-11-06)
+
+### Fixed
+
+- **A Codex session given a marketplace with no manifest raises `PluginInstallError`.** Its check for
+  plugin-bundled MCP servers read the manifest first, so this one case of 0.27.2's fix was still a
+  `FileNotFoundError`.
+
 ## 0.27.2 (2026-11-06)
 
 ### Fixed

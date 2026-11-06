@@ -270,7 +270,7 @@ before the process starts.
 | skills offered | `system/init` `skills` (STRUCTURED) | unknown | unknown | unknown | unknown |
 | skill loads | `Skill` tool call, or `Read` of a `SKILL.md` (STRUCTURED) | shell read of a `SKILL.md` (INFERRED) | unknown | unknown | unknown |
 | `SkillScope.PROJECT` | `--setting-sources project,local` | `features.plugins=false`, user skills off in `skills.config` | refused | refused | refused |
-| `McpScope.SESSION` | `--strict-mcp-config` and the turn's servers as inline `--mcp-config` | `enabled=false` on configured servers, `features.plugins=false`, `features.apps=false` | refused | refused | refused |
+| `McpScope.SESSION` | `--strict-mcp-config` and the turn's servers as `--mcp-config` (inline for one-shot turns; from an inherited pipe on the stream transport, so a server's `env` is on no command line) | `enabled=false` on configured servers, `features.plugins=false`, `features.apps=false` | refused | refused | refused |
 | `ConfigScope.PROJECT` | `--setting-sources project,local`, `autoMemoryEnabled=false` | dedicated `CODEX_HOME` from `prepare_config_home`, `--ignore-user-config --disable memories` | refused | refused | refused |
 
 `start_session(skill_scope=SkillScope.PROJECT)` (also on `run`) offers the

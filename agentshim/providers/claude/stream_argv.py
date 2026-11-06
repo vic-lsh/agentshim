@@ -51,6 +51,10 @@ if TYPE_CHECKING:
     from .user_hooks import ClaudeHook
 
 
+#: Stands in ``argv`` for the path of the file holding the MCP config.
+MCP_CONFIG_PLACEHOLDER = "<agentshim:mcp-config>"
+
+
 @dataclass(frozen=True)
 class ProcessConfig:
     """The per-turn choices that are fixed for the life of a process.
@@ -179,6 +183,16 @@ def _settings(spec: ConversationSpec, hooks: Sequence[ClaudeHook]) -> dict[str, 
 def _mcp_argv(scope: McpScope, servers: Sequence[McpServer]) -> list[str]:
     argv = [STRICT_MCP_FLAG] if scope is McpScope.SESSION else []
     if servers:
-        config = {MCP_SERVER_KEY: {server.name: mcp_entry(server) for server in servers}}
-        argv += ["--mcp-config", json.dumps(config)]
+        argv += ["--mcp-config", MCP_CONFIG_PLACEHOLDER]
     return argv
+
+
+def stream_private_files(config: ProcessConfig) -> dict[str, str]:
+    """What must not be on the process's command line: a server's environment holds secrets.
+
+    ``--mcp-config`` takes a path as well as JSON, so it reads this from an inherited descriptor.
+    """
+    if not config.mcp_servers:
+        return {}
+    servers = {server.name: mcp_entry(server) for server in config.mcp_servers}
+    return {MCP_CONFIG_PLACEHOLDER: json.dumps({MCP_SERVER_KEY: servers})}

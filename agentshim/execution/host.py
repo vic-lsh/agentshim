@@ -188,21 +188,43 @@ class HostCommandExecutor:
         Reader threads feed one queue; ``HostProcess.next_output`` drains it on
         the caller's thread, so the threads are an implementation detail of
         this real-I/O shell and never call back into the caller.
+
+        Each of ``private_files`` is a pipe the process inherits, named by its
+        ``/dev/fd`` path. A pipe holds its content only until it is read, on no
+        disk, and a child of the process that inherits it finds it drained.
         """
         argv = list(request.argv)
-        process = subprocess.Popen(  # noqa: S603 - caller-supplied argv, list form, no shell
-            argv,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,
-            cwd=request.cwd,
-            env=dict(request.env),
-            start_new_session=True,
-        )
+        inherited: list[int] = []
+        feeds: list[tuple[int, str]] = []
+        try:
+            for placeholder, content in request.private_files.items():
+                reader, writer = os.pipe()
+                inherited.append(reader)
+                feeds.append((writer, content))
+                argv = [f"/dev/fd/{reader}" if arg == placeholder else arg for arg in argv]
+            process = subprocess.Popen(  # noqa: S603 - caller-supplied argv, list form, no shell
+                argv,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+                cwd=request.cwd,
+                env=dict(request.env),
+                start_new_session=True,
+                pass_fds=inherited,
+            )
+        except BaseException:
+            for writer, _content in feeds:
+                os.close(writer)
+            raise
+        finally:
+            for reader in inherited:
+                os.close(reader)
+        for writer, content in feeds:
+            _spawn(_feed, writer, content)
         return HostProcess(process)
 
 
@@ -338,6 +360,12 @@ def _spawn(target: object, *args: object) -> threading.Thread:
     thread = threading.Thread(target=target, args=args, daemon=True)  # pyright: ignore[reportArgumentType]
     thread.start()
     return thread
+
+
+def _feed(writer: int, content: str) -> None:
+    """Write *content* to a pipe and close it. A process that left without reading ends this."""
+    with contextlib.suppress(BrokenPipeError), open(writer, "w", encoding="utf-8") as stream:
+        stream.write(content)
 
 
 def _write_stdin(stream: IO[str] | None, data: str | None) -> None:

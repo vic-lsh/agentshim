@@ -7,6 +7,7 @@ so these tests drive the real transport: its argv, its handshake, its pull loop.
 from __future__ import annotations
 
 import json
+import string
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -276,11 +277,24 @@ class TestArgv:
             StdioMcpServer(name="files", command="/bin/mcp", args=("--x",)),
             HttpMcpServer(name="web", url="http://localhost:1/mcp"),
         )
-        argv = self.argv(mcp_servers=servers)
+        rigged = rig()
+        rigged.transport.open(spec(mcp_servers=servers))
+        argv = rigged.executor.spawns[0].inlined_argv()
         config = json.loads(argv[argv.index("--mcp-config") + 1])
         assert set(config["mcpServers"]) == {"files", "web"}
         assert config["mcpServers"]["files"]["command"] == "/bin/mcp"
         assert "--strict-mcp-config" not in argv
+
+    @given(
+        secret=st.text(alphabet=string.ascii_letters + string.digits, min_size=8, max_size=40),
+    )
+    def test_a_servers_secrets_are_on_no_command_line(self, secret: str) -> None:
+        server = StdioMcpServer(name="files", command="/bin/mcp", env={"TOKEN": secret})
+        rigged = rig()
+        rigged.transport.open(spec(mcp_servers=(server,)))
+        request = rigged.executor.spawns[0]
+        assert not any(secret in argument for argument in request.argv)
+        assert [secret in content for content in request.private_files.values()] == [True]
 
     def test_session_mcp_scope_is_strict(self) -> None:
         argv = self.argv(mcp_scope=McpScope.SESSION)

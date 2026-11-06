@@ -81,11 +81,16 @@ class TransformingExecutor:
 
         The transform sees the spawn as a ``CommandRequest`` with no stdin and
         no timeout, and only the ``argv``, ``cwd`` and ``env`` it returns are
-        used.
+        used. A descriptor does not follow a command across a ``docker exec`` or
+        a wrapper, so ``private_files`` are inlined into its ``argv``.
         """
         command = self._transform(
             CommandRequest(
-                argv=request.argv, stdin=None, cwd=request.cwd, env=request.env, timeout=None
+                argv=request.inlined_argv(),
+                stdin=None,
+                cwd=request.cwd,
+                env=request.env,
+                timeout=None,
             )
         )
         return self._inner.spawn(SpawnRequest(argv=command.argv, cwd=command.cwd, env=command.env))

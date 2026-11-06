@@ -42,6 +42,11 @@ SUBAGENT_TOOLS = (
     "Workflow",
 )
 
+#: Claude Code's tools for arranging a later turn of its own: a wake-up (``ScheduleWakeup``) and
+#: scheduled jobs (``CronCreate``, ``CronDelete``, ``CronList``). A caller that starts every turn
+#: itself denies them, since a turn the agent scheduled would never begin.
+SELF_SCHEDULING_TOOLS = ("ScheduleWakeup", "CronCreate", "CronDelete", "CronList")
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -116,9 +121,13 @@ def stream_argv(  # noqa: PLR0913
         argv.append(f"--session-id={new_id}")
     if spec.partial_text:
         argv.append("--include-partial-messages")
-    if spec.disable_subagents:
+    denied = (
+        *(SUBAGENT_TOOLS if spec.disable_subagents else ()),
+        *(SELF_SCHEDULING_TOOLS if spec.disable_self_scheduling else ()),
+    )
+    if denied:
         # Variadic: it must be followed by another flag, and ``_permission_argv`` starts with one.
-        argv += ["--disallowedTools", ",".join(SUBAGENT_TOOLS)]
+        argv += ["--disallowedTools", ",".join(denied)]
     argv += _permission_argv(spec)
     if spec.skill_scope is SkillScope.PROJECT or (
         spec.config_scope is ConfigScope.PROJECT or spec.plugins is not None

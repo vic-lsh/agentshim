@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.28.0 (2026-11-06)
+
+### Added
+
+- **`disable_self_scheduling=True`** on `Agent.session` starts a Claude Code streaming session
+  without `ScheduleWakeup`, `CronCreate`, `CronDelete` and `CronList`, the tools an agent
+  arranges a later turn of its own with. A caller that starts every turn itself needs it: the
+  agent ended its turn on a wake-up that nothing would fire. It shares one `--disallowedTools`
+  list with `disable_subagents`. Codex has no such tools and ignores it; the one-shot transport
+  refuses it, as it refuses `disable_subagents`.
+
 ## 0.27.3 (2026-11-06)
 
 ### Fixed

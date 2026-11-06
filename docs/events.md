@@ -150,6 +150,11 @@ metadata fields do not take part in equality, so `AssistantText("x", "id", "agen
   sessions (`SendMessage`, `ListAgents`, `SendToProject`, `SendToProjectContext`,
   `RemoteTrigger`, `Workflow`); Codex gets `--disable multi_agent`, which the CLI
   refuses when the name is unknown, so a rename fails at startup.
+- **`disable_self_scheduling=True`** starts the provider without the tools it would schedule its
+  own later turns with, for a caller that starts every turn itself: a wake-up the agent
+  arranged would never fire. Claude gets `--disallowedTools` for `ScheduleWakeup`, `CronCreate`,
+  `CronDelete` and `CronList`, in the same list as `disable_subagents` when both are set. Codex
+  has no such tools and ignores it. A one-shot transport refuses the option.
 - **`new_conversation_id`** chooses the id of a new conversation (Claude `--session-id`). Codex
   names threads itself and refuses it. `Session.warm()` opens the conversation before the first
   turn and returns its id (Codex's from `thread/start`).

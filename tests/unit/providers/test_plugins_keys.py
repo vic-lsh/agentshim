@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from agentshim import PluginInstallError, PluginRef, SessionPlugins
-from agentshim.providers.plugins import plugin_keys
+from agentshim.providers.plugins import check_plugin_mcp, plugin_keys
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -35,8 +35,9 @@ def test_an_unusable_marketplace_is_a_plugin_install_error(
     if manifest is not None:
         (tmp_path / ".claude-plugin" / "marketplace.json").write_text(manifest)
     plugins = SessionPlugins(tmp_path / "home", (PluginRef(tmp_path, "tool"),))
-    with pytest.raises(PluginInstallError, match=r"marketplace|tool"):
-        plugin_keys(plugins)
+    for check in (plugin_keys, check_plugin_mcp):
+        with pytest.raises(PluginInstallError, match=r"marketplace|tool"):
+            check(plugins)
 
 
 def test_a_usable_marketplace_gives_the_qualified_name(tmp_path: Path) -> None:

@@ -70,6 +70,8 @@ from .core import (
     McpMechanism,
     McpScope,
     McpServer,
+    McpServerState,
+    McpServerStatus,
     McpTransport,
     ModelUsage,
     NativeMode,
@@ -81,6 +83,7 @@ from .core import (
     OutputSchemaStyle,
     ParsedTurn,
     ParserContext,
+    PluginInstallError,
     PluginRef,
     PolicyConfig,
     PricingContext,
@@ -141,6 +144,7 @@ from .core import (
     TokenUsage,
     TokenWeights,
     ToolCall,
+    ToolReportingConversation,
     ToolResult,
     ToolTracker,
     TranscriptFormat,
@@ -247,7 +251,7 @@ from .runtime import Agent
 from .session import Session, Turn, TurnTicket, map_mcp_servers
 from .transcripts import read_transcript_usage, transcript_providers, transcript_roots
 
-__version__ = "0.27.0"
+__version__ = "0.27.1"
 
 __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "AccountLimits",
@@ -336,6 +340,8 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "McpMechanism",
     "McpScope",
     "McpServer",
+    "McpServerState",
+    "McpServerStatus",
     "McpTransport",
     "ModelPricing",
     "ModelSpec",
@@ -353,6 +359,7 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "OutputSchemaStyle",
     "ParsedTurn",
     "ParserContext",
+    "PluginInstallError",
     "PluginRef",
     "PolicyConfig",
     "PricingContext",
@@ -434,6 +441,7 @@ __all__ = [  # noqa: RUF022 - public API test uses Python's case-sensitive order
     "TokenUsage",
     "TokenWeights",
     "ToolCall",
+    "ToolReportingConversation",
     "ToolResult",
     "ToolTracker",
     "TranscriptFormat",

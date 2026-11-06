@@ -12,7 +12,7 @@ import shutil
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
-from agentshim.core.errors import ProviderCapabilityError
+from agentshim.core.errors import PluginInstallError, ProviderCapabilityError
 from agentshim.core.home import prepare_config_home
 from agentshim.core.stream import parse_json_object
 from agentshim.execution.executor import CommandRequest, NullSink
@@ -86,7 +86,7 @@ def prepare_plugins(
     if home.exists():
         if not marker.is_file() or marker.read_text(encoding="utf-8") != record:
             msg = "plugin home must be fresh or belong to this exact session plugin selection"
-            raise ValueError(msg)
+            raise PluginInstallError(msg)
     else:
         home.mkdir(parents=True)
         try:
@@ -133,7 +133,7 @@ def _install(executor: CommandExecutor, request: CommandRequest) -> None:
     result = executor.run(request, NullSink())
     if result.returncode:
         msg = f"plugin installation failed: {result.stderr or result.stdout}"
-        raise ValueError(msg)
+        raise PluginInstallError(msg)
 
 
 def _names_plugin(entry: object, name: str) -> bool:

@@ -19,7 +19,12 @@ from typing import TYPE_CHECKING
 
 from agentshim.core.checkpoints import Checkpoint
 from agentshim.core.clock import StopSignal
-from agentshim.core.conversation import IdleConversation, SteerableConversation
+from agentshim.core.conversation import (
+    IdleConversation,
+    McpServerStatus,
+    SteerableConversation,
+    ToolReportingConversation,
+)
 from agentshim.core.errors import (
     AgentShimError,
     ContinuityError,
@@ -382,6 +387,26 @@ class Session:
             conversation.close()
             return self.conversation_id
         return conversation.conversation_id
+
+    def report_tools(self, timeout_s: float = 30.0) -> tuple[McpServerStatus, ...] | None:
+        """Say whether the session's tool servers connected, before any turn.
+
+        Returns one ``McpServerStatus`` per tool server the session was given (``PENDING`` for
+        one the provider had not settled within *timeout_s*), an empty tuple for a session given
+        none, and ``None`` when the provider cannot say before a turn or no conversation is open
+        (call ``warm`` first). A caller that must not run an agent without its tools checks for
+        ``FAILED`` and treats ``None`` and ``PENDING`` as unknown. Thread-safe.
+        """
+        with self._lock:
+            conversation = self._conversation
+            closed = self._state.closed
+        if (
+            closed
+            or conversation is None
+            or not isinstance(conversation, ToolReportingConversation)
+        ):
+            return None
+        return conversation.report_tools(timeout_s)
 
     def poll_idle(self, on_event: AgentEventHandler | None = None) -> bool:
         """Deliver what the provider did since the last call, outside any turn.

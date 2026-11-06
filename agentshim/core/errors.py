@@ -258,6 +258,13 @@ class ReapError(AgentShimError):
     """
 
 
+class PluginInstallError(AgentShimError, ValueError):
+    """A session's plugins could not be installed, so no agent was started.
+
+    Also a ``ValueError``, which is what the failure was before it had a type.
+    """
+
+
 class McpConfigError(AgentShimError):
     """An MCP config file is unreadable, unwritable, or is not a JSON object."""
 

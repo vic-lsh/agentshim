@@ -90,6 +90,11 @@ class ConversationSpec:
     #: Start the agent with its native subagents (the provider's own delegation tools) turned
     #: off, so every agent in a tree is one the caller started. Stream transports only.
     disable_subagents: bool = False
+    #: Start the agent without the tools it would arrange a later turn of its own with (timers,
+    #: wake-ups, scheduled jobs), so every turn is one the caller starts. For a caller that wakes
+    #: the agent itself: a wake-up the agent schedules would never fire. A provider without such
+    #: tools ignores it. Stream transports only.
+    disable_self_scheduling: bool = False
     #: Receives every line crossing the provider's pipe, in either direction (stream transports
     #: only). Called on the thread that read or wrote the line; it must not block.
     raw_sink: Callable[[RawFrame], None] | None = None

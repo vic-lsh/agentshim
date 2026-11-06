@@ -111,6 +111,7 @@ class OneShotTransport:
             for name, asked in (
                 ("partial_text", spec.partial_text),
                 ("disable_subagents", spec.disable_subagents),
+                ("disable_self_scheduling", spec.disable_self_scheduling),
                 ("raw_sink", spec.raw_sink is not None),
                 ("new_conversation_id", spec.new_conversation_id is not None),
             )

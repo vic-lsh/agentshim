@@ -299,6 +299,25 @@ class TestLaunchOptions:
         assert {"Agent", "Task", "SendMessage", "ListAgents"} <= set(denied)
         assert argv[at + 2].startswith("--")
 
+    @pytest.mark.parametrize("subagents", [False, True])
+    @pytest.mark.parametrize("scheduling", [False, True])
+    def test_each_denial_is_asked_for_alone_and_the_two_share_one_list(
+        self, *, subagents: bool, scheduling: bool
+    ) -> None:
+        world = _World([[INIT, _result()]])
+        world.run(_spec(disable_subagents=subagents, disable_self_scheduling=scheduling))
+        argv = world.argvs[0]
+        if not (subagents or scheduling):
+            assert "--disallowedTools" not in argv
+            return
+        assert argv.count("--disallowedTools") == 1
+        at = argv.index("--disallowedTools")
+        denied = set(argv[at + 1].split(","))
+        assert argv[at + 2].startswith("--")
+        assert ({"Agent", "Task"} <= denied) is subagents
+        assert ({"ScheduleWakeup", "CronCreate", "CronDelete", "CronList"} <= denied) is scheduling
+        assert (denied & {"ScheduleWakeup", "CronCreate"} == set()) is not scheduling
+
     def test_no_denial_is_sent_by_default(self) -> None:
         world = _World([[INIT, _result()]])
         world.run(_spec())
@@ -322,7 +341,12 @@ class TestLaunchOptions:
 
     def test_the_one_shot_transport_refuses_what_only_a_stream_can_do(self) -> None:
         transport = OneShotTransport("claude", executor=FakeExecutor([]), env={})
-        for option in ({"partial_text": True}, {"disable_subagents": True}, {"raw_sink": print}):
+        for option in (
+            {"partial_text": True},
+            {"disable_subagents": True},
+            {"disable_self_scheduling": True},
+            {"raw_sink": print},
+        ):
             with pytest.raises(ProviderCapabilityError):
                 transport.open(_spec(**option))
 

@@ -202,6 +202,7 @@ class Agent:
         plugins: SessionPlugins | None = None,
         partial_text: bool = False,
         disable_subagents: bool = False,
+        disable_self_scheduling: bool = False,
         raw_sink: Callable[[RawFrame], None] | None = None,
         new_conversation_id: str | None = None,
     ) -> Session:
@@ -215,9 +216,10 @@ class Agent:
         live conversation before the next turn. The scope arguments are
         transitional, for the one-shot transport only.
 
-        The last four are for a ``TransportKind.STREAM`` transport and are refused by the
+        The last five are for a ``TransportKind.STREAM`` transport and are refused by the
         one-shot one: ``partial_text`` streams ``TextDelta`` events, ``disable_subagents``
-        starts the provider without its own delegation tools, ``raw_sink`` receives every line
+        starts the provider without its own delegation tools, ``disable_self_scheduling``
+        starts it without the tools that schedule its own later turns, ``raw_sink`` receives every line
         crossing the provider's pipe, and ``new_conversation_id`` chooses the id of a new
         conversation where the provider allows it (see ``ConversationSpec``).
         """
@@ -241,6 +243,7 @@ class Agent:
             plugins=plugins,
             partial_text=partial_text,
             disable_subagents=disable_subagents,
+            disable_self_scheduling=disable_self_scheduling,
             raw_sink=raw_sink,
             new_conversation_id=new_conversation_id,
         )

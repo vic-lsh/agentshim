@@ -23,6 +23,7 @@ from importlib import metadata
 from typing import TYPE_CHECKING, cast
 
 from agentshim.core.clock import SystemClock
+from agentshim.core.conversation import McpServerState, McpServerStatus
 from agentshim.core.env import interactive_env
 from agentshim.core.errors import (
     AgentShimError,
@@ -70,7 +71,7 @@ from .approvals import answer_request
 from .channel import Channel, Deadline, Expired, Gone
 from .errors import classify_turn_error, error_text
 from .items import ItemEvents
-from .mcp import server_keys, thread_config
+from .mcp import server_key, server_keys, thread_config
 from .permissions import check_applied, codex_permissions
 from .profile import APP_SERVER_PROFILE
 from .protocol import (
@@ -418,6 +419,8 @@ class _Conversation:
         self._deferred: list[AgentEvent] = []
         self._skills: SkillTracker | None = None
         self._failed_servers: dict[str, str] = {}
+        #: The tool servers Codex has said are ready, by key.
+        self._ready_servers: set[str] = set()
         self._deferred_failure: TurnFailedError | None = None
 
     # -- Conversation protocol
@@ -472,6 +475,46 @@ class _Conversation:
                 self._idling = False
                 self._sink = None
             return True
+
+    def report_tools(self, timeout_s: float) -> tuple[McpServerStatus, ...]:
+        """Say which of the session's tool servers Codex has started, waiting for the rest.
+
+        Codex reports each server's start as it happens (``mcpServer/startupStatus/updated``);
+        this reads those reports until every server is ready or failed, or *timeout_s* has
+        passed. What it reads that is not about a server is held for the next turn.
+        """
+        servers = self._settings.servers
+
+        def snapshot() -> tuple[McpServerStatus, ...]:
+            out: list[McpServerStatus] = []
+            for server in servers:
+                key = server_key(server)
+                if key in self._failed_servers:
+                    out.append(
+                        McpServerStatus(
+                            server.name, McpServerState.FAILED, self._failed_servers[key]
+                        )
+                    )
+                elif key in self._ready_servers:
+                    out.append(McpServerStatus(server.name, McpServerState.READY))
+                else:
+                    out.append(McpServerStatus(server.name, McpServerState.PENDING))
+            return tuple(out)
+
+        def settled() -> bool:
+            return all(s.state is not McpServerState.PENDING for s in snapshot())
+
+        with self._idle_lock:
+            with self._state:
+                if self._closed or self._running:
+                    return snapshot()
+            deadline = Deadline(self._clock, timeout_s)
+            try:
+                while not settled():
+                    self._handle(self._channel.read(deadline), None)
+            except (Expired, Gone):
+                pass
+            return snapshot()
 
     def steer(self, text: str) -> None:
         """Send ``turn/steer`` for the running turn. Thread-safe.
@@ -738,6 +781,7 @@ class _Conversation:
         _stop(old, self._timeouts.close)
         self._items = ItemEvents()
         self._failed_servers.clear()
+        self._ready_servers.clear()
         self._deferred_failure = None
         try:
             self._boot()
@@ -1013,6 +1057,10 @@ class _Conversation:
             return
         if params.name not in self._settings.mcp_keys:
             return
+        if params.status == McpServerStartupState.READY:
+            self._ready_servers.add(params.name)
+        if params.status == McpServerStartupState.CANCELLED:
+            self._failed_servers.setdefault(params.name, "startup was cancelled")
         if params.status == McpServerStartupState.FAILED:
             error = params.error or "failed to start"
             self._failed_servers.setdefault(params.name, error)

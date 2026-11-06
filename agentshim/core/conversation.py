@@ -174,6 +174,44 @@ class IdleConversation(Conversation, Protocol):
         ...
 
 
+class McpServerState(str, Enum):
+    """Whether a session's tool server is usable, as far as the provider could say."""
+
+    #: The provider connected to the server and has its tools.
+    READY = "ready"
+    #: The provider could not use the server: it failed to start or connect, needs a
+    #: sign-in, or was switched off.
+    FAILED = "failed"
+    #: The provider has not said yet, or said something agentshim does not know.
+    PENDING = "pending"
+
+
+@dataclass(frozen=True)
+class McpServerStatus:
+    """One tool server of a session, by the name the caller gave it."""
+
+    name: str
+    state: McpServerState
+    #: The provider's own words for a failure; empty otherwise.
+    error: str = ""
+
+
+@runtime_checkable
+class ToolReportingConversation(Conversation, Protocol):
+    """A conversation that can say, before any turn, whether its tool servers connected."""
+
+    def report_tools(self, timeout_s: float) -> tuple[McpServerStatus, ...]:
+        """Return one status per configured tool server.
+
+        Waits up to *timeout_s* for the provider to settle each; a server it has not settled by
+        then is ``PENDING``.
+
+        Does nothing and reports every server ``PENDING`` while a turn runs. Never raises for a
+        server that failed: that is the answer.
+        """
+        ...
+
+
 class Transport(Protocol):
     """A way to reach one provider, producing conversations."""
 

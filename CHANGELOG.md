@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.27.1 (2026-11-06)
+
+### Added
+
+- **`Session.report_tools(timeout_s)`** says, before any turn, whether the session's tool servers
+  connected: one `McpServerStatus(name, state, error)` per server, with `McpServerState.READY`,
+  `FAILED` or `PENDING`. Claude Code is asked with its `mcp_status` control request and asked
+  again while a server is still connecting; Codex's own start-up reports are read. A server the
+  provider has not settled in time, a state agentshim does not know, a server the provider does
+  not list, and a provider that refuses the question are all `PENDING`, never `FAILED`: a state
+  that cannot be read is not evidence of a failure. `None` means the provider cannot say or no
+  conversation is open. A caller that must not run an agent without its tools can end the session
+  on `FAILED` and call the rest unknown. `ClaudeStreamPeers(mcp_status=...)` scripts the answers.
+- **`PluginInstallError`**, raised when a session's plugins cannot be installed. It is also a
+  `ValueError`, which is what the failure was before.
+
 ## 0.27.0 (2026-11-03)
 
 ### Added

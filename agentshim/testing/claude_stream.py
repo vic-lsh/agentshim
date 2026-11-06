@@ -119,6 +119,7 @@ class ClaudeStreamPeers:
         drops_queued_messages: bool = False,
         account: Mapping[str, Any] | None = None,
         usage: Mapping[str, Any] | None = None,
+        mcp_status: Sequence[Mapping[str, tuple[str, str]]] | None = None,
     ) -> None:
         """Bind the script and the conversations that already exist.
 
@@ -127,7 +128,12 @@ class ClaudeStreamPeers:
         *account* is the ``account`` object ``initialize`` reports and *usage* the
         ``response`` of a ``get_usage`` request (see ``agentshim.testing.limits``);
         without *usage* the CLI refuses ``get_usage`` as an unsupported request.
+        *mcp_status* answers ``mcp_status`` requests: one entry per request, each mapping a server
+        name to its ``(status, error)`` as the CLI words them (``"connected"``, ``"pending"``,
+        ``"failed"``, ``"needs-auth"``); the last entry answers every later request. Without it
+        the CLI refuses ``mcp_status`` as an unsupported request.
         """
+        self._mcp_status = None if mcp_status is None else [dict(entry) for entry in mcp_status]
         self.account = None if account is None else dict(account)
         self.usage = None if usage is None else dict(usage)
         self.drops_queued_messages = drops_queued_messages
@@ -142,6 +148,16 @@ class ClaudeStreamPeers:
         peer = ClaudeStreamPeer(self, list(request.argv))
         self.peers.append(peer)
         return peer
+
+    def next_mcp_status(self) -> list[dict[str, Any]] | None:
+        """The ``mcpServers`` of the next ``mcp_status`` answer, or ``None`` if it is refused."""
+        if self._mcp_status is None:
+            return None
+        entry = self._mcp_status.pop(0) if len(self._mcp_status) > 1 else self._mcp_status[0]
+        return [
+            {"name": name, "status": status, **({"error": error} if error else {})}
+            for name, (status, error) in entry.items()
+        ]
 
     def next_turn(self) -> ClaudePeerTurn:
         """Take the next scripted turn, or a plain one once the script is spent."""
@@ -238,6 +254,9 @@ class ClaudeStreamPeer:
             return [_stdout(_ok(request_id, body))]
         if subtype == "get_usage" and self._world.usage is not None:
             return [_stdout(_ok(request_id, self._world.usage))]
+        servers = self._world.next_mcp_status() if subtype == "mcp_status" else None
+        if servers is not None:
+            return [_stdout(_ok(request_id, {"mcpServers": servers}))]
         if subtype == "interrupt":
             reply = _stdout(_ok(request_id, {"still_queued": []}))
             if self._turn is not None and self._turn.ignores_interrupt:

@@ -49,7 +49,12 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
 from agentshim.core.clock import SystemClock
-from agentshim.core.conversation import FrameDirection, RawFrame
+from agentshim.core.conversation import (
+    FrameDirection,
+    McpServerState,
+    McpServerStatus,
+    RawFrame,
+)
 from agentshim.core.env import interactive_env
 from agentshim.core.errors import (
     AgentShimError,
@@ -399,6 +404,63 @@ class _StreamConversation:
             if process is None:
                 return False
             return self._drain_to(process, emit)
+
+    def report_tools(self, timeout_s: float) -> tuple[McpServerStatus, ...]:
+        """Ask the CLI which of the session's tool servers connected, with ``mcp_status``.
+
+        The CLI connects its tool servers in the background after it starts, so a server may
+        still be ``pending``; the question is asked again until none is or *timeout_s* has passed.
+        A CLI that does not answer, or refuses the question, leaves every server ``PENDING``.
+        """
+        names = tuple(server.name for server in self._spec.mcp_servers)
+        statuses = tuple(McpServerStatus(name, McpServerState.PENDING) for name in names)
+        if not names:
+            return statuses
+        deadline = self._rt.clock.monotonic() + timeout_s
+        with self._idle_lock:
+            with self._lock:
+                process = self._process
+                if process is None or self._closed or self._running:
+                    return statuses
+            while True:
+                reply = self._ask(process, {"subtype": "mcp_status"}, deadline)
+                if reply is None:
+                    return statuses
+                statuses = _tool_statuses(reply, names)
+                if all(s.state is not McpServerState.PENDING for s in statuses):
+                    return statuses
+                if self._rt.clock.monotonic() >= deadline:
+                    return statuses
+                self._rt.clock.wait(POLL_S)
+
+    def _ask(
+        self, process: Process, request: Mapping[str, Any], deadline: float
+    ) -> Mapping[str, Any] | None:
+        """Send a control request between turns and return its ``response`` body.
+
+        Returns ``None`` when the CLI refuses it, the process ends, or *deadline* (a time on the
+        runtime's clock) passes first. Anything else the CLI writes meanwhile is handled as it is
+        between turns.
+        """
+        request_id = self._rt.ids.new_id("ctl")
+        try:
+            self._write(process, _control_request(request_id, request))
+        except ProcessClosedError:
+            return None
+        quiet = self._idle_run(lambda _event: None)
+        while self._rt.clock.monotonic() < deadline:
+            item = self._poll(process)
+            if isinstance(item, StdoutLine):
+                ours, answer = _answer_to(item.text, request_id)
+                if ours:
+                    return answer
+                self._on_stdout(item.text, quiet)
+            elif isinstance(item, StderrLine):
+                self._note_stderr(item.text)
+            elif isinstance(item, ProcessExited):
+                self._forget(process)
+                return None
+        return None
 
     def _drain_to(self, process: Process, emit: Callable[[AgentEvent], None]) -> bool:
         run = self._idle_run(emit)
@@ -1032,6 +1094,51 @@ class _StreamConversation:
             detail = parsed.error or detail
         code = returncode if returncode is not None else -1
         return CliExitError(self._argv, code, "", stderr, kind=kind, detail=detail)
+
+
+def _answer_to(text: str, request_id: str) -> tuple[bool, Mapping[str, Any] | None]:
+    """Whether *text* answers control request *request_id*, and the ``response`` body if it does.
+
+    The body is ``None`` when the CLI refused the request.
+    """
+    data = parse_json_object(text)
+    if data is None or data.get("type") != "control_response":
+        return False, None
+    body = data.get("response")
+    if not isinstance(body, dict):
+        return False, None
+    reply = cast("dict[str, Any]", body)
+    if reply.get("request_id") != request_id:
+        return False, None
+    if reply.get("subtype") != "success":
+        return True, None
+    answer = reply.get("response")
+    return True, cast("Mapping[str, Any]", answer) if isinstance(answer, dict) else {}
+
+
+def _tool_statuses(reply: Mapping[str, Any], names: Sequence[str]) -> tuple[McpServerStatus, ...]:
+    """The status of each of *names* in an ``mcp_status`` reply.
+
+    ``connected`` is ready; ``failed``, ``needs-auth`` and ``disabled`` are failed; ``pending``,
+    a server the reply does not list, and any state not known here are pending, because a state
+    that cannot be read is not evidence of a failure.
+    """
+    listed: dict[str, McpServerStatus] = {}
+    entries = reply.get("mcpServers")
+    for entry in cast("list[object]", entries) if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        item = cast("dict[str, Any]", entry)
+        name, state = item.get("name"), item.get("status")
+        if not isinstance(name, str):
+            continue
+        error = item.get("error")
+        detail = error if isinstance(error, str) else ""
+        if state == "connected":
+            listed[name] = McpServerStatus(name, McpServerState.READY)
+        elif state in ("failed", "needs-auth", "disabled"):
+            listed[name] = McpServerStatus(name, McpServerState.FAILED, detail or str(state))
+    return tuple(listed.get(name, McpServerStatus(name, McpServerState.PENDING)) for name in names)
 
 
 def _interrupted(frame: ResultFrame) -> bool:
